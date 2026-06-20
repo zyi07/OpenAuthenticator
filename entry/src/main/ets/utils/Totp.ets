@@ -1,24 +1,51 @@
 import cryptoFramework from '@ohos.security.cryptoFramework';
 
-const TOTP_PERIOD_SECONDS: number = 30;
-const TOTP_DIGITS: number = 6;
+const DEFAULT_TOTP_PERIOD_SECONDS: number = 30;
+const DEFAULT_TOTP_DIGITS: number = 6;
 const SHA1_BLOCK_SIZE: number = 64;
 const BASE32_ALPHABET: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const STEAM_ALPHABET: string = '23456789BCDFGHJKMNPQRTVWXY';
+const STEAM_CODE_LENGTH: number = 5;
 const DEFAULT_ALGORITHM: string = 'SHA1';
 const SUPPORTED_ALGORITHMS: string[] = ['SHA1', 'SHA3', 'SHA224', 'SHA256', 'SHA384', 'SHA512'];
 
 export class Totp {
-  static generate(secret: string, timeMs: number = Date.now(), algorithm: string = DEFAULT_ALGORITHM): string {
+  static generate(
+    secret: string,
+    timeMs: number = Date.now(),
+    algorithm: string = DEFAULT_ALGORITHM,
+    digits: number = DEFAULT_TOTP_DIGITS,
+    periodSeconds: number = DEFAULT_TOTP_PERIOD_SECONDS,
+    type: string = 'TOTP',
+    counter: number = 0
+  ): string {
+    const normalizedType = normalizeType(type);
+    const normalizedDigits = normalizeDigits(digits, normalizedType);
+    const normalizedPeriod = normalizePeriod(periodSeconds);
     const key = decodeSecret(secret);
     if (key.length === 0) {
-      return repeatChar('0', TOTP_DIGITS);
+      if (normalizedType === 'STEAM') {
+        return repeatChar('0', STEAM_CODE_LENGTH);
+      }
+      return repeatChar('0', normalizedDigits);
     }
 
     const seconds = Math.floor(timeMs / 1000);
-    const counter = Math.floor(seconds / TOTP_PERIOD_SECONDS);
-    const digest = hmac(key, counterToBytes(counter), algorithm);
+    const movingFactor = normalizedType === 'HOTP' ? normalizeCounter(counter) : Math.floor(seconds / normalizedPeriod);
+    const digest = hmac(
+      key,
+      counterToBytes(movingFactor),
+      normalizedType === 'STEAM' ? DEFAULT_ALGORITHM : algorithm
+    );
     if (digest.length === 0) {
-      return repeatChar('0', TOTP_DIGITS);
+      if (normalizedType === 'STEAM') {
+        return repeatChar('0', STEAM_CODE_LENGTH);
+      }
+      return repeatChar('0', normalizedDigits);
+    }
+
+    if (normalizedType === 'STEAM') {
+      return steamCode(digest);
     }
 
     const offset = digest[digest.length - 1] & 0x0f;
@@ -27,22 +54,24 @@ export class Totp {
       ((digest[offset + 1] & 0xff) << 16) |
       ((digest[offset + 2] & 0xff) << 8) |
       (digest[offset + 3] & 0xff);
-    const code = binary % Math.pow(10, TOTP_DIGITS);
+    const code = binary % Math.pow(10, normalizedDigits);
 
-    return leftPad(code.toString(), TOTP_DIGITS, '0');
+    return leftPad(code.toString(), normalizedDigits, '0');
   }
 
-  static remainingSeconds(timeMs: number = Date.now()): number {
+  static remainingSeconds(timeMs: number = Date.now(), periodSeconds: number = DEFAULT_TOTP_PERIOD_SECONDS): number {
+    const normalizedPeriod = normalizePeriod(periodSeconds);
     const seconds = Math.floor(timeMs / 1000);
-    const elapsed = seconds % TOTP_PERIOD_SECONDS;
-    return TOTP_PERIOD_SECONDS - elapsed;
+    const elapsed = seconds % normalizedPeriod;
+    return normalizedPeriod - elapsed;
   }
 
   static formatCode(code: string): string {
-    if (code.length !== TOTP_DIGITS) {
+    if (code.length <= 4 || !isNumericCode(code)) {
       return code;
     }
-    return `${code.substring(0, 3)} ${code.substring(3)}`;
+    const splitIndex = Math.floor(code.length / 2);
+    return `${code.substring(0, splitIndex)} ${code.substring(splitIndex)}`;
   }
 }
 
@@ -74,6 +103,65 @@ function hmac(key: number[], message: number[], algorithm: string): number[] {
 function normalizeAlgorithm(algorithm: string): string {
   const normalized = algorithm.trim().toUpperCase();
   return SUPPORTED_ALGORITHMS.includes(normalized) ? normalized : DEFAULT_ALGORITHM;
+}
+
+function normalizeType(type: string): string {
+  const normalized = type.trim().toUpperCase();
+  if (normalized === 'STEAM') {
+    return 'STEAM';
+  }
+  if (normalized === 'HOTP') {
+    return 'HOTP';
+  }
+  return 'TOTP';
+}
+
+function normalizeDigits(digits: number, type: string): number {
+  if (type === 'STEAM') {
+    return STEAM_CODE_LENGTH;
+  }
+  if (type === 'HOTP') {
+    return digits === 8 ? 8 : DEFAULT_TOTP_DIGITS;
+  }
+  if (digits === 4 || digits === 8) {
+    return digits;
+  }
+  return DEFAULT_TOTP_DIGITS;
+}
+
+function normalizePeriod(periodSeconds: number): number {
+  return periodSeconds === 60 ? 60 : DEFAULT_TOTP_PERIOD_SECONDS;
+}
+
+function normalizeCounter(counter: number): number {
+  return counter > 0 ? Math.floor(counter) : 0;
+}
+
+function steamCode(digest: number[]): string {
+  const offset = digest[digest.length - 1] & 0x0f;
+  let code =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+  let result = '';
+
+  for (let index = 0; index < STEAM_CODE_LENGTH; index++) {
+    result += STEAM_ALPHABET.charAt(code % STEAM_ALPHABET.length);
+    code = Math.floor(code / STEAM_ALPHABET.length);
+  }
+
+  return result;
+}
+
+function isNumericCode(code: string): boolean {
+  for (let index = 0; index < code.length; index++) {
+    const charCode = code.charCodeAt(index);
+    if (charCode < 48 || charCode > 57) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function macDigestCandidates(algorithm: string): string[] {

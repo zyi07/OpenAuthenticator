@@ -1,6 +1,8 @@
 /node_modules
 /oh_modules
+/local_properties
 /local.properties
+/.codegenie
 /.idea
 **/build
 /.hvigor
@@ -10,3 +12,6 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+.DS_Store
+**/.DS_Store
+.codegenie/local.properties

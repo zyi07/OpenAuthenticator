@@ -6,11 +6,42 @@
     "mainElement": "EntryAbility",
     "deviceTypes": [
       "phone",
-      "tablet"
+      "tablet",
+      "2in1"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "metadata": [
+      {
+        "name": "client_id",
+        "value": "6917608410198576912"
+      }
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.DLP_GET_HIDE_STATUS"
+      },
+      {
+        "name": "ohos.permission.DETECT_GESTURE"
+      },
+      {
+        "name": "ohos.permission.ACCESS_BIOMETRIC"
+      },
+      {
+        "name": "ohos.permission.DISTRIBUTED_DATASYNC",
+        "reason": "$string:distributed_data_sync_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -45,6 +76,20 @@
             "resource": "$profile:backup_config"
           }
         ],
+      },
+      {
+        "name": "FormAbility",
+        "srcEntry": "./ets/form/FormAbility.ets",
+        "description": "$string:FormAbility_desc",
+        "label": "$string:FormAbility_label",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
       }
     ]
   }

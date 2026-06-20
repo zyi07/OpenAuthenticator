@@ -1,0 +1,136 @@
+{
+  "forms": [
+    {
+      "name": "widget_minimum",
+      "displayName": "$string:widget_minimum_name",
+      "description": "$string:widget_minimum_desc",
+      "src": "./ets/form/pages/WidgetMinimumCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "isDefault": false,
+      "colorMode": "light",
+      "supportDimensions": ["1*2"],
+      "defaultDimension": "1*2",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_small",
+      "displayName": "$string:widget_small_name",
+      "description": "$string:widget_small_desc",
+      "src": "./ets/form/pages/WidgetSmallCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "isDefault": false,
+      "colorMode": "light",
+      "supportDimensions": ["2*2"],
+      "defaultDimension": "2*2",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_medium",
+      "displayName": "$string:widget_medium_name",
+      "description": "$string:widget_medium_desc",
+      "src": "./ets/form/pages/WidgetMediumCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "isDefault": true,
+      "colorMode": "light",
+      "supportDimensions": ["2*4"],
+      "defaultDimension": "2*4",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_large",
+      "displayName": "$string:widget_large_name",
+      "description": "$string:widget_large_desc",
+      "src": "./ets/form/pages/WidgetLargeCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "isDefault": false,
+      "colorMode": "light",
+      "supportDimensions": ["4*4"],
+      "defaultDimension": "4*4",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_minimum_dark",
+      "displayName": "$string:widget_minimum_dark_name",
+      "description": "$string:widget_minimum_dark_desc",
+      "src": "./ets/form/pages/WidgetMinimumDarkCard.ets",
+      "uiSyntax": "arkts",
+      "window": { "designWidth": 720, "autoDesignWidth": true },
+      "isDefault": false,
+      "colorMode": "dark",
+      "supportDimensions": ["1*2"],
+      "defaultDimension": "1*2",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_small_dark",
+      "displayName": "$string:widget_small_dark_name",
+      "description": "$string:widget_small_dark_desc",
+      "src": "./ets/form/pages/WidgetSmallDarkCard.ets",
+      "uiSyntax": "arkts",
+      "window": { "designWidth": 720, "autoDesignWidth": true },
+      "isDefault": false,
+      "colorMode": "dark",
+      "supportDimensions": ["2*2"],
+      "defaultDimension": "2*2",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_medium_dark",
+      "displayName": "$string:widget_medium_dark_name",
+      "description": "$string:widget_medium_dark_desc",
+      "src": "./ets/form/pages/WidgetMediumDarkCard.ets",
+      "uiSyntax": "arkts",
+      "window": { "designWidth": 720, "autoDesignWidth": true },
+      "isDefault": false,
+      "colorMode": "dark",
+      "supportDimensions": ["2*4"],
+      "defaultDimension": "2*4",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    },
+    {
+      "name": "widget_large_dark",
+      "displayName": "$string:widget_large_dark_name",
+      "description": "$string:widget_large_dark_desc",
+      "src": "./ets/form/pages/WidgetLargeDarkCard.ets",
+      "uiSyntax": "arkts",
+      "window": { "designWidth": 720, "autoDesignWidth": true },
+      "isDefault": false,
+      "colorMode": "dark",
+      "supportDimensions": ["4*4"],
+      "defaultDimension": "4*4",
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "scheduledUpdateTime": "10:30"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Tool_2FA 用户协议</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: #f2f3f5;
+      --card: #ffffff;
+      --text: #1a1a1a;
+      --secondary: #666666;
+      --line: #e5e5e5;
+      --accent: #e5ba0b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #000000;
+        --card: #2c2c2c;
+        --text: #eeeeee;
+        --secondary: #aaaaaa;
+        --line: #444444;
+        --accent: #f1c92c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: max(24px, env(safe-area-inset-top)) 20px max(40px, env(safe-area-inset-bottom));
+      background: var(--background);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "HarmonyOS Sans SC", sans-serif;
+      font-size: 16px;
+      line-height: 1.75;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px;
+      background: var(--card);
+      border-radius: 12px;
+    }
+    h1 { margin: 0 0 4px; font-size: 26px; line-height: 1.35; }
+    h2 { margin: 28px 0 8px; font-size: 19px; }
+    p { margin: 8px 0; }
+    .date { color: var(--secondary); font-size: 14px; }
+    .notice {
+      margin-top: 20px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    a { color: var(--accent); }
+    footer { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--secondary); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tool_2FA 用户协议</h1>
+  <p class="date">更新日期：2026年6月19日</p>
+  <p class="date">生效日期：2026年6月19日</p>
+
+  <p class="notice"><strong>请您在使用 Tool_2FA 前仔细阅读本协议，尤其是以加粗方式提示的条款。使用本应用即表示您理解并同意本协议。</strong></p>
+
+  <h2>1. 关于我们</h2>
+  <p>Tool_2FA（以下简称“本应用”）由 Tool_2FA 开发者（以下简称“我们”）提供和运营。本协议是您与我们之间关于下载、安装和使用本应用及相关服务所订立的协议。</p>
+
+  <h2>2. 服务内容</h2>
+  <p>本应用用于管理基于时间或计数器的一次性验证码，包括 TOTP、HOTP 和 Steam 令牌。您可以手工录入、扫描二维码或从文件导入令牌信息，并可选择使用华为云空间同步功能。</p>
+  <p>一次性验证码由您提供的密钥在设备本地计算。云空间同步属于可选功能，只有在您主动开启并满足华为账号及云空间服务条件后才会使用。</p>
+
+  <h2>3. 使用要求</h2>
+  <p>您应具备与使用本应用相适应的民事行为能力。未成年人或限制民事行为能力人应在监护人阅读并同意本协议后使用。</p>
+  <p><strong>您应确保录入或导入的令牌密钥来源合法，并有权管理相关账号。不得利用本应用从事任何违法违规、侵犯他人权益或危害网络安全的活动。</strong></p>
+
+  <h2>4. 密钥与设备安全</h2>
+  <p><strong>令牌密钥属于高度敏感信息。请妥善保管设备、锁屏凭据、备份数据及华为账号，避免截屏、转发或向他人披露密钥和迁移二维码。</strong></p>
+  <p>因设备遗失、越权访问、误删除、第三方账号异常、您主动共享密钥或未妥善保管备份而产生的风险和损失，由您自行承担。建议您同时保留服务提供方发放的恢复码或其他独立恢复方式。</p>
+
+  <h2>5. 华为账号与云空间</h2>
+  <p>登录华为账号、云空间同步及标准化隐私声明等能力由相应的系统服务提供，并受华为账号、云空间及相关服务条款约束。网络、账号状态、云空间容量、系统配置或服务维护可能影响同步结果。</p>
+  <p><strong>在执行覆盖本地数据的云端获取操作前，请确认云端数据符合预期。您应自行核对同步状态和令牌可用性。</strong></p>
+
+  <h2>6. 服务变更与中止</h2>
+  <p>我们可能基于安全、兼容性、法律法规或产品维护需要更新本应用。我们会尽力维护服务稳定，但不保证所有设备、系统版本、第三方二维码格式或第三方账号服务始终兼容。</p>
+
+  <h2>7. 免责声明</h2>
+  <p><strong>本应用按现状提供。在法律允许的范围内，因网络故障、系统限制、第三方服务异常、不可抗力、用户操作错误或超出我们合理控制范围的原因导致服务中断、同步失败或数据损失，我们不承担超出法律规定范围的责任。</strong></p>
+  <p>本应用生成的验证码是否被第三方服务接受，取决于密钥、时间、算法、位数、刷新周期及第三方服务配置。请以相关第三方服务的实际验证结果为准。</p>
+
+  <h2>8. 知识产权</h2>
+  <p>本应用的软件、界面和相关内容的知识产权归其权利人所有。未经授权，您不得对本应用进行违法复制、传播、出租、出售或用于侵犯他人权利的活动。开源组件按照各自许可证使用。</p>
+
+  <h2>9. 隐私保护</h2>
+  <p>我们重视您的个人信息和令牌数据安全。关于信息处理范围、权限用途及您的权利，请查阅应用内“隐私声明”。本协议与隐私声明共同构成您使用本应用的依据。</p>
+
+  <h2>10. 协议更新</h2>
+  <p>我们可能根据功能变化或法律法规要求更新本协议，并通过应用页面或发布渠道提供新版本。若您不同意更新后的协议，应停止使用本应用；继续使用即表示您接受更新内容。</p>
+
+  <h2>11. 法律适用与争议解决</h2>
+  <p>本协议的订立、执行和解释适用中华人民共和国法律。发生争议时，双方应先友好协商；协商不成的，可依法向有管辖权的人民法院提起诉讼。</p>
+
+  <h2>12. 联系我们</h2>
+  <p>如对本协议或本应用有疑问，可发送邮件至 <a href="mailto:1207523787@qq.com">1207523787@qq.com</a>。</p>
+
+  <footer>Tool_2FA 开发者</footer>
+</main>
+</body>
+</html>
