@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1242" height="2688" viewBox="0 0 1242 2688">
+<defs>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity=".18"/></filter>
+<filter id="deepShadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity=".34"/></filter>
+<radialGradient id="yellowGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EBC500" stop-opacity=".55"/><stop offset="52%" stop-color="#EBC500" stop-opacity=".18"/><stop offset="100%" stop-color="#EBC500" stop-opacity="0"/></radialGradient>
+<linearGradient id="softCard" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".98"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity=".74"/></linearGradient>
+<linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2C2C2C"/><stop offset="100%" stop-color="#171717"/></linearGradient>
+</defs>
+<rect width="100%" height="100%" fill="#050505"/>
+<style>text{font-family:'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;dominant-baseline:hanging} .en{font-family:'Arial Black', 'HarmonyOS Sans', sans-serif}</style>
+<circle cx="330" cy="450" r="300" fill="url(#yellowGlow)"/>
+<text x="90" y="140" font-size="84" font-weight="900" fill="#FFFFFF" text-anchor="start">扫码、导入、</text>
+<text x="90" y="238" font-size="84" font-weight="900" fill="#FFFFFF" text-anchor="start">录入</text>
+<text x="90" y="358" font-size="30" font-weight="400" fill="#B7B7B7" text-anchor="start">迁移码、二维码、文件导入都在一个入口</text>
+<rect x="290" y="720" width="660" height="1420" rx="58" fill="#0B0B0B" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<rect x="300" y="730" width="640" height="1400" rx="50" fill="#050505" stroke="none" stroke-width="1"/>
+<circle cx="620" cy="762" r="18" fill="#020202" stroke="none" stroke-width="1"/>
+<text x="324" y="806" font-size="38" font-weight="800" fill="#EAEAEA" text-anchor="start">令牌</text>
+<rect x="324" y="880" width="592" height="86" rx="28" fill="#181818" stroke="none" stroke-width="1"/>
+<text x="358" y="904" font-size="22" font-weight="700" fill="#E7E7E7" text-anchor="start">验证令牌1</text>
+<text x="358" y="910" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 846.00 903.00 A 24.00 24.00 0 1 1 825.22 939.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="914" font-size="18" font-weight="800" fill="#F8F8F8" text-anchor="middle" class="en">20</text>
+<rect x="324" y="988" width="592" height="86" rx="28" fill="#181818" stroke="none" stroke-width="1"/>
+<text x="358" y="1012" font-size="22" font-weight="700" fill="#E7E7E7" text-anchor="start">验证令牌2</text>
+<text x="358" y="1018" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 846.00 1011.00 A 24.00 24.00 0 1 1 825.22 1047.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1022" font-size="18" font-weight="800" fill="#F8F8F8" text-anchor="middle" class="en">20</text>
+<rect x="324" y="1096" width="592" height="86" rx="28" fill="#181818" stroke="none" stroke-width="1"/>
+<text x="358" y="1120" font-size="22" font-weight="700" fill="#E7E7E7" text-anchor="start">验证令牌3</text>
+<text x="358" y="1126" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 846.00 1119.00 A 24.00 24.00 0 1 1 825.22 1155.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1130" font-size="18" font-weight="800" fill="#F8F8F8" text-anchor="middle" class="en">20</text>
+<rect x="324" y="1204" width="592" height="86" rx="28" fill="#181818" stroke="none" stroke-width="1"/>
+<text x="358" y="1228" font-size="22" font-weight="700" fill="#E7E7E7" text-anchor="start">验证令牌4</text>
+<text x="358" y="1234" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 846.00 1227.00 A 24.00 24.00 0 1 1 825.22 1263.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1238" font-size="18" font-weight="800" fill="#F8F8F8" text-anchor="middle" class="en">20</text>
+<rect x="324" y="1312" width="592" height="86" rx="28" fill="#181818" stroke="none" stroke-width="1"/>
+<text x="358" y="1336" font-size="22" font-weight="700" fill="#E7E7E7" text-anchor="start">验证令牌5</text>
+<text x="358" y="1342" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 846.00 1335.00 A 24.00 24.00 0 1 1 825.22 1371.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1346" font-size="18" font-weight="800" fill="#F8F8F8" text-anchor="middle" class="en">20</text>
+<rect x="300" y="730" width="640" height="1400" rx="50" fill="#000000" stroke="none" stroke-width="1" opacity="0.64"/>
+<rect x="330" y="1730" width="580" height="352" rx="46" fill="url(#darkPanel)" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<circle cx="440" cy="1850" r="48" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 426 1867 L 456 1837 L 464 1845 L 434 1875 L 420 1879 Z" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
+<path d="M 451 1832 L 462 1843" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<text x="440" y="1926" font-size="26" font-weight="800" fill="#FFFFFF" text-anchor="middle">录入</text>
+<circle cx="620" cy="1850" r="48" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 596 1842 L 596 1826 L 612 1826" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<path d="M 644 1842 L 644 1826 L 628 1826" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<path d="M 596 1858 L 596 1874 L 612 1874" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<path d="M 644 1858 L 644 1874 L 628 1874" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+<path d="M 595 1850 H 645" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+<text x="620" y="1926" font-size="26" font-weight="800" fill="#FFFFFF" text-anchor="middle">扫码</text>
+<circle cx="800" cy="1850" r="48" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 800 1822 V 1858" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+<path d="M 784 1842 L 800 1858 L 816 1842" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 772 1863 V 1878 H 828 V 1863" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="800" y="1926" font-size="26" font-weight="800" fill="#FFFFFF" text-anchor="middle">导入</text>
+<text x="90" y="2315" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="start">Google Authenticator 迁移码可解析</text>
+<text x="90" y="2370" font-size="25" font-weight="400" fill="#AFAFAF" text-anchor="start">批量导入时会校验密钥格式，避免无效令牌。</text>
+</svg>

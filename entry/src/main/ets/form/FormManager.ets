@@ -11,13 +11,13 @@ const PREFS_NAME = 'tool_2fa_forms';
 const FORM_IDS_KEY = 'formIds';
 const CARD_TOKEN_IDS_KEY = 'cardTokenIds';
 const CARD_TOKEN_SNAPSHOT_KEY = 'cardTokenSnapshot';
-const MAX_FORM_TOKENS = 8;
+const MAX_SLOTS = 8;
 
 export class FormManager {
   private static context: common.Context | null = null;
 
   static init(context: common.Context): void {
-    FormManager.context = context;
+    FormManager.context = context.getApplicationContext();
   }
 
   static async addFormId(formId: string): Promise<void> {
@@ -99,7 +99,6 @@ export class FormManager {
       const records = JSON.parse(json) as TokenRecord[];
       return records.map((record: TokenRecord) => sanitizeTokenRecord(record));
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'getCardTokenSnapshot failed: %{public}s', JSON.stringify(error));
       return [];
     }
   }
@@ -113,7 +112,7 @@ export class FormManager {
       await store.put(CARD_TOKEN_SNAPSHOT_KEY, JSON.stringify(tokens));
       await store.flush();
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'saveCardTokenSnapshot failed: %{public}s', JSON.stringify(error));
+      hilog.error(DOMAIN, TAG, 'saveSnapshot failed: %{public}s', JSON.stringify(error));
     }
   }
 
@@ -123,47 +122,68 @@ export class FormManager {
     if (formIds.length === 0) {
       return;
     }
-    const formData = FormManager.buildFormData(await FormManager.selectedTokens(allTokens));
+    const selected = await FormManager.selectedTokens(allTokens);
+    const formData = FormManager.buildFormData(selected);
     for (const formId of formIds) {
       try {
         await formProvider.updateForm(formId, formBindingData.createFormBindingData(formData));
       } catch (error) {
-        hilog.error(DOMAIN, TAG, 'updateForm %{public}s failed: %{public}s', formId, JSON.stringify(error));
+        hilog.error(DOMAIN, TAG, 'updateAllForms formId=%{public}s err=%{public}s', formId, JSON.stringify(error));
       }
     }
   }
 
   static async updateForm(formId: string, allTokens: TokenRecord[]): Promise<void> {
-    const formData = FormManager.buildFormData(await FormManager.selectedTokens(allTokens));
+    const selected = await FormManager.selectedTokens(allTokens);
+    const formData = FormManager.buildFormData(selected);
     try {
       await formProvider.updateForm(formId, formBindingData.createFormBindingData(formData));
     } catch (error) {
-      hilog.error(DOMAIN, TAG, 'updateForm %{public}s failed: %{public}s', formId, JSON.stringify(error));
+      hilog.error(DOMAIN, TAG, 'updateForm formId=%{public}s err=%{public}s', formId, JSON.stringify(error));
+    }
+  }
+
+  static async refreshAllFormsWithSnapshot(): Promise<void> {
+    const formIds = await FormManager.getFormIds();
+    if (formIds.length === 0) {
+      return;
+    }
+    const tokens = await FormManager.getCardTokenSnapshot();
+    if (tokens.length === 0) {
+      return;
+    }
+    const selected = await FormManager.selectedTokens(tokens);
+    const formData = FormManager.buildFormData(selected);
+    for (const formId of formIds) {
+      try {
+        await formProvider.updateForm(formId, formBindingData.createFormBindingData(formData));
+      } catch (error) {
+        hilog.error(DOMAIN, TAG, 'refreshAll formId=%{public}s err=%{public}s', formId, JSON.stringify(error));
+      }
     }
   }
 
   private static async selectedTokens(allTokens: TokenRecord[]): Promise<TokenRecord[]> {
     const selectedIds = await FormManager.getCardTokenIds();
-    const selectedTokens: TokenRecord[] = [];
+    const result: TokenRecord[] = [];
     for (const id of selectedIds) {
       const token = allTokens.find((t: TokenRecord) => t.id === id);
       if (token) {
-        selectedTokens.push(token);
+        result.push(token);
       }
     }
-    if (selectedTokens.length === 0 && allTokens.length > 0) {
-      selectedTokens.push(...allTokens.slice(0, MAX_FORM_TOKENS));
+    if (result.length === 0 && allTokens.length > 0) {
+      result.push(...allTokens.slice(0, MAX_SLOTS));
     }
-    return selectedTokens;
+    return result.slice(0, MAX_SLOTS);
   }
 
   static buildFormData(tokens: TokenRecord[]): Record<string, number | string> {
     const data: Record<string, number | string> = {};
     const now = Date.now();
-    const maxSlots = MAX_FORM_TOKENS;
-    data['count'] = Math.min(tokens.length, maxSlots);
+    data['count'] = Math.min(tokens.length, MAX_SLOTS);
 
-    for (let i = 0; i < maxSlots; i++) {
+    for (let i = 0; i < MAX_SLOTS; i++) {
       const idx = i + 1;
       if (i < tokens.length) {
         const token = sanitizeTokenRecord(tokens[i]);
@@ -173,45 +193,6 @@ export class FormManager {
           token.secret, now, token.algorithm, digits, period, token.type, token.counter ?? 0
         ));
         const seconds = Math.floor(now / 1000);
-        const elapsed = seconds % period;
-        const remaining = period - elapsed;
-        const progress = (remaining / period) * 100;
-
-        data[`t${idx}Name`] = token.name;
-        data[`t${idx}Remark`] = token.remark;
-        data[`t${idx}Code`] = code;
-        data[`t${idx}Remaining`] = remaining;
-        data[`t${idx}Period`] = period;
-        data[`t${idx}Progress`] = progress;
-        data[`t${idx}Type`] = token.type;
-      } else {
-        data[`t${idx}Name`] = '';
-        data[`t${idx}Remark`] = '';
-        data[`t${idx}Code`] = '';
-        data[`t${idx}Remaining`] = 0;
-        data[`t${idx}Period`] = 30;
-        data[`t${idx}Progress`] = 0;
-        data[`t${idx}Type`] = '';
-      }
-    }
-    return data;
-  }
-
-  static buildFormDataFromRaw(tokens: TokenRecord[], timeMs: number): Record<string, number | string> {
-    const data: Record<string, number | string> = {};
-    const maxSlots = MAX_FORM_TOKENS;
-    data['count'] = Math.min(tokens.length, maxSlots);
-
-    for (let i = 0; i < maxSlots; i++) {
-      const idx = i + 1;
-      if (i < tokens.length) {
-        const token = sanitizeTokenRecord(tokens[i]);
-        const period = token.type === 'HOTP' ? 30 : (token.period === 60 ? 60 : 30);
-        const digits = token.type === 'Steam' ? 5 : (token.digits ?? 6);
-        const code = Totp.formatCode(Totp.generate(
-          token.secret, timeMs, token.algorithm, digits, period, token.type, token.counter ?? 0
-        ));
-        const seconds = Math.floor(timeMs / 1000);
         const elapsed = seconds % period;
         const remaining = period - elapsed;
         const progress = (remaining / period) * 100;

@@ -1,0 +1,84 @@
+{
+  "string": [
+    {
+      "name": "EntryAbility_label",
+      "value": "開源驗證器"
+    },
+    {
+      "name": "FormAbility_label",
+      "value": "開源驗證器"
+    },
+    {
+      "name": "distributed_data_sync_reason",
+      "value": "用於在使用者的華為雲空間中同步權杖資料"
+    },
+    {
+      "name": "FormAbility_desc",
+      "value": "在桌面顯示權杖驗證碼"
+    },
+    {
+      "name": "widget_minimum_name",
+      "value": "權杖卡片（最小）"
+    },
+    {
+      "name": "widget_minimum_desc",
+      "value": "緊湊顯示單個權杖驗證碼"
+    },
+    {
+      "name": "widget_small_name",
+      "value": "權杖卡片"
+    },
+    {
+      "name": "widget_small_desc",
+      "value": "顯示兩個權杖驗證碼"
+    },
+    {
+      "name": "widget_medium_name",
+      "value": "權杖卡片"
+    },
+    {
+      "name": "widget_medium_desc",
+      "value": "顯示四個權杖驗證碼"
+    },
+    {
+      "name": "widget_large_name",
+      "value": "權杖卡片"
+    },
+    {
+      "name": "widget_large_desc",
+      "value": "顯示八個權杖驗證碼"
+    },
+    {
+      "name": "widget_minimum_dark_name",
+      "value": "權杖卡片深色（最小）"
+    },
+    {
+      "name": "widget_minimum_dark_desc",
+      "value": "深色緊湊顯示單個權杖驗證碼"
+    },
+    {
+      "name": "widget_small_dark_name",
+      "value": "權杖卡片深色"
+    },
+    {
+      "name": "widget_small_dark_desc",
+      "value": "深色顯示兩個權杖驗證碼"
+    },
+    {
+      "name": "widget_medium_dark_name",
+      "value": "權杖卡片深色"
+    },
+    {
+      "name": "widget_medium_dark_desc",
+      "value": "深色顯示四個權杖驗證碼"
+    },
+    {
+      "name": "widget_large_dark_name",
+      "value": "權杖卡片深色"
+    },
+    {
+      "name": "widget_large_dark_desc",
+      "value": "深色顯示八個權杖驗證碼"
+    }
+  ]
+}

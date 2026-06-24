@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<defs>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity=".18"/></filter>
+<filter id="deepShadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity=".34"/></filter>
+<radialGradient id="yellowGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EBC500" stop-opacity=".55"/><stop offset="52%" stop-color="#EBC500" stop-opacity=".18"/><stop offset="100%" stop-color="#EBC500" stop-opacity="0"/></radialGradient>
+<linearGradient id="softCard" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".98"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity=".74"/></linearGradient>
+<linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2C2C2C"/><stop offset="100%" stop-color="#171717"/></linearGradient>
+</defs>
+<rect width="100%" height="100%" fill="#EFEFEF"/>
+<style>text{font-family:'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;dominant-baseline:hanging} .en{font-family:'Arial Black', 'HarmonyOS Sans', sans-serif}</style>
+<circle cx="1520" cy="170" r="350" fill="url(#yellowGlow)"/>
+<rect x="110" y="90" width="84" height="84" rx="14" fill="#050505" stroke="none" stroke-width="1"/>
+<path d="M 152.0 105.12 C 144.44 115.2 133.52 119.4 126.8 119.4 L 124.28 137.04 C 124.28 151.32 135.2 161.39999999999998 152.0 168.95999999999998 C 168.8 161.39999999999998 179.72 151.32 179.72 137.04 L 177.2 119.4 C 170.48 119.4 159.56 115.2 152.0 105.12 Z" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+<circle cx="152" cy="136" r="9" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<path d="M 152.0 147.12 C 141.07999999999998 147.12 136.04 155.51999999999998 136.04 162.24 L 167.96 162.24 C 167.96 155.51999999999998 162.92 147.12 152.0 147.12 Z" fill="#FFFFFF"/>
+<text x="215" y="105" font-size="44" font-weight="900" fill="#111111" text-anchor="start" class="en">Authenticator</text>
+<text x="110" y="210" font-size="70" font-weight="900" fill="#111111" text-anchor="start">专业的动态令牌管理器</text>
+<text x="112" y="305" font-size="30" font-weight="400" fill="#5F6368" text-anchor="start">把常用验证码、导入、备份与桌面卡片放进同一个简洁体验。</text>
+<rect x="490" y="385" width="1250" height="436" rx="34" fill="#0A0A0A" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<rect x="502" y="397" width="1226" height="412" rx="24" fill="#F2F3F5" stroke="none" stroke-width="1"/>
+<rect x="895" y="821" width="440" height="124" rx="34" fill="#D9D9D9" stroke="none" stroke-width="1"/>
+<rect x="400" y="927" width="1430" height="34" rx="18" fill="#CFCFCF" stroke="none" stroke-width="1"/>
+<text x="548" y="443" font-size="42" font-weight="800" fill="#111111" text-anchor="start">令牌</text>
+<rect x="548" y="509" width="1134" height="56" rx="28" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="1"/>
+<circle cx="586.1" cy="535.1" r="7.7" fill="none" stroke="#858585" stroke-width="3"/>
+<path d="M 591.6 540.6 L 597.1 546.1" stroke="#858585" stroke-width="3" stroke-linecap="round"/>
+<text x="616" y="521" font-size="23" font-weight="400" fill="#858585" text-anchor="start">Search</text>
+<rect x="548" y="597" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="582" y="621" font-size="22" font-weight="700" fill="#111111" text-anchor="start">GitCode</text>
+<text x="582" y="663" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<path d="M 841.00 638.00 A 24.00 24.00 0 1 1 818.17 654.58" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="841" y="649" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">24</text>
+<rect x="933" y="597" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="967" y="621" font-size="22" font-weight="700" fill="#111111" text-anchor="start">Cloud</text>
+<text x="967" y="663" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">240 771</text>
+<path d="M 1226.00 638.00 A 24.00 24.00 0 1 1 1202.13 659.49" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="1226" y="649" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">23</text>
+<rect x="1318" y="597" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="1352" y="621" font-size="22" font-weight="700" fill="#111111" text-anchor="start">OpenAI</text>
+<text x="1352" y="663" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">572 009</text>
+<path d="M 1611.00 638.00 A 24.00 24.00 0 1 1 1587.13 664.51" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="1611" y="649" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">22</text>
+<rect x="548" y="741" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="582" y="765" font-size="22" font-weight="700" fill="#111111" text-anchor="start">Steam</text>
+<text x="582" y="807" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">A7D3K</text>
+<path d="M 841.00 782.00 A 24.00 24.00 0 1 1 818.17 813.42" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="841" y="793" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">21</text>
+<rect x="933" y="741" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="967" y="765" font-size="22" font-weight="700" fill="#111111" text-anchor="start">HOTP</text>
+<text x="967" y="807" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">004 922</text>
+<path d="M 1226.00 782.00 A 24.00 24.00 0 1 1 1205.22 818.00" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="1226" y="793" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">20</text>
+<rect x="1318" y="741" width="363" height="122" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="1352" y="765" font-size="22" font-weight="700" fill="#111111" text-anchor="start">Work</text>
+<text x="1352" y="807" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">776 219</text>
+<path d="M 1611.00 782.00 A 24.00 24.00 0 1 1 1593.16 822.06" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="1611" y="793" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">19</text>
+</svg>

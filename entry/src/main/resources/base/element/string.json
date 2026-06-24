@@ -10,7 +10,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "开源验证器"
     },
     {
       "name": "distributed_data_sync_reason",
@@ -18,7 +18,7 @@
     },
     {
       "name": "FormAbility_label",
-      "value": "2FA令牌卡片"
+      "value": "开源验证器"
     },
     {
       "name": "FormAbility_desc",
@@ -58,7 +58,7 @@
     },
     {
       "name": "widget_minimum_dark_name",
-      "value": "Authenticator 深色（最小）"
+      "value": "开源验证器 深色（最小）"
     },
     {
       "name": "widget_minimum_dark_desc",
@@ -66,7 +66,7 @@
     },
     {
       "name": "widget_small_dark_name",
-      "value": "Authenticator 深色"
+      "value": "开源验证器 深色"
     },
     {
       "name": "widget_small_dark_desc",
@@ -74,7 +74,7 @@
     },
     {
       "name": "widget_medium_dark_name",
-      "value": "Authenticator 深色"
+      "value": "开源验证器 深色"
     },
     {
       "name": "widget_medium_dark_desc",
@@ -82,7 +82,7 @@
     },
     {
       "name": "widget_large_dark_name",
-      "value": "Authenticator 深色"
+      "value": "开源验证器 深色"
     },
     {
       "name": "widget_large_dark_desc",

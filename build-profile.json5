@@ -1,10 +1,37 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001A69D240B34192B398F8A8C4A876C0B79C11FB675ECF42052F58FEA4057D7B5B879A2D1EE1E1A0",
+          "profile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p12",
+          "storePassword": "0000001AEF7A66F019F5C7596ACA4A0704CAAF263C3F83082A37D59E3DAF75FA6E5A0BD64896A4B92F30"
+        }
+      },
+      {
+        "name": "release",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "/Users/mroble/DevEcoStudioProjects/release1.0.p12",
+          "storePassword": "00000018105010AFBE2B5E6159BB8C2E978CD005C3E105CE754BD93A89BD00669BFF5644B50E3DA4",
+          "keyAlias": "release1.0",
+          "keyPassword": "00000018415C529BAB49CA839A58DBE64C977EA6167CE3ED6A132ECE55E9E324FB0BAAD4A85AC9FB",
+          "signAlg": "SHA256withECDSA",
+          "profile": "/Users/mroble/DevEcoStudioProjects/release1.0Release.p7b",
+          "certpath": "/Users/mroble/DevEcoStudioProjects/release1.0.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
+        "signingConfig": "release",
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.1(24)",
         "runtimeOS": "HarmonyOS",
@@ -18,7 +45,7 @@
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "release",
       },
       {
         "name": "release"
@@ -31,7 +58,7 @@
       "srcPath": "./entry",
       "targets": [
         {
-          "name": "default",
+          "name": "release",
           "applyToProducts": [
             "default"
           ]

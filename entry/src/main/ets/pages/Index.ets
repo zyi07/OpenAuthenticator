@@ -3,10 +3,11 @@ import { authentication } from '@kit.AccountKit';
 import { privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
 import { LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
-import { fileIo, picker } from '@kit.CoreFileKit';
-import { dlpAntiPeep } from '@kit.DeviceSecurityKit';
+import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
+import { i18n } from '@kit.LocalizationKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
-import { motion } from '@kit.MultimodalAwarenessKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { formInfo, formProvider } from '@kit.FormKit';
@@ -27,6 +28,16 @@ import { Totp } from '../utils/Totp';
 import { SettingsRepository } from '../data/SettingsRepository';
 import { FormManager } from '../form/FormManager';
 import { GoogleAuthenticatorMigration, GoogleOtpParameter } from '../utils/GoogleAuthenticatorMigration';
+import {
+  LANGUAGE_EN_GB,
+  LANGUAGE_EN_US,
+  LANGUAGE_SYSTEM,
+  LANGUAGE_ZH_CN,
+  LANGUAGE_ZH_TW,
+  normalizeSelectedLanguage,
+  systemLanguageTag,
+  translate
+} from '../utils/LocaleText';
 
 const APPLOCK_DOMAIN = 0x0001;
 const APPLOCK_TAG = 'AppLock';
@@ -60,6 +71,13 @@ const THEME_COLOR_OPTIONS: SelectOption[] = [
   { value: '雾霾蓝' },
   { value: '灰豆沙粉' },
   { value: '清透炭黑' }
+];
+const LANGUAGE_OPTIONS: SelectOption[] = [
+  { value: LANGUAGE_SYSTEM },
+  { value: LANGUAGE_ZH_CN },
+  { value: LANGUAGE_ZH_TW },
+  { value: LANGUAGE_EN_US },
+  { value: LANGUAGE_EN_GB }
 ];
 const DEFAULT_TOKEN_DIGITS: number = 6;
 const DEFAULT_TOKEN_PERIOD: number = 30;
@@ -120,6 +138,11 @@ enum HomeTab {
   Me
 }
 
+enum HoldingHandStatus {
+  NOT_HELD = 0,
+  LEFT_HAND_HELD = 1
+}
+
 @Entry
 @Component
 struct Index {
@@ -148,14 +171,17 @@ struct Index {
   @State private huaweiNickname: string = '';
   @State private huaweiAvatarUri: string = '';
   @State private huaweiUserId: string = '';
+  @State private huaweiLoginInProgress: boolean = false;
   @State private cloudBackupEnabled: boolean = false;
   @State private smartGripEnabled: boolean = false;
-  @State private holdingHandStatus: motion.HoldingHandStatus = motion.HoldingHandStatus.NOT_HELD;
+  @State private holdingHandStatus: HoldingHandStatus = HoldingHandStatus.NOT_HELD;
   @State private antiPeepEnabled: boolean = false;
   @State private appLockEnabled: boolean = false;
   @State private showNextToken: boolean = false;
   @State private themeModeInput: string = '跟随系统';
   @State private themeColorInput: string = '柠檬黄';
+  @State private languageInput: string = LANGUAGE_SYSTEM;
+  @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
   @State private cloudLastSyncTime: number = 0;
   @State private cloudSyncing: boolean = false;
@@ -167,6 +193,7 @@ struct Index {
   @StorageLink('tool2fa_isLocked') private isLocked: boolean = false;
 
   aboutToAppear(): void {
+    this.refreshSystemLanguage();
     this.loadTokens();
     this.loadSettings();
     this.loadCardTokenIds();
@@ -175,12 +202,7 @@ struct Index {
     }, 1000);
     this.cardTimerId = setInterval(() => {
       this.updateWidgetCards();
-    }, 5000);
-    try {
-      motion.on('holdingHandChanged', this.holdingHandChanged);
-    } catch (error) {
-      console.error(`Failed to register holdingHandChanged: ${JSON.stringify(error)}`);
-    }
+    }, 1000);
   }
   @StorageProp('tool2fa_statusBarHeight') private statusBarHeight: number = 0;
   @StorageProp('tool2fa_naviIndicatorHeight') private naviIndicatorHeight: number = 0;
@@ -195,24 +217,16 @@ struct Index {
   private timerId: number = -1;
   private authInstance: userAuth.UserAuthInstance | null = null;
   private cardTimerId: number = -1;
+  private importRejectedCount: number = 0;
   @State private cardSelectedTokenIds: string[] = [];
   @State private pendingCardTokenIds: string[] = [];
   @State private showCardTokenPicker: boolean = false;
   @State private showExportPicker: boolean = false;
   @State private exportSelectedIds: string[] = [];
+  @State private showExportFormat: boolean = false;
   @State private showExportQR: boolean = false;
   @State private exportQRIndex: number = 0;
-  private antiPeepCallback = (status: dlpAntiPeep.DlpAntiPeepStatus): void => {
-    if (status === dlpAntiPeep.DlpAntiPeepStatus.HIDE) {
-      dlpAntiPeep.publishAntiPeepInformation();
-      this.showToast('检测到多人注视，已触发防窥保护');
-    }
-  };
-
-  private holdingHandChanged = (status: motion.HoldingHandStatus): void => {
-    this.holdingHandStatus = status;
-  };
-
+  @State private isSavingQRCode: boolean = false;
   private async loadSettings(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
@@ -230,6 +244,8 @@ struct Index {
     this.huaweiUserId = settings.huaweiUserId;
     this.themeModeInput = settings.themeMode;
     this.themeColorInput = settings.themeColor;
+    this.languageInput = normalizeSelectedLanguage(settings.language);
+    this.refreshSystemLanguage();
     this.cloudSyncStatus = settings.cloudSyncStatus;
     this.cloudLastSyncTime = settings.cloudLastSyncTime;
     this.onboardingCompleted = settings.onboardingCompleted;
@@ -261,6 +277,7 @@ struct Index {
       huaweiUserId: this.huaweiUserId,
       themeMode: this.themeModeInput,
       themeColor: this.themeColorInput,
+      language: normalizeSelectedLanguage(this.languageInput),
       cloudSyncStatus: this.cloudSyncStatus,
       cloudLastSyncTime: this.cloudLastSyncTime,
       onboardingCompleted: this.onboardingCompleted
@@ -283,7 +300,7 @@ struct Index {
       authTrustLevel: userAuth.AuthTrustLevel.ATL1,
     };
     const widgetParam: userAuth.WidgetParam = {
-      title: '请进行身份验证',
+      title: this.t('请进行身份验证'),
     };
     try {
       this.authInstance = userAuth.getUserAuthInstance(authParam, widgetParam);
@@ -312,15 +329,15 @@ struct Index {
     Stack({ alignContent: Alignment.BottomEnd }) {
       if (this.appLockEnabled && this.isLocked) {
         Column() {
-          Text('应用已锁定')
+          Text(this.t('应用已锁定'))
             .fontSize(22)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
-          Text('请完成身份验证后使用')
+          Text(this.t('请完成身份验证后使用'))
             .fontSize(14)
             .fontColor(this.secondaryTextColor())
             .margin({ top: 8 })
-          Button('验证身份')
+          Button(this.t('验证身份'))
             .margin({ top: 24 })
             .width(160)
             .height(44)
@@ -392,7 +409,7 @@ struct Index {
         .titleBar({
           content: {
             title: {
-              mainTitle: this.editingTokenId.length > 0 ? '编辑令牌' : '新增令牌'
+              mainTitle: this.editingTokenId.length > 0 ? this.t('编辑令牌') : this.t('新增令牌')
             },
             backIcon: {
               action: () => {
@@ -476,7 +493,7 @@ struct Index {
       .width('100%')
 
       Row({ space: 12 }) {
-        Button('跳过')
+        Button(this.t('跳过'))
           .height(44)
           .layoutWeight(1)
           .fontSize(14)
@@ -486,7 +503,7 @@ struct Index {
             this.completeOnboarding();
           })
 
-        Button(this.onboardingPage === 3 ? '开始使用' : '下一页')
+        Button(this.onboardingPage === 3 ? this.t('开始使用') : this.t('下一页'))
           .height(44)
           .layoutWeight(2)
           .fontSize(15)
@@ -520,11 +537,11 @@ struct Index {
           .height(112)
           .borderRadius(28)
           .objectFit(ImageFit.Cover)
-        Text('Authenticator')
+        Text(this.t('开源验证器'))
           .fontSize(30)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-        Text('专注、安全、随时可用的二次验证器')
+        Text(this.t('专注、安全、随时可用的二次验证器'))
           .fontSize(16)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -537,11 +554,11 @@ struct Index {
         }
         .width('100%')
         .justifyContent(FlexAlign.SpaceAround)
-        Text('多种录入方式')
+        Text(this.t('多种录入方式'))
           .fontSize(26)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-        Text('录入密钥、扫描二维码或导入备份，轻松迁移你的令牌。')
+        Text(this.t('录入密钥、扫描二维码或导入备份，轻松迁移你的令牌。'))
           .fontSize(16)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -551,11 +568,11 @@ struct Index {
           .width(80)
           .height(80)
           .objectFit(ImageFit.Contain)
-        Text('一眼掌握所有令牌')
+        Text(this.t('一眼掌握所有令牌'))
           .fontSize(26)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-        Text('手机、折叠屏和平板自适应排版，桌面服务卡片让常用令牌抬眼即见。')
+        Text(this.t('手机、折叠屏和平板自适应排版，桌面服务卡片让常用令牌抬眼即见。'))
           .fontSize(16)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -568,12 +585,12 @@ struct Index {
         }
         .width('100%')
         .justifyContent(FlexAlign.SpaceAround)
-        Text('备份与隐私，都由你决定')
+        Text(this.t('备份与隐私，都由你决定'))
           .fontSize(26)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .textAlign(TextAlign.Center)
-        Text('可选华为云空间同步、JSON 或二维码备份，并提供应用锁与防窥保护。')
+        Text(this.t('可选华为云空间同步、JSON 或二维码备份，并提供应用锁与防窥保护。'))
           .fontSize(16)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -613,7 +630,7 @@ struct Index {
             .width(7)
             .height(7)
             .fill(this.accentColor())
-          Text(feature)
+          Text(this.t(feature))
             .fontSize(14)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
@@ -681,7 +698,7 @@ struct Index {
       .titleBar({
         content: {
           title: {
-            mainTitle: name === 'cloudSpace' ? '华为云空间' : '设置'
+            mainTitle: name === 'cloudSpace' ? this.t('华为云空间') : this.t('设置')
           },
           backIcon: {
             action: () => {
@@ -772,11 +789,22 @@ struct Index {
         ListItem() {
           this.MeActionCard([
             ['华为云空间', $r('app.media.ic_me_cloud')],
-            ['备份导出', $r('app.media.ic_me_cloud')],
+            ['备份导出', $r('app.media.ic_me_export')],
             ['设置', $r('app.media.ic_me_settings')]
           ], 0)
         }
         .width('100%')
+        .bindSheet(this.showExportPicker, this.ExportTokenPickerSheet(), {
+          height: SheetSize.MEDIUM,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.cardBackgroundColor(),
+          blurStyle: BlurStyle.COMPONENT_THIN,
+          radius: LengthMetrics.vp(28),
+          onDisappear: () => {
+            this.showExportPicker = false;
+          }
+        })
 
         ListItem() {
           this.MeActionCard([
@@ -785,7 +813,17 @@ struct Index {
           ], 1)
         }
         .width('100%')
-
+        .bindSheet(this.showExportQR, this.ExportQRCodeSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.cardBackgroundColor(),
+          blurStyle: BlurStyle.COMPONENT_THIN,
+          radius: LengthMetrics.vp(28),
+          onDisappear: () => {
+            this.showExportQR = false;
+          }
+        })
         ListItem() {
           this.MeActionCard([
             ['开源地址', $r('app.media.ic_me_gitcode')],
@@ -795,6 +833,17 @@ struct Index {
           ], 2)
         }
         .width('100%')
+        .bindSheet(this.showExportFormat, this.ExportFormatSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.cardBackgroundColor(),
+          blurStyle: BlurStyle.COMPONENT_THIN,
+          radius: LengthMetrics.vp(28),
+          onDisappear: () => {
+            this.showExportFormat = false;
+          }
+        })
       }
     }
     .width('100%')
@@ -827,14 +876,15 @@ struct Index {
       this.MeAvatar()
 
       Column({ space: 4 }) {
-        Text(this.isHuaweiLoggedIn ? this.huaweiNickname : '登录华为账号')
+        Text(this.isHuaweiLoggedIn ? this.displayHuaweiNickname() : this.t('登录华为账号'))
           .fontSize(ME_TEXT_SIZE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.isHuaweiLoggedIn ? '已登录·点击退出' : '点击登录')
+        Text(this.isHuaweiLoggedIn ? this.t('已登录·点击退出') :
+          (this.huaweiLoginInProgress ? this.t('正在登录') : this.t('点击登录')))
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.secondaryTextColor())
@@ -851,7 +901,7 @@ struct Index {
     .onClick(() => {
       if (this.isHuaweiLoggedIn) {
         this.logoutHuaweiAccount();
-      } else {
+      } else if (!this.huaweiLoginInProgress) {
         this.loginHuaweiAccount();
       }
     })
@@ -889,6 +939,10 @@ struct Index {
     }
   }
 
+  private displayHuaweiNickname(): string {
+    return this.huaweiNickname === '华为账号' ? this.t('华为账号') : this.huaweiNickname;
+  }
+
   @Builder
   private MeActionCard(items: Array<[string, Resource]>, group: number) {
     Column() {
@@ -916,7 +970,7 @@ struct Index {
         .height(ME_ACTION_ICON_SIZE)
         .objectFit(ImageFit.Contain)
 
-      Text(label)
+      Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
@@ -974,7 +1028,7 @@ struct Index {
   @Builder
   private SettingsSecuritySection() {
     Column() {
-      this.SettingsSectionTitle('功能与安全')
+      this.SettingsSectionTitle(this.t('功能与安全'))
       this.SettingsSecurityCard()
     }
     .width('100%')
@@ -983,7 +1037,7 @@ struct Index {
   @Builder
   private SettingsAppearanceSection() {
     Column() {
-      this.SettingsSectionTitle('界面外观')
+      this.SettingsSectionTitle(this.t('界面外观'))
       this.SettingsAppearanceCard()
     }
     .width('100%')
@@ -992,7 +1046,7 @@ struct Index {
   @Builder
   private SettingsWidgetSection() {
     Column() {
-      this.SettingsSectionTitle('服务卡片')
+      this.SettingsSectionTitle(this.t('服务卡片'))
       this.SettingsCardWidgetCard()
     }
     .width('100%')
@@ -1013,7 +1067,7 @@ struct Index {
     Stack() {
       Scroll(this.cloudSpaceScroller) {
         Column({ space: PAGE_CARD_GAP }) {
-          Text('同步设置')
+          Text(this.t('同步设置'))
             .fontSize(ME_ACTION_TEXT_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
@@ -1031,7 +1085,7 @@ struct Index {
           .borderRadius(ME_CARD_RADIUS)
           .backgroundColor(this.cardBackgroundColor())
 
-          Text('同步操作')
+          Text(this.t('同步操作'))
             .fontSize(ME_ACTION_TEXT_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
@@ -1057,7 +1111,7 @@ struct Index {
           .borderRadius(ME_CARD_RADIUS)
           .backgroundColor(this.cardBackgroundColor())
 
-          Text('同步记录')
+          Text(this.t('同步记录'))
             .fontSize(ME_ACTION_TEXT_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
@@ -1065,7 +1119,7 @@ struct Index {
             .padding({ left: 20, top: 18, bottom: 8 })
 
           Column() {
-            this.CloudSpaceInfoRow('同步状态', this.cloudSyncStatus)
+            this.CloudSpaceInfoRow('同步状态', this.t(this.cloudSyncStatus))
             this.MeCardDivider()
             this.CloudSpaceInfoRow('最后同步时间', this.cloudLastSyncTimeText())
           }
@@ -1098,13 +1152,13 @@ struct Index {
   private ExportTokenPickerSheet() {
     Column() {
       Row() {
-        Text('选择要导出的令牌')
+        Text(this.t('选择要导出的令牌'))
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
-        Text(this.exportSelectedIds.length === this.tokens.length ? '取消全选' : '全选')
+        Text(this.exportSelectedIds.length === this.tokens.length ? this.t('取消全选') : this.t('全选'))
           .fontSize(14)
           .fontColor(this.accentColor())
           .onClick(() => {
@@ -1116,7 +1170,7 @@ struct Index {
       .height(52)
       .padding({ left: 20, right: 20 })
 
-      Text(`已选 ${this.exportSelectedIds.length} 个令牌`)
+      Text(this.tf('已选 {0} 个令牌', [`${this.exportSelectedIds.length}`]))
         .width('100%')
         .fontSize(12)
         .fontColor(this.secondaryTextColor())
@@ -1125,7 +1179,7 @@ struct Index {
       List() {
         if (this.tokens.length === 0) {
           ListItem() {
-            Text('暂无令牌，请先添加令牌')
+            Text(this.t('暂无令牌，请先添加令牌'))
               .fontSize(14)
               .fontColor(this.secondaryTextColor())
               .width('100%')
@@ -1171,7 +1225,7 @@ struct Index {
       .scrollBar(BarState.Off)
 
       Row({ space: 12 }) {
-        Button('取消')
+        Button(this.t('取消'))
           .layoutWeight(1)
           .height(40)
           .fontSize(14)
@@ -1181,7 +1235,7 @@ struct Index {
             this.showExportPicker = false;
           })
 
-        Button('下一步')
+        Button(this.t('下一步'))
           .layoutWeight(1)
           .height(40)
           .fontSize(14)
@@ -1203,6 +1257,99 @@ struct Index {
   }
 
   @Builder
+  private ExportFormatSheet() {
+    Column({ space: 16 }) {
+      Column({ space: 6 }) {
+        Text(this.t('选择导出格式'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+
+        Text(this.t('请选择密钥备份的导出方式'))
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column() {
+        this.ExportFormatOption(
+          this.t('密钥 JSON 文件'),
+          this.t('适合完整备份及跨设备导入'),
+          () => {
+            this.showExportFormat = false;
+            setTimeout(() => {
+              this.exportAsJSON();
+            }, 180);
+          }
+        )
+
+        this.MeCardDivider()
+
+        this.ExportFormatOption(
+          this.t('二维码图片'),
+          this.t('适合通过其他认证器逐个扫描导入'),
+          () => {
+            this.exportQRIndex = 0;
+            this.showExportFormat = false;
+            setTimeout(() => {
+              this.showExportQR = true;
+            }, 180);
+          }
+        )
+      }
+      .width('100%')
+      .padding({ left: 18, right: 18 })
+      .borderRadius(ME_CARD_RADIUS)
+      .backgroundColor(this.searchBackgroundColor())
+
+      Button(this.t('取消'))
+        .width('100%')
+        .height(44)
+        .fontSize(14)
+        .fontColor(this.primaryTextColor())
+        .backgroundColor(this.searchBackgroundColor())
+        .onClick(() => {
+          this.showExportFormat = false;
+        })
+    }
+    .width('100%')
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      top: 8,
+      bottom: this.naviIndicatorHeight + 16
+    })
+  }
+
+  @Builder
+  private ExportFormatOption(title: string, description: string, action: () => void) {
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text(title)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+
+        Text(description)
+          .fontSize(12)
+          .fontColor(this.secondaryTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Image($r('app.media.ic_me_right'))
+        .width(ME_ARROW_WIDTH)
+        .height(ME_ARROW_HEIGHT)
+        .objectFit(ImageFit.Contain)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+    .onClick(action)
+  }
+
+  @Builder
   private ExportQRCodeSheet() {
     Column() {
       if (this.exportQRIndex < this.exportSelectedTokens().length) {
@@ -1210,44 +1357,104 @@ struct Index {
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-          .margin({ top: 8, bottom: 16 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 8, bottom: 14 })
 
-        QRCode(this.buildOtpAuthUri(this.exportSelectedTokens()[this.exportQRIndex]))
-          .width(220)
-          .height(220)
-          .color(this.primaryTextColor())
-          .backgroundColor(this.cardBackgroundColor())
-          .margin({ bottom: 12 })
+        Row({ space: 10 }) {
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_me_right'))
+              .width(8)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+              .rotate({ angle: 180 })
+          }
+          .width(40)
+          .height(40)
+          .backgroundColor(this.searchBackgroundColor())
+          .enabled(this.exportQRIndex > 0 && !this.isSavingQRCode)
+          .opacity(this.exportQRIndex > 0 ? 1 : 0.35)
+          .onClick(() => {
+            if (this.exportQRIndex > 0) {
+              this.exportQRIndex--;
+            }
+          })
+
+          Stack() {
+            QRCode(this.buildOtpAuthUri(this.exportSelectedTokens()[this.exportQRIndex]))
+              .width(this.exportQRCodeSize() - 24)
+              .height(this.exportQRCodeSize() - 24)
+              .color('#000000')
+              .backgroundColor('#FFFFFF')
+          }
+          .id('exportCurrentQrCode')
+          .width(this.exportQRCodeSize())
+          .height(this.exportQRCodeSize())
+          .padding(12)
+          .borderRadius(8)
+          .backgroundColor('#FFFFFF')
+
+          Button({ type: ButtonType.Circle }) {
+            Image($r('app.media.ic_me_right'))
+              .width(8)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+          }
+          .width(40)
+          .height(40)
+          .backgroundColor(this.searchBackgroundColor())
+          .enabled(this.exportQRIndex < this.exportSelectedTokens().length - 1 && !this.isSavingQRCode)
+          .opacity(this.exportQRIndex < this.exportSelectedTokens().length - 1 ? 1 : 0.35)
+          .onClick(() => {
+            if (this.exportQRIndex < this.exportSelectedTokens().length - 1) {
+              this.exportQRIndex++;
+            }
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
 
         Text(`${this.exportQRIndex + 1}/${this.exportSelectedTokens().length}`)
           .fontSize(12)
           .fontColor(this.secondaryTextColor())
-          .margin({ bottom: 16 })
+          .margin({ top: 10, bottom: 14 })
 
         Row({ space: 12 }) {
-          Button('上一个')
+          Button(this.isSavingQRCode ? this.t('保存中') : this.t('保存当前图片'))
             .fontSize(14)
+            .fontColor(this.primaryTextColor())
             .layoutWeight(1)
-            .enabled(this.exportQRIndex > 0)
+            .height(44)
+            .backgroundColor(this.searchBackgroundColor())
+            .enabled(!this.isSavingQRCode)
             .onClick(() => {
-              if (this.exportQRIndex > 0) {
-                this.exportQRIndex--;
+              if (!this.isSavingQRCode) {
+                this.saveCurrentQRCode();
               }
             })
-          Button(this.exportQRIndex === this.exportSelectedTokens().length - 1 ? '完成' : '下一个')
+
+          Button(this.isSavingQRCode ? this.t('保存中') : this.t('保存所有图片'))
             .fontSize(14)
-            .layoutWeight(1)
             .fontColor(this.accentContrastColor())
+            .layoutWeight(1)
+            .height(44)
             .backgroundColor(this.accentColor())
+            .enabled(!this.isSavingQRCode)
             .onClick(() => {
-              if (this.exportQRIndex < this.exportSelectedTokens().length - 1) {
-                this.exportQRIndex++;
-              } else {
-                this.showExportQR = false;
+              if (!this.isSavingQRCode) {
+                this.saveAllQRCodes();
               }
             })
         }
         .width('100%')
+        .opacity(this.isSavingQRCode ? 0.65 : 1)
+      } else {
+        Text(this.t('没有可导出的令牌'))
+          .fontSize(14)
+          .fontColor(this.secondaryTextColor())
+          .height(120)
+          .textAlign(TextAlign.Center)
       }
     }
     .width('100%')
@@ -1266,7 +1473,7 @@ struct Index {
   @Builder
   private CloudSpaceActionRow(label: string, action: () => void) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
@@ -1298,7 +1505,7 @@ struct Index {
   @Builder
   private CloudSpaceInfoRow(label: string, value: string) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
@@ -1329,9 +1536,15 @@ struct Index {
       this.SettingsSwitchRow('应用锁定', this.appLockEnabled, (isOn: boolean) => {
         this.toggleAppLock(isOn);
       })
+      this.MeCardDivider()
+      this.SettingsSelectRow('语言', this.languageInput, LANGUAGE_OPTIONS, false, (value: string) => {
+        this.languageInput = normalizeSelectedLanguage(value);
+        this.refreshSystemLanguage();
+        this.saveSettings();
+      })
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 3 + 2)
+    .height(ME_ROW_HEIGHT * 4 + 3)
     .padding({ left: 20, right: 18 })
     .borderRadius(ME_CARD_RADIUS)
     .backgroundColor(this.cardBackgroundColor())
@@ -1340,7 +1553,7 @@ struct Index {
   @Builder
   private SettingsSwitchRow(label: string, isOn: boolean, onChanged: (isOn: boolean) => void) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
@@ -1393,7 +1606,7 @@ struct Index {
     onSelected: (value: string) => void
   ) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
@@ -1408,9 +1621,9 @@ struct Index {
           .margin({ right: 8 })
       }
 
-      Select(values)
+      Select(this.localizedOptions(values))
         .selected(this.optionIndex(values, selectedValue))
-        .value(selectedValue)
+        .value(this.t(selectedValue))
         .font({ size: ME_ACTION_TEXT_SIZE, weight: FontWeight.Regular })
         .fontColor(this.secondaryTextColor())
         .selectedOptionFont({ size: ME_ACTION_TEXT_SIZE, weight: FontWeight.Regular })
@@ -1420,7 +1633,7 @@ struct Index {
         .backgroundColor(Color.Transparent)
         .padding({ left: 0, right: 0 })
         .onSelect((index: number, value: string) => {
-          onSelected(value);
+          onSelected(index >= 0 && index < values.length ? `${values[index].value}` : value);
         })
     }
     .width('100%')
@@ -1449,7 +1662,7 @@ struct Index {
       Row() {
         Column({ space: 4 }) {
           Text(this.cardSelectedTokenIds.length > 0 ?
-            `已选择 ${this.cardSelectedTokenIds.length} 个令牌` : '按首页顺序显示')
+            this.tf('已选择 {0} 个令牌', [`${this.cardSelectedTokenIds.length}`]) : this.t('按首页顺序显示'))
             .fontSize(13)
             .fontColor(this.secondaryTextColor())
 
@@ -1484,35 +1697,13 @@ struct Index {
         this.pendingCardTokenIds = [];
       }
     })
-    .bindSheet(this.showExportPicker, this.ExportTokenPickerSheet(), {
-      height: SheetSize.MEDIUM,
-      dragBar: true,
-      showClose: false,
-      backgroundColor: this.cardBackgroundColor(),
-      blurStyle: BlurStyle.COMPONENT_THIN,
-      radius: LengthMetrics.vp(28),
-      onDisappear: () => {
-        this.showExportPicker = false;
-      }
-    })
-    .bindSheet(this.showExportQR, this.ExportQRCodeSheet(), {
-      height: SheetSize.FIT_CONTENT,
-      dragBar: true,
-      showClose: false,
-      backgroundColor: this.cardBackgroundColor(),
-      blurStyle: BlurStyle.COMPONENT_THIN,
-      radius: LengthMetrics.vp(28),
-      onDisappear: () => {
-        this.showExportQR = false;
-      }
-    })
   }
 
   @Builder
   private CardTokenPickerSheet() {
     Column() {
       Row() {
-        Text('选择卡片显示的令牌')
+        Text(this.t('选择卡片显示的令牌'))
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
@@ -1526,7 +1717,7 @@ struct Index {
       .height(52)
       .padding({ left: 20, right: 20 })
 
-      Text('卡片按勾选顺序显示令牌')
+      Text(this.t('卡片按勾选顺序显示令牌'))
         .width('100%')
         .fontSize(12)
         .fontColor(this.secondaryTextColor())
@@ -1535,7 +1726,7 @@ struct Index {
       List() {
         if (this.tokens.length === 0) {
           ListItem() {
-            Text('暂无令牌，请先添加令牌')
+            Text(this.t('暂无令牌，请先添加令牌'))
               .fontSize(14)
               .fontColor(this.secondaryTextColor())
               .width('100%')
@@ -1598,7 +1789,7 @@ struct Index {
       .scrollBar(BarState.Off)
 
       Row({ space: 12 }) {
-        Button('取消')
+        Button(this.t('取消'))
           .layoutWeight(1)
           .height(40)
           .fontSize(14)
@@ -1608,7 +1799,7 @@ struct Index {
             this.showCardTokenPicker = false;
           })
 
-        Button('完成')
+        Button(this.t('完成'))
           .layoutWeight(1)
           .height(40)
           .fontSize(14)
@@ -1636,7 +1827,7 @@ struct Index {
 
   @Builder
   private TokenListFooter() {
-    Text(`- 共${this.filteredTokens().length}个 -`)
+    Text(this.tf('- 共{0}个 -', [`${this.filteredTokens().length}`]))
       .fontSize(12)
       .fontColor(this.secondaryTextColor())
       .width('100%')
@@ -1663,7 +1854,7 @@ struct Index {
   @Builder
   private HomeSearchBar() {
     Stack({ alignContent: Alignment.Center }) {
-      Search({ value: this.searchText, placeholder: 'Search' })
+      Search({ value: this.searchText, placeholder: this.t('搜索令牌') })
         .height(HOME_SEARCH_HEIGHT)
         .width('100%')
         .borderRadius(HOME_SEARCH_HEIGHT / 2)
@@ -1697,7 +1888,7 @@ struct Index {
           icon: new SymbolGlyphModifier($r('sys.symbol.magnifyingglass'))
             .renderingStrategy(SymbolRenderingStrategy.SINGLE)
             .fontColor([this.primaryTextColor()]),
-          label: '搜索',
+          label: this.t('搜索'),
           action: () => {
             this.scrollHomeSearchIntoView();
           }
@@ -1715,7 +1906,7 @@ struct Index {
       selected: new SymbolGlyphModifier($r('sys.symbol.key_fill'))
         .renderingStrategy(SymbolRenderingStrategy.SINGLE)
         .fontColor([this.accentColor()])
-    }, '令牌')
+    }, this.t('令牌'))
       .labelStyle({
         font: { size: HOME_NAV_TEXT_SIZE },
         unselectedColor: this.primaryTextColor(),
@@ -1731,7 +1922,7 @@ struct Index {
       selected: new SymbolGlyphModifier($r('sys.symbol.person_fill'))
         .renderingStrategy(SymbolRenderingStrategy.SINGLE)
         .fontColor([this.accentColor()])
-    }, '我的')
+    }, this.t('我的'))
       .labelStyle({
         font: { size: HOME_NAV_TEXT_SIZE },
         unselectedColor: this.primaryTextColor(),
@@ -1775,7 +1966,7 @@ struct Index {
 
   private isLeftHanded(): boolean {
     return this.smartGripEnabled &&
-      this.holdingHandStatus === motion.HoldingHandStatus.LEFT_HAND_HELD;
+      this.holdingHandStatus === HoldingHandStatus.LEFT_HAND_HELD;
   }
 
   @Builder
@@ -1821,7 +2012,7 @@ struct Index {
       .backgroundColor(this.accentColor())
       .onClick(onClick)
 
-      Text(label)
+      Text(this.t(label))
         .fontSize(14)
         .fontColor(this.primaryTextColor())
         .fontWeight(FontWeight.Medium)
@@ -1975,7 +2166,7 @@ struct Index {
         .width('100%')
 
         if (this.validationMessage.length > 0) {
-          Text(this.validationMessage)
+          Text(this.t(this.validationMessage))
             .fontSize(14)
             .fontColor(ERROR_RED)
             .width('100%')
@@ -1983,7 +2174,7 @@ struct Index {
         }
 
         Button() {
-          Text(this.isSaving ? '保存中' : '确认')
+          Text(this.isSaving ? this.t('保存中') : this.t('确认'))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.cardBackgroundColor())
@@ -2039,7 +2230,9 @@ struct Index {
     Column() {
       this.InputRow('密钥', this.secretInput, '请输入', (value: string) => {
         this.secretInput = value;
-        this.validationMessage = '';
+        this.validationMessage = value.trim().length > 0 &&
+          !Totp.isValidSecret(value, this.formTokenType()) ?
+          '密钥格式无效，请输入有效的Base32密钥' : '';
       })
       this.Separator()
       this.SelectRow('类型', this.formTokenType(), TYPE_OPTIONS, (value: string) => {
@@ -2064,12 +2257,12 @@ struct Index {
   @Builder
   private InputRow(label: string, value: string, placeholder: string, onChanged: (value: string) => void) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(FORM_TEXT_SIZE)
         .fontColor(this.primaryTextColor())
         .width(72)
 
-      TextInput({ text: value, placeholder: placeholder })
+      TextInput({ text: value, placeholder: this.t(placeholder) })
         .height(FORM_ROW_HEIGHT - 1)
         .layoutWeight(1)
         .fontSize(FORM_TEXT_SIZE)
@@ -2095,15 +2288,15 @@ struct Index {
     onSelected: (value: string) => void
   ) {
     Row() {
-      Text(label)
+      Text(this.t(label))
         .fontSize(FORM_TEXT_SIZE)
         .fontColor(this.primaryTextColor())
         .width(72)
 
       Row() {
-        Select(values)
+        Select(this.localizedOptions(values))
           .selected(this.optionIndex(values, selectedValue))
-          .value(selectedValue)
+          .value(this.t(selectedValue))
           .font({ size: FORM_TEXT_SIZE, weight: FontWeight.Regular })
           .fontColor(this.primaryTextColor())
           .selectedOptionFont({ size: FORM_TEXT_SIZE, weight: FontWeight.Regular })
@@ -2113,7 +2306,7 @@ struct Index {
           .backgroundColor(Color.Transparent)
           .padding({ left: 0, right: 0 })
           .onSelect((index: number, value: string) => {
-            onSelected(value);
+            onSelected(`${values[index].value}`);
           })
       }
       .height(FORM_ROW_HEIGHT - 1)
@@ -2214,6 +2407,32 @@ struct Index {
     }
   }
 
+  private refreshSystemLanguage(): void {
+    try {
+      this.systemLanguage = i18n.System.getSystemLanguage();
+    } catch (error) {
+      this.systemLanguage = 'zh-Hans';
+    }
+  }
+
+  private t(text: string): string {
+    return translate(text, this.languageInput, this.systemLanguage);
+  }
+
+  private tf(text: string, values: string[]): string {
+    let result = this.t(text);
+    values.forEach((value: string, index: number) => {
+      result = result.replace(`{${index}}`, value);
+    });
+    return result;
+  }
+
+  private localizedOptions(values: SelectOption[]): SelectOption[] {
+    return values.map((option: SelectOption): SelectOption => {
+      return { value: this.t(`${option.value}`) };
+    });
+  }
+
   private isDarkTheme(): boolean {
     return this.themeModeInput === '深色' || (this.themeModeInput === '跟随系统' && this.systemDark);
   }
@@ -2282,12 +2501,16 @@ struct Index {
   }
 
   private currentHomeTitle(): string {
-    return this.selectedHomeTab === HomeTab.Token ? '令牌' : '我的';
+    return this.selectedHomeTab === HomeTab.Token ? this.t('令牌') : this.t('我的');
   }
 
   private tokenDisplayName(token: TokenRecord): string {
     const remark = token.remark.trim();
-    return remark.length > 0 ? `${token.name}（${remark}）` : token.name;
+    if (remark.length === 0) {
+      return token.name;
+    }
+    return systemLanguageTag(this.languageInput, this.systemLanguage).startsWith('en') ?
+      `${token.name} (${remark})` : `${token.name}（${remark}）`;
   }
 
   private tokenDigitsForRecord(token: TokenRecord): number {
@@ -2343,7 +2566,7 @@ struct Index {
     if (this.normalizeTokenType(token.type) === 'HOTP') {
       return 'HOTP';
     }
-    return `${Totp.remainingSeconds(this.currentTimeMs, this.tokenPeriodForRecord(token))} 秒`;
+    return this.tf('{0} 秒', [`${Totp.remainingSeconds(this.currentTimeMs, this.tokenPeriodForRecord(token))}`]);
   }
 
   private tokenCountdownText(token: TokenRecord): string {
@@ -2495,7 +2718,9 @@ struct Index {
   }
 
   private canSaveToken(): boolean {
-    return !this.isSaving && this.isAddTokenFormComplete();
+    return !this.isSaving &&
+      this.isAddTokenFormComplete() &&
+      Totp.isValidSecret(this.secretInput, this.formTokenType());
   }
 
   private isAddTokenFormComplete(): boolean {
@@ -2514,24 +2739,21 @@ struct Index {
       this.showToast('无法拉起华为账号登录');
       return;
     }
-
-    try {
-      const provider = new authentication.HuaweiIDProvider();
-      const cancelRequest = provider.createCancelAuthorizationRequest();
-      const controller = new authentication.AuthenticationController(context);
-      await controller.executeRequest(cancelRequest);
-    } catch (error) {
-      // ignore cancel failure
+    if (this.huaweiLoginInProgress) {
+      return;
     }
-
-    const authResultCode = await this.doAuthorizeWithHuaweiID(context);
+    this.huaweiLoginInProgress = true;
+    try {
+      await this.doAuthorizeWithHuaweiID(context);
+    } finally {
+      this.huaweiLoginInProgress = false;
+    }
   }
 
   private async doAuthorizeWithHuaweiID(context: common.UIAbilityContext): Promise<number> {
     const provider = new authentication.HuaweiIDProvider();
     const request = provider.createAuthorizationWithHuaweiIDRequest();
     request.scopes = ['openid', 'profile'];
-    request.permissions = ['serviceauthcode'];
     request.forceAuthorization = true;
     request.state = util.generateRandomUUID();
 
@@ -2563,46 +2785,34 @@ struct Index {
         return code;
       }
       if (code === 1001500002) {
+        this.showToast('登录请求正在处理，请稍后再试');
         return code;
       }
       if (code === 1001502005) {
         this.showToast('网络异常，请检查网络');
         return code;
       }
-      if (code === 1001502001) {
-        const loginOk = await this.doLoginWithHuaweiID(context);
-        if (loginOk) {
-          return await this.doAuthorizeWithHuaweiID(context);
-        }
-        return code;
-      }
-      this.showToast('华为账号登录失败');
+      this.showHuaweiLoginError(code);
       console.error(`Failed to authorize with Huawei ID: ${JSON.stringify(error)}`);
       return code;
     }
   }
 
-  private async doLoginWithHuaweiID(context: common.UIAbilityContext): Promise<boolean> {
-    const provider = new authentication.HuaweiIDProvider();
-    const loginRequest = provider.createLoginWithHuaweiIDRequest();
-    loginRequest.forceLogin = true;
-    loginRequest.state = util.generateRandomUUID();
-
-    try {
-      const controller = new authentication.AuthenticationController(context);
-      await controller.executeRequest(loginRequest);
-      return true;
-    } catch (error) {
-      const errorCode = this.getErrorCode(error);
-      if (errorCode === 1001502012) {
-        return false;
-      }
-      if (errorCode === 1001500002) {
-        return false;
-      }
-      this.showToast('登录失败，请重试');
-      console.error(`Failed to login with Huawei ID: ${JSON.stringify(error)}`);
-      return false;
+  private showHuaweiLoginError(code: number): void {
+    if (code === 1001500001) {
+      this.showToast('应用签名指纹校验失败，请检查 AppGallery Connect 配置');
+    } else if (code === 1001500003 || code === 1001502014) {
+      this.showToast('华为账号权限未配置，请开通 openid 和 profile');
+    } else if (code === 1001502001) {
+      this.showToast('请先在系统设置中登录华为账号');
+    } else if (code === 1001502002) {
+      this.showToast('应用尚未获得华为账号授权');
+    } else if (code === 1001502003 || code === 401) {
+      this.showToast('华为账号登录参数配置错误');
+    } else if (code === 1001502009 || code === 12300001) {
+      this.showToast('华为账号服务暂时异常，请稍后重试');
+    } else {
+      this.showToast(code > 0 ? this.tf('华为账号登录失败（{0}）', [`${code}`]) : '华为账号登录失败');
     }
   }
 
@@ -2832,28 +3042,7 @@ struct Index {
   }
 
   private showExportFormatMenu(): void {
-    this.getUIContext().showActionSheet({
-      title: '选择导出格式',
-      message: '选择密钥备份的导出方式',
-      sheets: [
-        {
-          title: '导出密钥 JSON 文件',
-          action: () => {
-            this.exportAsJSON();
-          }
-        },
-        {
-          title: '生成二维码',
-          action: () => {
-            this.exportQRIndex = 0;
-            this.showExportQR = true;
-          }
-        }
-      ],
-      autoCancel: true,
-      cancel: () => {
-      }
-    });
+    this.showExportFormat = true;
   }
 
   private buildOtpAuthUri(token: TokenRecord): string {
@@ -2863,7 +3052,7 @@ struct Index {
     );
     const issuer = encodeURIComponent(token.name);
     const params: string[] = [
-      `secret=${token.secret}`,
+      `secret=${encodeURIComponent(token.secret)}`,
       `issuer=${issuer}`,
       `algorithm=${token.algorithm || 'SHA1'}`,
       `digits=${this.tokenDigitsForRecord(token)}`,
@@ -2879,18 +3068,152 @@ struct Index {
     return this.tokens.filter((t: TokenRecord) => this.exportSelectedIds.includes(t.id));
   }
 
+  private exportQRCodeSize(): number {
+    return Math.min(220, Math.max(160, this.pageWidth - 170));
+  }
+
+  private async saveCurrentQRCode(): Promise<void> {
+    await this.saveQRCodeImages([this.exportQRIndex]);
+  }
+
+  private async saveAllQRCodes(): Promise<void> {
+    const indices: number[] = [];
+    for (let index = 0; index < this.exportSelectedTokens().length; index++) {
+      indices.push(index);
+    }
+    await this.saveQRCodeImages(indices);
+  }
+
+  private async saveQRCodeImages(indices: number[]): Promise<void> {
+    const context = this.getAbilityContext();
+    const selectedTokens = this.exportSelectedTokens();
+    if (!context || selectedTokens.length === 0 || indices.length === 0) {
+      this.showToast('没有可保存的二维码');
+      return;
+    }
+
+    const originalIndex = this.exportQRIndex;
+    const temporaryPaths: string[] = [];
+    const sourceUris: string[] = [];
+    const creationSettings: photoAccessHelper.CreationSetting[] = [];
+    let saveCompleted = false;
+    this.isSavingQRCode = true;
+
+    try {
+      for (let position = 0; position < indices.length; position++) {
+        const tokenIndex = indices[position];
+        if (tokenIndex < 0 || tokenIndex >= selectedTokens.length) {
+          continue;
+        }
+        this.exportQRIndex = tokenIndex;
+        await this.delay(180);
+
+        const pixelMap = await this.getUIContext().getComponentSnapshot().get('exportCurrentQrCode');
+        const packer = image.createImagePacker();
+        let pngData: ArrayBuffer = new ArrayBuffer(0);
+        try {
+          pngData = await packer.packToData(pixelMap, {
+            format: 'image/png',
+            quality: 100
+          });
+        } finally {
+          await packer.release();
+          await pixelMap.release();
+        }
+
+        const title = `Authenticator_${this.formatExportDate()}_${tokenIndex + 1}`;
+        const filePath = `${context.filesDir}/${title}_${Date.now()}.png`;
+        const file = fileIo.openSync(
+          filePath,
+          fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC
+        );
+        try {
+          fileIo.writeSync(file.fd, pngData);
+        } finally {
+          fileIo.closeSync(file);
+        }
+
+        temporaryPaths.push(filePath);
+        sourceUris.push(fileUri.getUriFromPath(filePath));
+        creationSettings.push({
+          title: title,
+          fileNameExtension: 'png',
+          photoType: photoAccessHelper.PhotoType.IMAGE
+        });
+      }
+
+      if (sourceUris.length === 0) {
+        this.showToast('二维码生成失败');
+        return;
+      }
+
+      const helper = photoAccessHelper.getPhotoAccessHelper(context);
+      const savedUris = await helper.showAssetsCreationDialogEx(sourceUris, creationSettings);
+      if (savedUris.length > 0) {
+        saveCompleted = true;
+        this.showToast(savedUris.length === 1 ? '图片已保存到图库' :
+          this.tf('已保存 {0} 张图片', [`${savedUris.length}`]));
+      }
+    } catch (error) {
+      this.showToast('保存图片失败');
+      console.error(`Save QR code images failed: ${JSON.stringify(error)}`);
+    } finally {
+      this.exportQRIndex = originalIndex;
+      this.isSavingQRCode = false;
+      if (saveCompleted) {
+        setTimeout(() => {
+          this.cleanupTemporaryFiles(temporaryPaths);
+        }, 10000);
+      } else {
+        this.cleanupTemporaryFiles(temporaryPaths);
+      }
+    }
+  }
+
+  private cleanupTemporaryFiles(paths: string[]): void {
+    for (let index = 0; index < paths.length; index++) {
+      try {
+        fileIo.unlinkSync(paths[index]);
+      } catch (error) {
+      }
+    }
+  }
+
+  private delay(milliseconds: number): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(resolve, milliseconds);
+    });
+  }
+
   private async exportAsJSON(): Promise<void> {
     const selectedTokens = this.exportSelectedTokens();
     if (selectedTokens.length === 0) {
       return;
     }
     const uris: string[] = selectedTokens.map((t: TokenRecord) => this.buildOtpAuthUri(t));
+    const portableTokens: Record<string, Object>[] = selectedTokens.map((token: TokenRecord) => {
+      const portableToken: Record<string, Object> = {
+        'uri': this.buildOtpAuthUri(token),
+        'name': token.name,
+        'issuer': token.name,
+        'account': token.remark,
+        'secret': token.secret,
+        'type': this.normalizeTokenType(token.type),
+        'algorithm': token.algorithm || 'SHA1',
+        'digits': this.tokenDigitsForRecord(token),
+        'period': this.tokenPeriodForRecord(token),
+        'counter': this.tokenCounterForRecord(token)
+      };
+      return portableToken;
+    });
     const exportData: Record<string, Object> = {
       'encrypted': false,
       'exportDate': new Date().toISOString(),
-      'app': 'Tool_2FA',
-      'version': 1,
-      'uris': uris
+      'app': 'Authenticator',
+      'format': 'otpauth-uri',
+      'version': 2,
+      'uris': uris,
+      'tokens': portableTokens
     };
     const jsonContent = JSON.stringify(exportData, null, 2);
     const fileName = `2fa_backup_${this.formatExportDate()}.json`;
@@ -2900,7 +3223,7 @@ struct Index {
       const documentPicker = new picker.DocumentViewPicker();
       const result = await documentPicker.save(options);
       if (result && result.length > 0) {
-        const file = fileIo.openSync(result[0], fileIo.OpenMode.READ_WRITE);
+        const file = fileIo.openSync(result[0], fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
         fileIo.writeSync(file.fd, jsonContent);
         fileIo.closeSync(file);
         this.showToast('已导出到文件');
@@ -2919,53 +3242,26 @@ struct Index {
   private toggleSmartGrip(isOn: boolean): void {
     if (!isOn) {
       this.smartGripEnabled = false;
-      this.holdingHandStatus = motion.HoldingHandStatus.NOT_HELD;
+      this.holdingHandStatus = HoldingHandStatus.NOT_HELD;
       this.saveSettings();
       return;
     }
-    this.smartGripEnabled = true;
+    this.smartGripEnabled = false;
+    this.holdingHandStatus = HoldingHandStatus.NOT_HELD;
+    this.showToast('上架版暂不支持智感握姿');
     this.saveSettings();
   }
 
   private async toggleAntiPeep(isOn: boolean): Promise<void> {
     if (!isOn) {
-      this.unregisterAntiPeep();
       this.antiPeepEnabled = false;
       this.saveSettings();
       return;
     }
 
-    const context = this.getAbilityContext();
-    if (!context) {
-      this.antiPeepEnabled = false;
-      this.saveSettings();
-      this.showToast('无法打开防窥保护');
-      return;
-    }
-
-    try {
-      const capSupported = canIUse('SystemCapability.Security.DlpAntiPeep');
-      if (!capSupported) {
-        this.antiPeepEnabled = false;
-        this.saveSettings();
-        this.showToast('当前设备不支持防窥保护');
-        return;
-      }
-      const result = await dlpAntiPeep.requestAntiPeepOptions(context);
-      if (result === dlpAntiPeep.AntiPeepOptionsResult.SUCCESS ||
-        result === dlpAntiPeep.AntiPeepOptionsResult.ALREADY_ON) {
-        dlpAntiPeep.on('dlpAntiPeep', this.antiPeepCallback);
-        this.antiPeepEnabled = true;
-        this.showToast('防窥保护已开启');
-        this.saveSettings();
-        return;
-      }
-      this.antiPeepEnabled = false;
-      this.saveSettings();
-      this.showToast('防窥保护开启失败');
-    } catch (error) {
-      this.isLocked = false;
-    }
+    this.antiPeepEnabled = false;
+    this.showToast('上架版暂不支持防窥保护');
+    this.saveSettings();
   }
 
   private toggleAppLock(isOn: boolean): void {
@@ -2978,14 +3274,6 @@ struct Index {
     this.appLockEnabled = true;
     this.isLocked = false;
     this.saveSettings();
-  }
-
-  private unregisterAntiPeep(): void {
-    try {
-      dlpAntiPeep.off('dlpAntiPeep', this.antiPeepCallback);
-    } catch (error) {
-      console.error(`Failed to unregister anti-peep: ${JSON.stringify(error)}`);
-    }
   }
 
   private updateHomeScroll(scrollOffset: number): void {
@@ -3128,20 +3416,20 @@ struct Index {
           return;
         }
       }
-      this.showToast(`未配置${label}地址`);
+      this.showToast(this.tf('未配置{0}地址', [this.t(label)]));
     } catch (error) {
       console.error(`Failed to query ${label}: ${JSON.stringify(error)}`);
-      this.showToast(`暂时无法打开${label}`);
+      this.showToast(this.tf('暂时无法打开{0}', [this.t(label)]));
     }
   }
 
   private showFeedbackDialog(): void {
     this.getUIContext().showAlertDialog({
-      title: '帮助与反馈',
-      message: '反馈邮箱：1207523787@qq.com',
+      title: this.t('帮助与反馈'),
+      message: this.t('反馈邮箱：1207523787@qq.com'),
       autoCancel: true,
       primaryButton: {
-        value: '确定',
+        value: this.t('确定'),
         action: () => {
         }
       }
@@ -3198,16 +3486,16 @@ struct Index {
 
   private confirmDeleteToken(token: TokenRecord): void {
     this.getUIContext().showAlertDialog({
-      title: '删除令牌',
-      message: `确定删除“${token.name}”？删除后无法恢复。`,
+      title: this.t('删除令牌'),
+      message: this.tf('确定删除“{0}”？删除后无法恢复。', [token.name]),
       autoCancel: true,
       primaryButton: {
-        value: '取消',
+        value: this.t('取消'),
         action: () => {
         }
       },
       secondaryButton: {
-        value: '删除',
+        value: this.t('删除'),
         fontColor: ERROR_RED,
         action: () => {
           this.deleteToken(token.id);
@@ -3276,7 +3564,7 @@ struct Index {
       this.showToast('令牌已存在');
       return;
     }
-    const message = addedCount > 1 ? `已导入${addedCount}个令牌` : '已保存';
+    const message = addedCount > 1 ? this.tf('已导入{0}个令牌', [`${addedCount}`]) : '已保存';
     if (!await this.persistTokens(nextTokens, message)) {
       return;
     }
@@ -3295,7 +3583,7 @@ struct Index {
       const documentPicker = new picker.DocumentViewPicker(context);
       const uris = await documentPicker.select({
         maxSelectNumber: 1,
-        fileSuffixFilters: ['2FA|.txt,.json,.csv,.tsv,.otpauth,.mafile']
+        fileSuffixFilters: ['2FA|.txt,.json,.csv,.tsv,.otpauth,.mafile,.2fas']
       });
       if (uris.length === 0) {
         return;
@@ -3304,12 +3592,21 @@ struct Index {
       const content = await this.readImportFile(uris[0]);
       const records = this.parseImportedTokenContent(content);
       if (records.length === 0) {
-        this.showToast('未识别到可导入的令牌');
+        this.showToast(this.importRejectedCount > 0 ?
+          this.tf('文件中有{0}条无效令牌', [`${this.importRejectedCount}`]) : '未识别到可导入的令牌');
         return;
       }
 
       const nextTokens = this.mergeImportedTokens(records, this.tokens);
-      if (!await this.persistTokens(nextTokens, `已导入${records.length}个令牌`)) {
+      const addedCount = nextTokens.length - this.tokens.length;
+      if (addedCount === 0) {
+        this.showToast('所选令牌已存在');
+        return;
+      }
+      const importMessage = this.importRejectedCount > 0 ?
+        this.tf('已导入{0}个，跳过{1}个无效令牌', [`${addedCount}`, `${this.importRejectedCount}`]) :
+        this.tf('已导入{0}个令牌', [`${addedCount}`]);
+      if (!await this.persistTokens(nextTokens, importMessage)) {
         return;
       }
       this.searchText = '';
@@ -3339,27 +3636,32 @@ struct Index {
 
   private parseImportedTokenContent(content: string): TokenRecord[] {
     const records: TokenRecord[] = [];
+    this.importRejectedCount = 0;
     const trimmed = content.trim();
     if (trimmed.length === 0) {
       return records;
     }
 
+    let parsedJson = false;
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
       try {
         this.collectImportedJsonTokens(JSON.parse(trimmed), records);
+        parsedJson = true;
       } catch (error) {
       }
     }
 
-    const lines = trimmed.split(/\r?\n/);
-    const header = this.importHeader(lines);
-    lines.forEach((line: string, index: number) => {
-      const lineRecord = this.parseImportedLine(line, header, index);
-      if (lineRecord) {
-        records.push(lineRecord);
-      }
-    });
-    return this.uniqueTokenRecords(records);
+    if (!parsedJson) {
+      const lines = trimmed.split(/\r?\n/);
+      const header = this.importHeader(lines);
+      lines.forEach((line: string, index: number) => {
+        const lineRecord = this.parseImportedLine(line, header, index);
+        if (lineRecord) {
+          records.push(lineRecord);
+        }
+      });
+    }
+    return this.uniqueTokenRecordsWithValidation(records, true);
   }
 
   private importHeader(lines: string[]): Map<string, number> {
@@ -3426,7 +3728,7 @@ struct Index {
       );
     }
 
-    return this.createImportedTokenRecord(`导入令牌${index + 1}`, '', columns[0], 'TOTP', 'SHA1',
+    return this.createImportedTokenRecord(`${this.t('导入令牌')}${index + 1}`, '', columns[0], 'TOTP', 'SHA1',
       DEFAULT_TOKEN_DIGITS, DEFAULT_TOKEN_PERIOD, 0);
   }
 
@@ -3444,6 +3746,21 @@ struct Index {
   }
 
   private collectImportedJsonTokens(value: Object, records: TokenRecord[]): void {
+    if (typeof value === 'string') {
+      const normalizedValue = value.trim().toLowerCase();
+      if (normalizedValue.startsWith('otpauth://') ||
+        normalizedValue.startsWith('otpauth-migration://offline?')) {
+        const importedRecords = this.createTokensFromScannedValue(value);
+        if (importedRecords.length === 0) {
+          this.importRejectedCount++;
+        }
+        importedRecords.forEach((record: TokenRecord) => {
+          records.push(record);
+        });
+      }
+      return;
+    }
+
     if (Array.isArray(value)) {
       value.forEach((item: Object) => {
         this.collectImportedJsonTokens(item, records);
@@ -3456,26 +3773,32 @@ struct Index {
     }
 
     const source = value as Record<string, Object>;
-    const uri = this.firstString(source, ['uri', 'otpAuthUri', 'otpauth', 'otpAuth']);
+    const uri = this.firstString(source, ['uri', 'url', 'totp', 'otpUri', 'otpAuthUri', 'otpauth', 'otpAuth']);
     if (uri.length > 0) {
-      const uriRecord = this.createTokenFromScannedValue(uri);
-      if (uriRecord) {
-        records.push(uriRecord);
+      const uriRecords = this.createTokensFromScannedValue(uri);
+      if (uriRecords.length === 0) {
+        this.importRejectedCount++;
       }
+      uriRecords.forEach((record: TokenRecord) => {
+        records.push(record);
+      });
     }
 
-    const info = this.objectValue(source['info']);
-    const otp = this.objectValue(source['otp']);
+    const info = this.objectValue(this.importedJsonValue(source, 'info'));
+    const otp = this.objectValue(this.importedJsonValue(source, 'otp'));
     const tokenSource = info || otp || source;
-    const secret = this.firstString(tokenSource, ['secret', 'secretKey', 'shared_secret']);
+    const secret = this.firstString(source, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret', 'seed']) ||
+      this.firstString(tokenSource, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret', 'seed']);
     if (secret.length > 0) {
       let jsonType = this.firstString(source, ['type', 'tokenType']) || this.firstString(tokenSource, ['type', 'tokenType']);
       if (jsonType.length === 0 && this.firstString(tokenSource, ['shared_secret']).length > 0) {
         jsonType = 'Steam';
       }
       records.push(this.createImportedTokenRecord(
-        this.firstString(source, ['name', 'account', 'label']) || this.firstString(tokenSource, ['name', 'account']),
-        this.firstString(source, ['issuer', 'remark']) || this.firstString(tokenSource, ['issuer']),
+        this.firstString(source, ['name', 'service', 'label', 'accountName', 'account_name']) ||
+          this.firstString(tokenSource, ['name', 'service', 'label', 'accountName', 'account_name']),
+        this.firstString(source, ['issuer', 'remark', 'account', 'email']) ||
+          this.firstString(tokenSource, ['issuer', 'remark', 'account', 'email']),
         secret,
         jsonType,
         this.firstString(source, ['algorithm', 'algo']) || this.firstString(tokenSource, ['algorithm', 'algo']),
@@ -3486,7 +3809,17 @@ struct Index {
     }
 
     Object.keys(source).forEach((key: string) => {
-      this.collectImportedJsonTokens(source[key], records);
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey !== 'uri' &&
+        normalizedKey !== 'url' &&
+        normalizedKey !== 'totp' &&
+        normalizedKey !== 'otpuri' &&
+        normalizedKey !== 'otpauthuri' &&
+        normalizedKey !== 'otpauth' &&
+        normalizedKey !== 'info' &&
+        normalizedKey !== 'otp') {
+        this.collectImportedJsonTokens(source[key], records);
+      }
     });
   }
 
@@ -3500,14 +3833,24 @@ struct Index {
     period: number,
     counter: number
   ): TokenRecord {
-    const tokenType = this.normalizeTokenType(type || 'TOTP');
+    const rawType = type.trim();
+    const tokenType = this.normalizeTokenType(rawType || 'TOTP');
+    const isConfigurationValid = this.isImportedConfigurationValid(
+      rawType,
+      tokenType,
+      algorithm,
+      digits,
+      period,
+      counter
+    );
+    const normalizedSecret = isConfigurationValid ? Totp.normalizeSecret(secret, tokenType) : '';
     return {
       id: `${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
-      name: name.trim().length > 0 ? name.trim() : '导入令牌',
+      name: name.trim().length > 0 ? name.trim() : this.t('导入令牌'),
       remark: remark.trim(),
       type: tokenType,
       algorithm: this.standardAlgorithmForType(tokenType, algorithm || 'SHA1'),
-      secret: secret.trim(),
+      secret: normalizedSecret,
       digits: this.standardDigitsForType(tokenType, isNaN(digits) ? DEFAULT_TOKEN_DIGITS : digits),
       period: this.standardPeriodForType(tokenType, isNaN(period) ? DEFAULT_TOKEN_PERIOD : period),
       counter: this.normalizeTokenCounter(isNaN(counter) ? 0 : counter),
@@ -3517,7 +3860,7 @@ struct Index {
 
   private firstString(source: Record<string, Object>, keys: string[]): string {
     for (const key of keys) {
-      const value = source[key];
+      const value = this.importedJsonValue(source, key);
       if (typeof value === 'string' && value.trim().length > 0) {
         return value.trim();
       }
@@ -3527,7 +3870,7 @@ struct Index {
 
   private firstNumber(source: Record<string, Object>, keys: string[]): number {
     for (const key of keys) {
-      const value = source[key];
+      const value = this.importedJsonValue(source, key);
       if (typeof value === 'number') {
         return value;
       }
@@ -3541,20 +3884,111 @@ struct Index {
     return 0;
   }
 
-  private objectValue(value: Object): Record<string, Object> | undefined {
+  private importedJsonValue(source: Record<string, Object>, key: string): Object | undefined {
+    if (source[key] !== undefined) {
+      return source[key];
+    }
+    const normalizedKey = key.toLowerCase();
+    const sourceKeys = Object.keys(source);
+    for (let index = 0; index < sourceKeys.length; index++) {
+      if (sourceKeys[index].toLowerCase() === normalizedKey) {
+        return source[sourceKeys[index]];
+      }
+    }
+    return undefined;
+  }
+
+  private objectValue(value: Object | undefined): Record<string, Object> | undefined {
     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
       return value as Record<string, Object>;
     }
     return undefined;
   }
 
+  private isImportedConfigurationValid(
+    rawType: string,
+    tokenType: string,
+    algorithm: string,
+    digits: number,
+    period: number,
+    counter: number
+  ): boolean {
+    const normalizedRawType = rawType.trim().toUpperCase();
+    if (normalizedRawType.length > 0 &&
+      normalizedRawType !== 'TOTP' &&
+      normalizedRawType !== 'HOTP' &&
+      normalizedRawType !== 'STEAM') {
+      return false;
+    }
+
+    const normalizedAlgorithm = algorithm.trim().toUpperCase();
+    if (normalizedAlgorithm.length > 0) {
+      if (tokenType === 'TOTP' &&
+        !ALGORITHM_OPTIONS.some((option: SelectOption) => option.value === normalizedAlgorithm)) {
+        return false;
+      }
+      if (tokenType !== 'TOTP' && normalizedAlgorithm !== 'SHA1' && normalizedAlgorithm !== 'SHA-1') {
+        return false;
+      }
+    }
+
+    if (!isNaN(digits) && digits > 0) {
+      if (tokenType === 'Steam' && digits !== 5) {
+        return false;
+      }
+      if (tokenType === 'HOTP' && digits !== 6 && digits !== 8) {
+        return false;
+      }
+      if (tokenType === 'TOTP' && digits !== 4 && digits !== 6 && digits !== 8) {
+        return false;
+      }
+    }
+
+    if (!isNaN(period) && period > 0) {
+      if (tokenType === 'TOTP' && period !== 30 && period !== 60) {
+        return false;
+      }
+      if (tokenType === 'Steam' && period !== 30) {
+        return false;
+      }
+    }
+
+    return isNaN(counter) || counter >= 0;
+  }
+
+  private isValidTokenRecord(record: TokenRecord): boolean {
+    const type = this.normalizeTokenType(record.type);
+    const digits = this.tokenDigitsForRecord(record);
+    const period = this.tokenPeriodForRecord(record);
+    return record.name.trim().length > 0 &&
+      Totp.isValidSecret(record.secret, type) &&
+      this.isImportedConfigurationValid(
+        type,
+        type,
+        record.algorithm,
+        digits,
+        period,
+        this.tokenCounterForRecord(record)
+      );
+  }
+
   private uniqueTokenRecords(records: TokenRecord[]): TokenRecord[] {
+    return this.uniqueTokenRecordsWithValidation(records, false);
+  }
+
+  private uniqueTokenRecordsWithValidation(records: TokenRecord[], trackRejected: boolean): TokenRecord[] {
     const uniqueRecords: TokenRecord[] = [];
     records.forEach((record: TokenRecord) => {
+      if (!this.isValidTokenRecord(record)) {
+        if (trackRejected) {
+          this.importRejectedCount++;
+        }
+        return;
+      }
       const exists = uniqueRecords.some((item: TokenRecord) => {
         return item.secret === record.secret && item.name === record.name && item.type === record.type;
       });
-      if (!exists && record.secret.trim().length > 0) {
+      if (!exists) {
         uniqueRecords.push(record);
       }
     });
@@ -3576,7 +4010,7 @@ struct Index {
       return undefined;
     }
 
-    let name = '扫描令牌';
+    let name = this.t('扫描令牌');
     let remark = '';
     let secret = rawValue;
     let type = 'TOTP';
@@ -3645,6 +4079,10 @@ struct Index {
     algorithm = this.standardAlgorithmForType(type, algorithm);
     digits = this.standardDigitsForType(type, digits);
     period = this.standardPeriodForType(type, period);
+    secret = Totp.normalizeSecret(secret, type);
+    if (secret.length === 0) {
+      return undefined;
+    }
 
     return {
       id: `${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
@@ -3746,7 +4184,7 @@ struct Index {
 
   private showToast(message: string): void {
     try {
-      this.getUIContext().getPromptAction().showToast({ message: message });
+      this.getUIContext().getPromptAction().showToast({ message: this.t(message) });
     } catch (error) {
       console.error(`Failed to show toast: ${JSON.stringify(error)}`);
     }
@@ -3811,7 +4249,7 @@ struct Index {
       this.pendingCardTokenIds.splice(index, 1);
     } else {
       if (this.pendingCardTokenIds.length >= CARD_TOKEN_LIMIT) {
-        this.showToast(`最多选择${CARD_TOKEN_LIMIT}个令牌`);
+        this.showToast(this.tf('最多选择{0}个令牌', [`${CARD_TOKEN_LIMIT}`]));
         return;
       }
       this.pendingCardTokenIds.push(tokenId);
@@ -3832,7 +4270,7 @@ struct Index {
 
   private cardTokenSelectionSummary(): string {
     if (this.cardSelectedTokenIds.length === 0) {
-      return `默认显示首页前${CARD_TOKEN_LIMIT}个令牌`;
+      return this.tf('默认显示首页前{0}个令牌', [`${CARD_TOKEN_LIMIT}`]);
     }
     const names: string[] = [];
     for (const id of this.cardSelectedTokenIds) {
@@ -3841,7 +4279,8 @@ struct Index {
         names.push(this.tokenDisplayName(token));
       }
     }
-    return names.length > 0 ? names.join('、') : '所选令牌已不存在，请重新选择';
+    return names.length > 0 ? names.join(systemLanguageTag(this.languageInput, this.systemLanguage).startsWith('en') ? ', ' : '、') :
+      this.t('所选令牌已不存在，请重新选择');
   }
 
   private async saveToken(): Promise<void> {
@@ -3857,7 +4296,14 @@ struct Index {
     }
 
     const name = this.nameInput.trim();
-    const secret = this.secretInput.trim();
+    const type = this.normalizeTokenType(this.typeInput);
+    const secret = Totp.normalizeSecret(this.secretInput, type);
+    if (secret.length === 0) {
+      this.validationMessage = type === 'Steam' ?
+        '密钥格式无效，请输入有效的Base32或Steam Base64密钥' :
+        '密钥格式无效，请输入有效的Base32密钥';
+      return;
+    }
 
     this.isSaving = true;
     const editingToken = this.tokens.find((token: TokenRecord) => token.id === this.editingTokenId);
@@ -3865,7 +4311,7 @@ struct Index {
       id: editingToken ? editingToken.id : `${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
       name: name,
       remark: this.remarkInput.trim(),
-      type: this.normalizeTokenType(this.typeInput),
+      type: type,
       algorithm: this.selectedTokenAlgorithm(),
       secret: secret,
       digits: this.selectedTokenDigits(),

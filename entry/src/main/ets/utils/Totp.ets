@@ -4,6 +4,7 @@ const DEFAULT_TOTP_PERIOD_SECONDS: number = 30;
 const DEFAULT_TOTP_DIGITS: number = 6;
 const SHA1_BLOCK_SIZE: number = 64;
 const BASE32_ALPHABET: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const BASE64_ALPHABET: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const STEAM_ALPHABET: string = '23456789BCDFGHJKMNPQRTVWXY';
 const STEAM_CODE_LENGTH: number = 5;
 const DEFAULT_ALGORITHM: string = 'SHA1';
@@ -22,7 +23,7 @@ export class Totp {
     const normalizedType = normalizeType(type);
     const normalizedDigits = normalizeDigits(digits, normalizedType);
     const normalizedPeriod = normalizePeriod(periodSeconds);
-    const key = decodeSecret(secret);
+    const key = decodeSecret(secret, normalizedType);
     if (key.length === 0) {
       if (normalizedType === 'STEAM') {
         return repeatChar('0', STEAM_CODE_LENGTH);
@@ -72,6 +73,25 @@ export class Totp {
     }
     const splitIndex = Math.floor(code.length / 2);
     return `${code.substring(0, splitIndex)} ${code.substring(splitIndex)}`;
+  }
+
+  static isValidSecret(secret: string, type: string = 'TOTP'): boolean {
+    return decodeSecret(secret, normalizeType(type)).length > 0;
+  }
+
+  static normalizeSecret(secret: string, type: string = 'TOTP'): string {
+    const normalizedType = normalizeType(type);
+    const base32 = normalizeBase32(secret);
+    if (isValidBase32(base32)) {
+      return base32;
+    }
+    if (normalizedType === 'STEAM') {
+      const base64 = normalizeBase64(secret);
+      if (isValidBase64(base64)) {
+        return base64;
+      }
+    }
+    return '';
   }
 }
 
@@ -185,21 +205,30 @@ function toDataBlob(bytes: number[]): cryptoFramework.DataBlob {
   return { data: new Uint8Array(bytes) };
 }
 
-function decodeSecret(secret: string): number[] {
-  const trimmed = secret.trim();
-  const normalized = trimmed.replace(/[\s-]/g, '').replace(/=+$/g, '').toUpperCase();
+function decodeSecret(secret: string, type: string): number[] {
+  const base32 = normalizeBase32(secret);
+  if (isValidBase32(base32)) {
+    return decodeBase32(base32);
+  }
 
-  if (normalized.length > 0 && isBase32(normalized)) {
-    const decoded = decodeBase32(normalized);
-    if (decoded.length > 0) {
-      return decoded;
+  if (type === 'STEAM') {
+    const base64 = normalizeBase64(secret);
+    if (isValidBase64(base64)) {
+      return decodeBase64(base64);
     }
   }
 
-  return utf8Encode(trimmed);
+  return [];
 }
 
-function isBase32(value: string): boolean {
+function normalizeBase32(value: string): string {
+  return value.trim().replace(/[\s-]/g, '').replace(/=+$/g, '').toUpperCase();
+}
+
+function isValidBase32(value: string): boolean {
+  if (value.length < 8 || [1, 3, 6].includes(value.length % 8)) {
+    return false;
+  }
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
     const isLetter = code >= 65 && code <= 90;
@@ -208,7 +237,7 @@ function isBase32(value: string): boolean {
       return false;
     }
   }
-  return true;
+  return decodeBase32(value).length >= 5;
 }
 
 function decodeBase32(value: string): number[] {
@@ -234,37 +263,48 @@ function decodeBase32(value: string): number[] {
   return bytes;
 }
 
-function utf8Encode(value: string): number[] {
-  const bytes: number[] = [];
+function normalizeBase64(value: string): string {
+  return value.trim().replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+}
 
+function isValidBase64(value: string): boolean {
+  if (value.length < 8 || value.length % 4 === 1) {
+    return false;
+  }
+  let paddingStarted = false;
+  let paddingCount = 0;
   for (let index = 0; index < value.length; index++) {
-    let codePoint = value.charCodeAt(index);
-
-    if (codePoint >= 0xd800 && codePoint <= 0xdbff && index + 1 < value.length) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (next - 0xdc00);
-        index++;
+    const character = value.charAt(index);
+    if (character === '=') {
+      paddingStarted = true;
+      paddingCount++;
+      if (paddingCount > 2) {
+        return false;
       }
-    }
-
-    if (codePoint < 0x80) {
-      bytes.push(codePoint);
-    } else if (codePoint < 0x800) {
-      bytes.push(0xc0 | (codePoint >> 6));
-      bytes.push(0x80 | (codePoint & 0x3f));
-    } else if (codePoint < 0x10000) {
-      bytes.push(0xe0 | (codePoint >> 12));
-      bytes.push(0x80 | ((codePoint >> 6) & 0x3f));
-      bytes.push(0x80 | (codePoint & 0x3f));
-    } else {
-      bytes.push(0xf0 | (codePoint >> 18));
-      bytes.push(0x80 | ((codePoint >> 12) & 0x3f));
-      bytes.push(0x80 | ((codePoint >> 6) & 0x3f));
-      bytes.push(0x80 | (codePoint & 0x3f));
+    } else if (paddingStarted || BASE64_ALPHABET.indexOf(character) < 0) {
+      return false;
     }
   }
+  return decodeBase64(value).length >= 10;
+}
 
+function decodeBase64(value: string): number[] {
+  const normalized = value.replace(/=+$/g, '');
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bitsLeft = 0;
+  for (let index = 0; index < normalized.length; index++) {
+    const alphabetIndex = BASE64_ALPHABET.indexOf(normalized.charAt(index));
+    if (alphabetIndex < 0) {
+      return [];
+    }
+    buffer = (buffer << 6) | alphabetIndex;
+    bitsLeft += 6;
+    if (bitsLeft >= 8) {
+      bitsLeft -= 8;
+      bytes.push((buffer >> bitsLeft) & 0xff);
+    }
+  }
   return bytes;
 }
 

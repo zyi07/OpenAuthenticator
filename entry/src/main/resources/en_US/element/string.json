@@ -1,0 +1,84 @@
+{
+  "string": [
+    {
+      "name": "EntryAbility_label",
+      "value": "OpenAuthenticator"
+    },
+    {
+      "name": "FormAbility_label",
+      "value": "OpenAuthenticator"
+    },
+    {
+      "name": "distributed_data_sync_reason",
+      "value": "Sync token data with your Huawei Cloud."
+    },
+    {
+      "name": "FormAbility_desc",
+      "value": "Show token codes on the home screen"
+    },
+    {
+      "name": "widget_minimum_name",
+      "value": "Token Widget (Minimum)"
+    },
+    {
+      "name": "widget_minimum_desc",
+      "value": "Compact single-token code"
+    },
+    {
+      "name": "widget_small_name",
+      "value": "Token Widget"
+    },
+    {
+      "name": "widget_small_desc",
+      "value": "Show two token codes"
+    },
+    {
+      "name": "widget_medium_name",
+      "value": "Token Widget"
+    },
+    {
+      "name": "widget_medium_desc",
+      "value": "Show four token codes"
+    },
+    {
+      "name": "widget_large_name",
+      "value": "Token Widget"
+    },
+    {
+      "name": "widget_large_desc",
+      "value": "Show eight token codes"
+    },
+    {
+      "name": "widget_minimum_dark_name",
+      "value": "Dark Token Widget (Minimum)"
+    },
+    {
+      "name": "widget_minimum_dark_desc",
+      "value": "Compact single-token code in dark style"
+    },
+    {
+      "name": "widget_small_dark_name",
+      "value": "Dark Token Widget"
+    },
+    {
+      "name": "widget_small_dark_desc",
+      "value": "Show two token codes in dark style"
+    },
+    {
+      "name": "widget_medium_dark_name",
+      "value": "Dark Token Widget"
+    },
+    {
+      "name": "widget_medium_dark_desc",
+      "value": "Show four token codes in dark style"
+    },
+    {
+      "name": "widget_large_dark_name",
+      "value": "Dark Token Widget"
+    },
+    {
+      "name": "widget_large_dark_desc",
+      "value": "Show eight token codes in dark style"
+    }
+  ]
+}

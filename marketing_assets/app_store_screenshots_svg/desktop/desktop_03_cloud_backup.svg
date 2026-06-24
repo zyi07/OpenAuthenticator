@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<defs>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity=".18"/></filter>
+<filter id="deepShadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity=".34"/></filter>
+<radialGradient id="yellowGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EBC500" stop-opacity=".55"/><stop offset="52%" stop-color="#EBC500" stop-opacity=".18"/><stop offset="100%" stop-color="#EBC500" stop-opacity="0"/></radialGradient>
+<linearGradient id="softCard" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".98"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity=".74"/></linearGradient>
+<linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2C2C2C"/><stop offset="100%" stop-color="#171717"/></linearGradient>
+</defs>
+<rect width="100%" height="100%" fill="#F5F6F8"/>
+<style>text{font-family:'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;dominant-baseline:hanging} .en{font-family:'Arial Black', 'HarmonyOS Sans', sans-serif}</style>
+<text x="110" y="95" font-size="66" font-weight="900" fill="#111111" text-anchor="start">云空间同步与备份导出</text>
+<text x="112" y="185" font-size="30" font-weight="400" fill="#5F6368" text-anchor="start">按需同步、手动推送、JSON 与二维码备份，迁移更轻松。</text>
+<rect x="125" y="350" width="470" height="430" rx="46" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<circle cx="213" cy="446" r="40" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 181 455 C 181 442 193 434 205 437 C 208 422 233 422 237 439 C 249 439 257 447 257 458 C 257 470 248 476 235 476 H 187 C 174 476 165 468 165 458 C 165 449 171 443 181 455 Z" fill="none" stroke="#111111" stroke-width="5" stroke-linejoin="round"/>
+<text x="173" y="525" font-size="42" font-weight="900" fill="#111111" text-anchor="start">华为云空间</text>
+<text x="173" y="595" font-size="27" font-weight="400" fill="#858585" text-anchor="start">自动同步常用令牌</text>
+<rect x="173" y="680" width="252" height="52" rx="26" fill="#F2F3F5" stroke="none" stroke-width="1"/>
+<text x="205" y="693" font-size="24" font-weight="800" fill="#111111" text-anchor="start">已开启</text>
+<rect x="685" y="350" width="470" height="430" rx="46" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<circle cx="773" cy="446" r="40" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 773 418 V 454" stroke="#111111" stroke-width="6" stroke-linecap="round"/>
+<path d="M 757 438 L 773 454 L 789 438" fill="none" stroke="#111111" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 745 459 V 474 H 801 V 459" fill="none" stroke="#111111" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="733" y="525" font-size="42" font-weight="900" fill="#111111" text-anchor="start">备份导出</text>
+<text x="733" y="595" font-size="27" font-weight="400" fill="#858585" text-anchor="start">导出 JSON 或二维码</text>
+<rect x="733" y="680" width="252" height="52" rx="26" fill="#F2F3F5" stroke="none" stroke-width="1"/>
+<text x="765" y="693" font-size="24" font-weight="800" fill="#111111" text-anchor="start">选择令牌</text>
+<rect x="1245" y="350" width="470" height="430" rx="46" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<circle cx="1333" cy="446" r="40" fill="#EBC500" stroke="none" stroke-width="1"/>
+<path d="M 1309 438 L 1309 422 L 1325 422" fill="none" stroke="#111111" stroke-width="5" stroke-linecap="round"/>
+<path d="M 1357 438 L 1357 422 L 1341 422" fill="none" stroke="#111111" stroke-width="5" stroke-linecap="round"/>
+<path d="M 1309 454 L 1309 470 L 1325 470" fill="none" stroke="#111111" stroke-width="5" stroke-linecap="round"/>
+<path d="M 1357 454 L 1357 470 L 1341 470" fill="none" stroke="#111111" stroke-width="5" stroke-linecap="round"/>
+<path d="M 1308 446 H 1358" stroke="#111111" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+<text x="1293" y="525" font-size="42" font-weight="900" fill="#111111" text-anchor="start">同步状态</text>
+<text x="1293" y="595" font-size="27" font-weight="400" fill="#858585" text-anchor="start">记录最近同步结果</text>
+<rect x="1293" y="680" width="252" height="52" rx="26" fill="#F2F3F5" stroke="none" stroke-width="1"/>
+<text x="1325" y="693" font-size="24" font-weight="800" fill="#111111" text-anchor="start">同步成功</text>
+</svg>

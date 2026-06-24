@@ -15,6 +15,7 @@ interface Settings {
   huaweiUserId: string;
   themeMode: string;
   themeColor: string;
+  language: string;
   cloudSyncStatus: string;
   cloudLastSyncTime: number;
   onboardingCompleted: boolean;
@@ -32,6 +33,7 @@ const DEFAULTS: Settings = {
   huaweiUserId: '',
   themeMode: '跟随系统',
   themeColor: '柠檬黄',
+  language: '跟随系统',
   cloudSyncStatus: '尚未同步',
   cloudLastSyncTime: 0,
   onboardingCompleted: false
@@ -65,6 +67,7 @@ export class SettingsRepository {
         huaweiUserId: parsed['huaweiUserId'] as string ?? DEFAULTS.huaweiUserId,
         themeMode: parsed['themeMode'] as string ?? DEFAULTS.themeMode,
         themeColor: parsed['themeColor'] as string ?? DEFAULTS.themeColor,
+        language: parsed['language'] as string ?? DEFAULTS.language,
         cloudSyncStatus: parsed['cloudSyncStatus'] as string ?? DEFAULTS.cloudSyncStatus,
         cloudLastSyncTime: parsed['cloudLastSyncTime'] as number ?? DEFAULTS.cloudLastSyncTime,
         onboardingCompleted: parsed['onboardingCompleted'] as boolean ?? DEFAULTS.onboardingCompleted

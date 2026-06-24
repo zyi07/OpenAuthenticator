@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1242" height="2688" viewBox="0 0 1242 2688">
+<defs>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity=".18"/></filter>
+<filter id="deepShadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity=".34"/></filter>
+<radialGradient id="yellowGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EBC500" stop-opacity=".55"/><stop offset="52%" stop-color="#EBC500" stop-opacity=".18"/><stop offset="100%" stop-color="#EBC500" stop-opacity="0"/></radialGradient>
+<linearGradient id="softCard" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".98"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity=".74"/></linearGradient>
+<linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2C2C2C"/><stop offset="100%" stop-color="#171717"/></linearGradient>
+</defs>
+<rect width="100%" height="100%" fill="#EFEFEF"/>
+<style>text{font-family:'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;dominant-baseline:hanging} .en{font-family:'Arial Black', 'HarmonyOS Sans', sans-serif}</style>
+<circle cx="1040" cy="260" r="260" fill="url(#yellowGlow)"/>
+<rect x="90" y="110" width="72" height="72" rx="12" fill="#050505" stroke="none" stroke-width="1"/>
+<path d="M 126.0 122.96 C 119.52 131.6 110.16 135.2 104.4 135.2 L 102.24 150.32 C 102.24 162.56 111.6 171.2 126.0 177.68 C 140.4 171.2 149.76 162.56 149.76 150.32 L 147.6 135.2 C 141.84 135.2 132.48 131.6 126.0 122.96 Z" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
+<circle cx="126" cy="149" r="8" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<path d="M 126.0 158.96 C 116.64 158.96 112.32 166.16 112.32 171.92 L 139.68 171.92 C 139.68 166.16 135.36 158.96 126.0 158.96 Z" fill="#FFFFFF"/>
+<text x="180" y="122" font-size="34" font-weight="900" fill="#111111" text-anchor="start" class="en">Authenticator</text>
+<text x="90" y="250" font-size="86" font-weight="900" fill="#111111" text-anchor="start">验证码，</text>
+<text x="90" y="350" font-size="86" font-weight="900" fill="#111111" text-anchor="start">一屏掌控</text>
+<text x="90" y="472" font-size="30" font-weight="400" fill="#5F6368" text-anchor="start">TOTP / HOTP / Steam 动态令牌</text>
+<rect x="290" y="735" width="660" height="1420" rx="58" fill="#0B0B0B" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<rect x="300" y="745" width="640" height="1400" rx="50" fill="#F2F3F5" stroke="none" stroke-width="1"/>
+<circle cx="620" cy="777" r="18" fill="#020202" stroke="none" stroke-width="1"/>
+<text x="324" y="821" font-size="38" font-weight="800" fill="#111111" text-anchor="start">令牌</text>
+<rect x="324" y="891" width="592" height="56" rx="28" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="1" filter="url(#shadow)"/>
+<circle cx="368.1" cy="919.1" r="7.7" fill="none" stroke="#858585" stroke-width="3"/>
+<path d="M 373.6 924.6 L 379.1 930.1" stroke="#858585" stroke-width="3" stroke-linecap="round"/>
+<text x="398" y="905" font-size="23" font-weight="400" fill="#858585" text-anchor="start">Search</text>
+<rect x="324" y="975" width="592" height="104" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="358" y="999" font-size="22" font-weight="700" fill="#111111" text-anchor="start">GitCode（mroble）</text>
+<text x="358" y="1023" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<text x="574" y="1028" font-size="26" font-weight="400" fill="#D5D5D5" text-anchor="start">←</text>
+<text x="616" y="1025" font-size="20" font-weight="800" fill="#858585" text-anchor="start" class="en">438 026</text>
+<path d="M 846.00 1007.00 A 24.00 24.00 0 1 1 823.17 1023.58" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1018" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">24</text>
+<rect x="324" y="1103" width="592" height="104" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="358" y="1127" font-size="22" font-weight="700" fill="#111111" text-anchor="start">Huawei Cloud</text>
+<text x="358" y="1151" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">240 771</text>
+<path d="M 846.00 1135.00 A 24.00 24.00 0 1 1 828.16 1175.06" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1146" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">19</text>
+<rect x="324" y="1231" width="592" height="104" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="358" y="1255" font-size="22" font-weight="700" fill="#111111" text-anchor="start">OpenAI</text>
+<text x="358" y="1279" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">572 009</text>
+<path d="M 846.00 1263.00 A 24.00 24.00 0 0 1 850.99 1310.48" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1274" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">14</text>
+<rect x="324" y="1359" width="592" height="104" rx="28" fill="#FFFFFF" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="358" y="1383" font-size="22" font-weight="700" fill="#111111" text-anchor="start">Steam</text>
+<text x="358" y="1407" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">A7D3K</text>
+<path d="M 846.00 1391.00 A 24.00 24.00 0 0 1 868.83 1422.42" fill="none" stroke="#D5D5D5" stroke-width="6" stroke-linecap="round"/>
+<text x="846" y="1402" font-size="18" font-weight="800" fill="#111111" text-anchor="middle" class="en">9</text>
+<rect x="90" y="2286" width="340" height="66" rx="33" fill="#050505" stroke="none" stroke-width="1"/>
+<text x="128" y="2303" font-size="28" font-weight="800" fill="#FFFFFF" text-anchor="start">本地优先</text>
+<text x="90" y="2392" font-size="28" font-weight="400" fill="#555555" text-anchor="start">无需复杂设置，打开即可查看常用验证码。</text>
+</svg>

@@ -24,7 +24,7 @@
   ],
   "targets": [
     {
-      "name": "default"
+      "name": "release"
     },
     {
       "name": "ohosTest",

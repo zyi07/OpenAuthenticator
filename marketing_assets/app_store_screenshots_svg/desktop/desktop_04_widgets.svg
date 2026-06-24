@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<defs>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity=".18"/></filter>
+<filter id="deepShadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity=".34"/></filter>
+<radialGradient id="yellowGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EBC500" stop-opacity=".55"/><stop offset="52%" stop-color="#EBC500" stop-opacity=".18"/><stop offset="100%" stop-color="#EBC500" stop-opacity="0"/></radialGradient>
+<linearGradient id="softCard" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity=".98"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity=".74"/></linearGradient>
+<linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2C2C2C"/><stop offset="100%" stop-color="#171717"/></linearGradient>
+</defs>
+<rect width="100%" height="100%" fill="#EBC500"/>
+<style>text{font-family:'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;dominant-baseline:hanging} .en{font-family:'Arial Black', 'HarmonyOS Sans', sans-serif}</style>
+<text x="110" y="90" font-size="68" font-weight="900" fill="#111111" text-anchor="start">服务卡片，多尺寸显示</text>
+<text x="112" y="180" font-size="30" font-weight="400" fill="#3D3D3D" text-anchor="start">从最小卡片到大尺寸卡片，桌面快速查看常用验证码。</text>
+<rect x="125" y="340" width="330" height="180" rx="36" fill="#050505" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="153" y="368" font-size="26" font-weight="900" fill="#EBC500" text-anchor="start" class="en">1×2</text>
+<text x="153" y="412" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="start" class="en">Authenticator</text>
+<text x="153" y="455" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<text x="381" y="460" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">24</text>
+<rect x="510" y="340" width="330" height="330" rx="36" fill="#050505" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="538" y="368" font-size="26" font-weight="900" fill="#EBC500" text-anchor="start" class="en">2×2</text>
+<text x="538" y="412" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="start" class="en">Authenticator</text>
+<text x="538" y="455" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<text x="766" y="460" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">24</text>
+<text x="538" y="505" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">240 771</text>
+<text x="766" y="510" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">22</text>
+<rect x="895" y="340" width="470" height="330" rx="36" fill="#050505" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="923" y="368" font-size="26" font-weight="900" fill="#EBC500" text-anchor="start" class="en">2×4</text>
+<text x="923" y="412" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="start" class="en">Authenticator</text>
+<text x="923" y="455" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<text x="1291" y="460" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">24</text>
+<text x="923" y="505" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">240 771</text>
+<text x="1291" y="510" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">22</text>
+<text x="923" y="555" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">572 009</text>
+<text x="1291" y="560" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">20</text>
+<text x="923" y="605" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">305 241</text>
+<text x="1291" y="610" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">18</text>
+<rect x="1420" y="250" width="360" height="560" rx="36" fill="#050505" stroke="none" stroke-width="1" filter="url(#shadow)"/>
+<text x="1448" y="278" font-size="26" font-weight="900" fill="#EBC500" text-anchor="start" class="en">4×4</text>
+<text x="1448" y="322" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="start" class="en">Authenticator</text>
+<text x="1448" y="365" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">896 898</text>
+<text x="1706" y="370" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">24</text>
+<text x="1448" y="415" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">240 771</text>
+<text x="1706" y="420" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">22</text>
+<text x="1448" y="465" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">572 009</text>
+<text x="1706" y="470" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">20</text>
+<text x="1448" y="515" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">305 241</text>
+<text x="1706" y="520" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">18</text>
+<text x="1448" y="565" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">776 219</text>
+<text x="1706" y="570" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">16</text>
+<text x="1448" y="615" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">088 640</text>
+<text x="1706" y="620" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">14</text>
+<text x="1448" y="665" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">004 922</text>
+<text x="1706" y="670" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">12</text>
+<text x="1448" y="715" font-size="34" font-weight="900" fill="#EBC500" text-anchor="start" class="en">671 803</text>
+<text x="1706" y="720" font-size="22" font-weight="900" fill="#D5D5D5" text-anchor="start" class="en">10</text>
+</svg>
