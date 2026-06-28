@@ -13,6 +13,14 @@
       "value": "用于在用户的华为云空间中同步令牌数据"
     },
     {
+      "name": "detect_gesture_reason",
+      "value": "用于根据握持姿态调整新增按钮位置"
+    },
+    {
+      "name": "dlp_anti_peep_reason",
+      "value": "用于在防窥保护开启时检测屏幕前多人状态"
+    },
+    {
       "name": "FormAbility_desc",
       "value": "在桌面显示令牌验证码"
     },

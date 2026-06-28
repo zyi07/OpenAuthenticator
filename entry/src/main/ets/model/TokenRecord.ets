@@ -5,10 +5,15 @@ export interface TokenRecord {
   type: string;
   algorithm: string;
   secret: string;
+  logoUri?: string;
+  logoLightUri?: string;
+  logoDarkUri?: string;
+  logoSource?: string;
   digits?: number;
   period?: number;
   counter?: number;
   createdAt: number;
+  modifiedTime?: number;
 }
 
 const SUPPORTED_ALGORITHMS: string[] = ['SHA1', 'SHA3', 'SHA224', 'SHA256', 'SHA384', 'SHA512'];
@@ -23,10 +28,15 @@ export function sanitizeTokenRecord(record: TokenRecord): TokenRecord {
     type: type,
     algorithm: normalizeAlgorithm(type, record.algorithm || 'SHA1'),
     secret: record.secret || '',
+    logoUri: record.logoUri || '',
+    logoLightUri: record.logoLightUri || '',
+    logoDarkUri: record.logoDarkUri || '',
+    logoSource: record.logoSource || '',
     digits: normalizeDigits(type, record.digits),
     period: normalizePeriod(type, record.period),
     counter: normalizeCounter(record.counter),
-    createdAt: record.createdAt || Date.now()
+    createdAt: record.createdAt || Date.now(),
+    modifiedTime: record.modifiedTime || record.createdAt || Date.now()
   };
 }
 

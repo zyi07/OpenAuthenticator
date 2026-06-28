@@ -7,11 +7,11 @@
         "material": {
           "certpath": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A69D240B34192B398F8A8C4A876C0B79C11FB675ECF42052F58FEA4057D7B5B879A2D1EE1E1A0",
+          "keyPassword": "0000001A9344B1BE624B5BB21D2261F8635B745EB13DAF3A1660DEF6DFDE8056620B42C1393B007F738D",
           "profile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p12",
-          "storePassword": "0000001AEF7A66F019F5C7596ACA4A0704CAAF263C3F83082A37D59E3DAF75FA6E5A0BD64896A4B92F30"
+          "storePassword": "0000001A2A04661E10B368E45A2798D9A2620B53947A3AE1B47FBD2703391DB23FB0318F128F74AD3758"
         }
       },
       {

@@ -13,6 +13,14 @@
       "value": "Sync token data with your Huawei Cloud."
     },
     {
+      "name": "detect_gesture_reason",
+      "value": "Adjust the add button by holding posture."
+    },
+    {
+      "name": "dlp_anti_peep_reason",
+      "value": "Detect privacy risk when anti-peep protection is enabled."
+    },
+    {
       "name": "FormAbility_desc",
       "value": "Show token codes on the home screen"
     },

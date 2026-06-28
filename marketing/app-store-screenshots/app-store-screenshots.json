@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 2,
+  "appName": "开源验证器",
+  "themeId": "tool2fa-trust",
+  "connectedCanvas": true,
+  "locales": [
+    "zh-CN"
+  ],
+  "locale": "zh-CN",
+  "device": "android",
+  "orientation": "portrait",
+  "appIcon": "/app-icon.png",
+  "slidesByDevice": {
+    "iphone": [],
+    "ipad": [],
+    "android-7": [],
+    "android-10": [],
+    "feature-graphic": [],
+    "android": [
+      {
+        "id": "tool2fa-01-hero",
+        "layout": "hero",
+        "label": {
+          "zh-CN": "开源验证器"
+        },
+        "headline": {
+          "zh-CN": "验证码\n一屏掌控"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/01.jpg",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 86,
+            "y": 145,
+            "width": 908,
+            "height": 410,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 205,
+            "y": 595,
+            "width": 670,
+            "height": 1452,
+            "rotation": -3,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "wordmark",
+            "text": {
+              "zh-CN": "Open Authenticator"
+            },
+            "transform": {
+              "x": 56,
+              "y": 54,
+              "width": 420,
+              "height": 54,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 32,
+            "fontWeight": 700,
+            "color": "#F8F8F8",
+            "align": "left"
+          },
+          {
+            "id": "trust",
+            "text": {
+              "zh-CN": "TOTP / HOTP / Steam"
+            },
+            "transform": {
+              "x": 288,
+              "y": 510,
+              "width": 504,
+              "height": 70,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 28,
+            "fontWeight": 700,
+            "color": "#EBC500",
+            "align": "center"
+          }
+        ]
+      },
+      {
+        "id": "tool2fa-02-add",
+        "layout": "two-devices",
+        "label": {
+          "zh-CN": "三种添加方式"
+        },
+        "headline": {
+          "zh-CN": "录入、扫码\n快速添加"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/02.jpg",
+        "screenshotSecondary": "/screenshots/android/phone/{locale}/03.jpg",
+        "transforms": {
+          "caption": {
+            "x": 86,
+            "y": 130,
+            "width": 908,
+            "height": 390,
+            "rotation": 0,
+            "zIndex": 5
+          },
+          "deviceSecondary": {
+            "x": 45,
+            "y": 748,
+            "width": 520,
+            "height": 1127,
+            "rotation": -6,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 463,
+            "y": 612,
+            "width": 595,
+            "height": 1289,
+            "rotation": 5,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "wordmark",
+            "text": {
+              "zh-CN": "开源验证器"
+            },
+            "transform": {
+              "x": 56,
+              "y": 54,
+              "width": 280,
+              "height": 54,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 34,
+            "fontWeight": 700,
+            "color": "#111111",
+            "align": "left"
+          }
+        ]
+      },
+      {
+        "id": "tool2fa-03-edit",
+        "layout": "device-top",
+        "label": {
+          "zh-CN": "专业参数"
+        },
+        "headline": {
+          "zh-CN": "算法与周期\n清晰可控"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/03.jpg",
+        "transforms": {
+          "caption": {
+            "x": 86,
+            "y": 1275,
+            "width": 908,
+            "height": 430,
+            "rotation": 0,
+            "zIndex": 5
+          },
+          "device": {
+            "x": 205,
+            "y": -95,
+            "width": 670,
+            "height": 1452,
+            "rotation": 3,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "wordmark",
+            "text": {
+              "zh-CN": "开源验证器"
+            },
+            "transform": {
+              "x": 56,
+              "y": 54,
+              "width": 280,
+              "height": 54,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 34,
+            "fontWeight": 700,
+            "color": "#111111",
+            "align": "left"
+          },
+          {
+            "id": "details",
+            "text": {
+              "zh-CN": "SHA1 · 6位 · 30秒刷新"
+            },
+            "transform": {
+              "x": 200,
+              "y": 1690,
+              "width": 680,
+              "height": 64,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 28,
+            "fontWeight": 700,
+            "color": "#6F7278",
+            "align": "center"
+          }
+        ]
+      },
+      {
+        "id": "tool2fa-04-cloud",
+        "layout": "device-bottom",
+        "label": {
+          "zh-CN": "云空间"
+        },
+        "headline": {
+          "zh-CN": "同步备份\n更安心"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/04.jpg",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 86,
+            "y": 145,
+            "width": 908,
+            "height": 400,
+            "rotation": 0,
+            "zIndex": 5
+          },
+          "device": {
+            "x": 220,
+            "y": 650,
+            "width": 640,
+            "height": 1387,
+            "rotation": -4,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "wordmark",
+            "text": {
+              "zh-CN": "开源验证器"
+            },
+            "transform": {
+              "x": 56,
+              "y": 54,
+              "width": 280,
+              "height": 54,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 34,
+            "fontWeight": 700,
+            "color": "#F8F8F8",
+            "align": "left"
+          },
+          {
+            "id": "privacy",
+            "text": {
+              "zh-CN": "本地优先 · 按需同步"
+            },
+            "transform": {
+              "x": 245,
+              "y": 545,
+              "width": 590,
+              "height": 64,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 28,
+            "fontWeight": 700,
+            "color": "#EBC500",
+            "align": "center"
+          }
+        ]
+      },
+      {
+        "id": "tool2fa-05-settings",
+        "layout": "two-devices",
+        "label": {
+          "zh-CN": "安全与外观"
+        },
+        "headline": {
+          "zh-CN": "隐私防护\n按需开启"
+        },
+        "screenshot": "/screenshots/android/phone/{locale}/05.jpg",
+        "screenshotSecondary": "/screenshots/android/phone/{locale}/light-formcard.jpg",
+        "transforms": {
+          "caption": {
+            "x": 86,
+            "y": 130,
+            "width": 908,
+            "height": 390,
+            "rotation": 0,
+            "zIndex": 5
+          },
+          "deviceSecondary": {
+            "x": -10,
+            "y": 770,
+            "width": 535,
+            "height": 1159,
+            "rotation": -6,
+            "zIndex": 2
+          },
+          "device": {
+            "x": 455,
+            "y": 635,
+            "width": 610,
+            "height": 1322,
+            "rotation": 4,
+            "zIndex": 3
+          }
+        },
+        "textElements": [
+          {
+            "id": "wordmark",
+            "text": {
+              "zh-CN": "开源验证器"
+            },
+            "transform": {
+              "x": 56,
+              "y": 54,
+              "width": 280,
+              "height": 54,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 34,
+            "fontWeight": 700,
+            "color": "#111111",
+            "align": "left"
+          },
+          {
+            "id": "feature-wall",
+            "text": {
+              "zh-CN": "应用锁定  ·  防窥保护  ·  深色模式"
+            },
+            "transform": {
+              "x": 112,
+              "y": 520,
+              "width": 856,
+              "height": 72,
+              "rotation": 0,
+              "zIndex": 6
+            },
+            "fontSize": 28,
+            "fontWeight": 700,
+            "color": "#6F7278",
+            "align": "center"
+          }
+        ]
+      }
+    ]
+  }
+}

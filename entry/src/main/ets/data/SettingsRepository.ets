@@ -9,6 +9,8 @@ interface Settings {
   antiPeep: boolean;
   appLock: boolean;
   showNextToken: boolean;
+  issuerLogoColorMode: string;
+  tokenLayoutMode: string;
   huaweiLoggedIn: boolean;
   huaweiNickname: string;
   huaweiAvatarUri: string;
@@ -27,12 +29,14 @@ const DEFAULTS: Settings = {
   antiPeep: false,
   appLock: false,
   showNextToken: false,
+  issuerLogoColorMode: '纯色',
+  tokenLayoutMode: 'single',
   huaweiLoggedIn: false,
   huaweiNickname: '',
   huaweiAvatarUri: '',
   huaweiUserId: '',
   themeMode: '跟随系统',
-  themeColor: '柠檬黄',
+  themeColor: '灰豆沙粉',
   language: '跟随系统',
   cloudSyncStatus: '尚未同步',
   cloudLastSyncTime: 0,
@@ -61,6 +65,8 @@ export class SettingsRepository {
         antiPeep: parsed['antiPeep'] as boolean ?? DEFAULTS.antiPeep,
         appLock: parsed['appLock'] as boolean ?? DEFAULTS.appLock,
         showNextToken: parsed['showNextToken'] as boolean ?? DEFAULTS.showNextToken,
+        issuerLogoColorMode: parsed['issuerLogoColorMode'] as string ?? DEFAULTS.issuerLogoColorMode,
+        tokenLayoutMode: parsed['tokenLayoutMode'] as string ?? DEFAULTS.tokenLayoutMode,
         huaweiLoggedIn: parsed['huaweiLoggedIn'] as boolean ?? DEFAULTS.huaweiLoggedIn,
         huaweiNickname: parsed['huaweiNickname'] as string ?? DEFAULTS.huaweiNickname,
         huaweiAvatarUri: parsed['huaweiAvatarUri'] as string ?? DEFAULTS.huaweiAvatarUri,

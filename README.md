@@ -139,6 +139,26 @@ build_project --build_mode release
 4. 应用包含 `ohos.permission.DISTRIBUTED_DATASYNC` 权限。
 5. 重新登录设备华为账号或重新安装应用后，再验证手动推送/手动获取。
 
+云侧容器名为 `tool_2fa_tokens`，数据类型名为 `tokens`。字段建议如下，其中 `id` 勾选主键，`secret` 使用 `Encrypted String`：
+
+| 字段 | 云侧类型 |
+| --- | --- |
+| id | String |
+| name | String |
+| remark | String |
+| type | String |
+| algorithm | String |
+| secret | Encrypted String |
+| logoUri | String |
+| logoLightUri | String |
+| logoDarkUri | String |
+| logoSource | String |
+| digits | Integer |
+| period | Integer |
+| counter | Integer |
+| createdAt | Integer |
+| sortIndex | Integer |
+
 ## 数据兼容
 
 - 标准 URI：`otpauth://totp/...`、`otpauth://hotp/...`
