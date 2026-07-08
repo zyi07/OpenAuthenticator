@@ -7,11 +7,11 @@
         "material": {
           "certpath": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A9344B1BE624B5BB21D2261F8635B745EB13DAF3A1660DEF6DFDE8056620B42C1393B007F738D",
+          "keyPassword": "0000001A84196ED1F56F576B504D1D1E9429C52ECF0CFAE4637DD41BD9EAE174B08C4B6B52B0B6BF6A41",
           "profile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "/Users/mroble/.ohos/config/default_Tool_2FA_3SqACbrOmuHKgxI48kTCoxOXrThn5DZmyx1NFqppUKE=.p12",
-          "storePassword": "0000001A2A04661E10B368E45A2798D9A2620B53947A3AE1B47FBD2703391DB23FB0318F128F74AD3758"
+          "storePassword": "0000001AB1E21401B92820ABB6563E0EF5EE2F885C38BCA5F1306331814134285EAC5D4F6D1F9769ADB7"
         }
       },
       {
@@ -31,9 +31,9 @@
     "products": [
       {
         "name": "default",
-        "signingConfig": "release",
-        "targetSdkVersion": "6.1.1(24)",
-        "compatibleSdkVersion": "6.1.1(24)",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.1.0(23)",
+        "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
@@ -58,7 +58,7 @@
       "srcPath": "./entry",
       "targets": [
         {
-          "name": "release",
+          "name": "default",
           "applyToProducts": [
             "default"
           ]

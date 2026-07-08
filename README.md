@@ -3,7 +3,7 @@
   <h1>OpenAuthenticator</h1>
   <p><strong>开源验证器</strong>，面向 HarmonyOS 的原生二次验证令牌管理应用</p>
   <p>
-    <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.1(24)-111111">
+    <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.0(23)-111111">
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
     <img alt="Version" src="https://img.shields.io/badge/Version-1.0-72A28B">
     <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Tablet%20%7C%202in1-6F98AE">
@@ -115,7 +115,7 @@ entry/src/main/ets/
 ## 构建环境
 
 - DevEco Studio
-- HarmonyOS SDK `6.1.1(24)` release API
+- HarmonyOS SDK `6.1.0(23)` release API
 - ArkTS Stage 模型
 - Bundle：`com.example.tool_2fa`
 - Version：`1.0`
@@ -163,20 +163,21 @@ build_project --build_mode release
 
 - 标准 URI：`otpauth://totp/...`、`otpauth://hotp/...`
 - Google Authenticator：`otpauth-migration://offline?data=...`
+- Authing 令牌：JSON 数组格式，兼容 `account/accountId/secret/algorithm/digits/interval/platform`
 - 文件导入：JSON、TXT、CSV、TSV、`.otpauth`、`.mafile`、`.2fas`
 - 本应用备份：JSON 文件与逐令牌二维码
 - 密钥校验：导入前会校验类型、算法、令牌长度、刷新时间和 Base32/Steam 密钥格式
 
 ## 上架说明
 
-- 本仓库当前面向 HarmonyOS release SDK `6.1.1(24)`，避免依赖 beta-only API。
+- 本仓库当前面向 HarmonyOS release SDK `6.1.0(23)`，避免依赖 beta-only API。
 - DevEco Previewer 不一定渲染系统级模糊、沉浸材质、扫码、账号、云同步、媒体库和服务卡片能力，请以真机或模拟器验证为准。
 - 智感握姿、防窥保护等能力受设备系统能力限制，上架版保持可见入口与稳定提示。
 - 真实密钥、二维码、账号信息和云同步日志不应提交到仓库或 issue。
 
 ## 辅助材料
 
-- `cloud-hosting/public/user-agreement.html`：用户协议云托管页面。
+- `cloud-hosting/public/user-agreement.html`：用户协议云托管页面，独立链接为 `https://gitcode.com/mroble/Tool_2FA/raw/main/cloud-hosting/public/user-agreement.html`。
 - `marketing_assets/app_store_screenshots/`：应用商店手机端与电脑端介绍图。
 - `marketing_assets/app_store_screenshots_svg/`：可继续编辑的 SVG 介绍图。
 

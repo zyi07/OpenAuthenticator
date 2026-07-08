@@ -5,7 +5,7 @@
 Native HarmonyOS TOTP authenticator app. Single `entry` module, single page (`pages/Index`), stage model.
 
 - **Bundle**: `com.example.tool_2fa`
-- **SDK**: target/compatible `6.1.1(24)` (HarmonyOS), model version `6.1.1`
+- **SDK**: target/compatible `6.1.0(23)` (HarmonyOS), model version `6.1.0`
 - **Device types**: phone, tablet
 - **UI framework**: ArkUI + `@kit.UIDesignKit` (HdsNavigation, HdsTabs)
 

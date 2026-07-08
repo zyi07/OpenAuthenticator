@@ -4,6 +4,7 @@ import { privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
 import { LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
+import deviceInfo from '@ohos.deviceInfo';
 import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
 import { dlpAntiPeep } from '@kit.DeviceSecurityKit';
 import { image } from '@kit.ImageKit';
@@ -21,7 +22,6 @@ import {
   HdsNavigationTitleMode,
   HdsTabs,
   HdsTabsAttribute,
-  HdsTabsController,
   ScrollEffectType,
   hdsEffect,
   hdsMaterial
@@ -92,6 +92,7 @@ const TOKEN_LAYOUT_SINGLE: string = 'single';
 const TOKEN_LAYOUT_DOUBLE: string = 'double';
 const DEFAULT_TOKEN_DIGITS: number = 6;
 const DEFAULT_TOKEN_PERIOD: number = 30;
+const USER_AGREEMENT_URL: string = 'https://gitcode.com/mroble/Tool_2FA/raw/main/cloud-hosting/public/user-agreement.html';
 const FORM_TEXT_SIZE: number = 16;
 const PAGE_CARD_GAP: number = 10;
 const FORM_ROW_HEIGHT: number = 60;
@@ -114,6 +115,7 @@ const HOME_NAV_TEXT_SIZE: number = 10;
 const HOME_SEARCH_ICON_SIZE: number = 14;
 const HOME_SEARCH_TEXT_SIZE: number = 14;
 const RESPONSIVE_CARD_MIN_WIDTH: number = 320;
+const RESPONSIVE_DOUBLE_CARD_MIN_WIDTH: number = (RESPONSIVE_CARD_MIN_WIDTH - PAGE_CARD_GAP) / 2;
 const RESPONSIVE_CARD_MAX_WIDTH: number = 480;
 const CARD_TOKEN_LIMIT: number = 8;
 const TOKEN_CARD_HEIGHT: number = 75;
@@ -132,8 +134,8 @@ const ME_AVATAR_SIZE: number = 48;
 const ME_TEXT_SIZE: number = 18;
 const ME_ACTION_TEXT_SIZE: number = 15;
 const ME_ACTION_ICON_SIZE: number = 20;
-const ME_ARROW_WIDTH: number = 7;
-const ME_ARROW_HEIGHT: number = 14;
+const ME_ARROW_WIDTH: number = 8;
+const ME_ARROW_HEIGHT: number = 15;
 const ADD_BUTTON_SIZE: number = 50;
 const ADD_BUTTON_RIGHT: number = 36;
 const ADD_BUTTON_BOTTOM: number = 142;
@@ -143,6 +145,11 @@ const SWIPE_ACTION_SIZE: number = 40;
 const SWIPE_ACTION_ICON_SIZE: number = 32;
 const SWIPE_ACTION_GAP: number = 10;
 const SWIPE_ACTION_AREA_WIDTH: number = SWIPE_ACTION_SIZE * 2 + SWIPE_ACTION_GAP * 3;
+const WATCH_LAYOUT_MAX_WIDTH: number = 320;
+const WATCH_LAYOUT_MAX_HEIGHT: number = 360;
+const WATCH_HORIZONTAL_PADDING: number = 18;
+const WATCH_TOKEN_CARD_HEIGHT: number = 108;
+const WATCH_TOKEN_CODE_SIZE: number = 28;
 
 enum PageMode {
   Home,
@@ -205,6 +212,7 @@ struct Index {
   @State private issuerLogoColorMode: string = '纯色';
   @State private tokenLayoutMode: string = TOKEN_LAYOUT_SINGLE;
   @State private logoRenderVersion: number = 0;
+  @State private formLogoRenderVersion: number = 0;
   @State private themeModeInput: string = '跟随系统';
   @State private themeColorInput: string = '灰豆沙粉';
   @State private languageInput: string = LANGUAGE_SYSTEM;
@@ -228,19 +236,12 @@ struct Index {
     this.timerId = setInterval(() => {
       this.currentTimeMs = Date.now();
     }, 1000);
-    this.cardTimerId = setInterval(() => {
-      this.updateWidgetCards();
-    }, 1000);
   }
 
   aboutToDisappear(): void {
     if (this.timerId >= 0) {
       clearInterval(this.timerId);
       this.timerId = -1;
-    }
-    if (this.cardTimerId >= 0) {
-      clearInterval(this.cardTimerId);
-      this.cardTimerId = -1;
     }
     this.stopSmartGrip();
     this.stopAntiPeep();
@@ -252,18 +253,18 @@ struct Index {
   private meScroller: Scroller = new Scroller();
   private settingsScroller: Scroller = new Scroller();
   private cloudSpaceScroller: Scroller = new Scroller();
+  private watchScroller: Scroller = new Scroller();
   private homePathStack: NavPathStack = new NavPathStack();
   private addPageScroller: Scroller = new Scroller();
-  private homeTabsController: HdsTabsController = new HdsTabsController();
   private onboardingSwiperController: SwiperController = new SwiperController();
   private timerId: number = -1;
   private authInstance: userAuth.UserAuthInstance | null = null;
-  private cardTimerId: number = -1;
   private holdingHandCallback: ((status: motion.HoldingHandStatus) => void) | null = null;
   private antiPeepCallback: ((status: dlpAntiPeep.DlpAntiPeepStatus) => void) | null = null;
   private importRejectedCount: number = 0;
   private logoLookupTimer: number = 0;
   private logoLookupSerial: number = 0;
+  private deviceType: string = deviceInfo.deviceType;
   private addButtonDragStartX: number = 0;
   private addButtonDragStartY: number = 0;
   @State private cardSelectedTokenIds: string[] = [];
@@ -396,6 +397,15 @@ struct Index {
   }
 
   build() {
+    if (this.isWatchLayout()) {
+      this.WatchAppRoot()
+    } else {
+      this.PhoneAppRoot()
+    }
+  }
+
+  @Builder
+  private PhoneAppRoot() {
     Stack({ alignContent: this.isLeftHanded() ? Alignment.BottomStart : Alignment.BottomEnd }) {
       if (this.appLockEnabled && this.isLocked) {
         Column() {
@@ -460,21 +470,45 @@ struct Index {
         enableComponentSafeArea: false
       })
       .navDestination(this.SettingsNavDestination)
-      .bindToScrollable(this.selectedHomeTab === HomeTab.Token ? [this.homeScroller] : [this.meScroller])
+      .bindToScrollable(this.homeNavigationScrollers())
       .hideBackButton(true)
       .titleMode(HdsNavigationTitleMode.MINI)
       .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
       .width('100%')
       .height('100%')
 
-      if (this.selectedHomeTab === HomeTab.Token && this.pageMode === PageMode.Home) {
+      if (this.shouldShowAddFloatingButton()) {
         this.AddFloatingButton()
       }
 
-      if (this.showOnboarding) {
+      if (!this.isWatchLayout() && this.showOnboarding) {
         this.OnboardingOverlay()
       }
 
+      if (this.importProgressVisible) {
+        this.ImportProgressOverlay()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.pageBackgroundColor())
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      const nextWidth = this.lengthToNumber(newValue.width, this.pageWidth);
+      const nextHeight = this.lengthToNumber(newValue.height, this.pageHeight);
+      if (nextWidth > 0 && Math.abs(nextWidth - this.pageWidth) > 0.5) {
+        this.pageWidth = nextWidth;
+      }
+      if (nextHeight > 0 && Math.abs(nextHeight - this.pageHeight) > 0.5) {
+        this.pageHeight = nextHeight;
+      }
+    })
+  }
+
+  @Builder
+  private WatchAppRoot() {
+    Stack() {
+      this.PageBackground()
+      this.WatchHomePageContent()
       if (this.importProgressVisible) {
         this.ImportProgressOverlay()
       }
@@ -679,41 +713,178 @@ struct Index {
 
   @Builder
   private HomePageContent() {
-    HdsTabs({ controller: this.homeTabsController }) {
-      TabContent() {
-        this.TokenListContent()
-      }
-      .tabBar(this.tokenTabBarStyle())
+    if (this.isWatchLayout()) {
+      this.WatchHomePageContent()
+    } else {
+      HdsTabs() {
+        TabContent() {
+          this.TokenListContent()
+        }
+        .tabBar(this.tokenTabBarStyle())
 
-      TabContent() {
-        this.MePageContent()
+        TabContent() {
+          this.MePageContent()
+        }
+        .tabBar(this.meTabBarStyle())
       }
-      .tabBar(this.meTabBarStyle())
+      .barOverlap(true)
+      .vertical(false)
+      .scrollable(false)
+      .barPosition(BarPosition.End)
+      .barWidth(HOME_NAV_WIDTH)
+      .barHeight(HOME_NAV_HEIGHT)
+      .barFloatingStyle({
+        barBottomMargin: this.naviIndicatorHeight,
+        barWidth: {
+          smallWidth: HOME_NAV_WIDTH,
+          mediumWidth: HOME_NAV_WIDTH,
+          largeWidth: HOME_NAV_WIDTH
+        },
+        lightColor: this.accentColor(),
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.IMMERSIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        }
+      })
+      .onChange((index: number) => {
+        this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
+      })
+      .width('100%')
+      .height('100%')
     }
-    .barOverlap(true)
-    .vertical(false)
-    .scrollable(false)
-    .barPosition(BarPosition.End)
-    .barWidth(HOME_NAV_WIDTH)
-    .barHeight(HOME_NAV_HEIGHT)
-    .barFloatingStyle({
-      barBottomMargin: this.naviIndicatorHeight,
-      barWidth: {
-        smallWidth: HOME_NAV_WIDTH,
-        mediumWidth: HOME_NAV_WIDTH,
-        largeWidth: HOME_NAV_WIDTH
-      },
-      lightColor: this.accentColor(),
-      systemMaterialEffect: {
-        materialType: hdsMaterial.MaterialType.IMMERSIVE,
-        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+  }
+
+  @Builder
+  private WatchHomePageContent() {
+    Scroll(this.watchScroller) {
+      Column({ space: 10 }) {
+        this.WatchCloudCard()
+
+        if (this.tokens.length === 0) {
+          Column({ space: 8 }) {
+            Text(this.t('暂无令牌，请先添加令牌'))
+              .fontSize(13)
+              .fontColor(this.secondaryTextColor())
+              .textAlign(TextAlign.Center)
+              .width('100%')
+
+            Text(this.t('登录华为账号'))
+              .fontSize(12)
+              .fontColor(this.secondaryTextColor())
+              .textAlign(TextAlign.Center)
+              .width('100%')
+          }
+          .width('100%')
+          .padding({ top: 18, bottom: 18, left: 12, right: 12 })
+          .borderRadius(18)
+          .backgroundColor(this.cardBackgroundColor())
+        } else {
+          ForEach(this.tokens, (token: TokenRecord) => {
+            this.WatchTokenCard(token)
+          }, (token: TokenRecord) => `${token.id}-${this.currentTimeMs}`)
+        }
       }
-    })
-    .onChange((index: number) => {
-      this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
-    })
+      .width('100%')
+      .padding({
+        left: WATCH_HORIZONTAL_PADDING,
+        right: WATCH_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + 8,
+        bottom: this.naviIndicatorHeight + 18
+      })
+    }
     .width('100%')
     .height('100%')
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private WatchCloudCard() {
+    Column({ space: 8 }) {
+      Text(this.isHuaweiLoggedIn ? this.displayHuaweiNickname() : this.t('登录华为账号'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .textAlign(TextAlign.Center)
+
+      Button({ type: ButtonType.Capsule }) {
+        if (this.cloudSyncing) {
+          LoadingProgress()
+            .width(18)
+            .height(18)
+            .color(this.accentContrastColor())
+        } else {
+          Text(this.isHuaweiLoggedIn ? this.t('手动获取') : this.t('登录华为账号'))
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentContrastColor())
+        }
+      }
+      .width('100%')
+      .height(36)
+      .backgroundColor(this.accentColor())
+      .enabled(!this.cloudSyncing)
+      .onClick(() => {
+        if (this.isHuaweiLoggedIn) {
+          this.pullTokensFromCloud();
+        } else {
+          this.loginHuaweiAccount();
+        }
+      })
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 12, bottom: 12 })
+    .borderRadius(18)
+    .backgroundColor(this.cardBackgroundColor())
+  }
+
+  @Builder
+  private WatchTokenCard(token: TokenRecord) {
+    Column({ space: 4 }) {
+      Text(token.name)
+        .fontSize(13)
+        .fontColor(this.primaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+
+      Text(token.remark.trim().length > 0 ? token.remark.trim() : this.t('发行方'))
+        .fontSize(11)
+        .fontColor(this.secondaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+
+      Row() {
+        Text(this.tokenCode(token))
+          .fontSize(WATCH_TOKEN_CODE_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.tokenValueColor())
+          .letterSpacing(0)
+          .maxLines(1)
+          .contentTransition(new NumericTextTransition({
+            flipDirection: FlipDirection.UP,
+            enableBlur: true
+          }))
+          .animation({ duration: 400, curve: Curve.Smooth })
+          .layoutWeight(1)
+
+        Text(this.tokenCountdownText(token))
+          .fontSize(11)
+          .fontColor(this.secondaryTextColor())
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(WATCH_TOKEN_CARD_HEIGHT)
+    .padding({ left: 14, right: 14, top: 12, bottom: 10 })
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(18)
+    .backgroundColor(this.cardBackgroundColor())
   }
 
   @Builder
@@ -773,7 +944,7 @@ struct Index {
     .mode(NavDestinationMode.STANDARD)
     .systemTransition(NavigationSystemTransitionType.DEFAULT)
     .onHidden((reason: VisibilityChangeReason) => {
-      if (name === 'addToken') {
+      if (name === 'addToken' && reason === VisibilityChangeReason.TRANSITION) {
         this.clearAddPageNavigationState();
       }
     })
@@ -812,7 +983,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .lanes(this.tokenListLaneCount(), PAGE_CARD_GAP)
+    .lanes(this.filteredTokens().length === 0 ? 1 : this.tokenListLaneCount(), PAGE_CARD_GAP)
     .padding({
       left: HOME_HORIZONTAL_PADDING,
       right: HOME_HORIZONTAL_PADDING,
@@ -906,7 +1077,7 @@ struct Index {
         })
     }
     .width('100%')
-    .height(Math.max(360, this.pageHeight - this.statusBarHeight - HOME_TITLE_HEIGHT - HOME_NAV_HEIGHT - 96))
+    .height(this.emptyTokenStateHeight())
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
   }
@@ -1600,8 +1771,8 @@ struct Index {
         Row({ space: 10 }) {
           Button({ type: ButtonType.Circle }) {
             Image($r('app.media.ic_me_right'))
-              .width(8)
-              .height(16)
+              .width(ME_ARROW_WIDTH)
+              .height(ME_ARROW_HEIGHT)
               .objectFit(ImageFit.Contain)
               .rotate({ angle: 180 })
           }
@@ -1632,8 +1803,8 @@ struct Index {
 
           Button({ type: ButtonType.Circle }) {
             Image($r('app.media.ic_me_right'))
-              .width(8)
-              .height(16)
+              .width(ME_ARROW_WIDTH)
+              .height(ME_ARROW_HEIGHT)
               .objectFit(ImageFit.Contain)
           }
           .width(40)
@@ -2129,7 +2300,7 @@ struct Index {
   }
 
   private homeSearchMenu(): HdsNavigationMenuContentOptions {
-    if (this.selectedHomeTab !== HomeTab.Token) {
+    if (this.isWatchLayout() || this.selectedHomeTab !== HomeTab.Token) {
       return { value: [], maxCount: 0 };
     }
 
@@ -2178,7 +2349,20 @@ struct Index {
   }
 
   private tokenListLaneCount(): number {
-    return this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? 2 : 1;
+    const baseCount = this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? 2 : 1;
+    const minWidth = this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? RESPONSIVE_DOUBLE_CARD_MIN_WIDTH :
+    RESPONSIVE_CARD_MIN_WIDTH;
+    const availableWidth = Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2);
+    const responsiveCount = Math.max(1,
+      Math.floor((availableWidth + PAGE_CARD_GAP) / (minWidth + PAGE_CARD_GAP)));
+    return Math.max(baseCount, responsiveCount);
+  }
+
+  private emptyTokenStateHeight(): number {
+    const topSpace = this.statusBarHeight + HOME_TITLE_HEIGHT + HOME_LAYOUT_GAP + HOME_SEARCH_HEADER_HEIGHT +
+    PAGE_CARD_GAP;
+    const bottomSpace = this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP;
+    return Math.max(260, this.pageHeight - topSpace - bottomSpace);
   }
 
   private toggleTokenLayoutMode(): void {
@@ -2618,7 +2802,8 @@ struct Index {
         .width(size)
         .height(size)
         .borderRadius(size / 2)
-        .objectFit(ImageFit.Contain)
+        .objectFit(allowLocalLogo ? ImageFit.Contain : ImageFit.Cover)
+        .clip(true)
     } else {
       Stack() {
         Circle()
@@ -2707,7 +2892,7 @@ struct Index {
           Text(this.isSaving ? this.t('保存中') : this.t('确认'))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
-            .fontColor(this.cardBackgroundColor())
+            .fontColor(this.canSaveToken() ? this.cardBackgroundColor() : this.disabledButtonTextColor())
         }
         .height(46)
         .width('100%')
@@ -2739,8 +2924,12 @@ struct Index {
   private AddTokenLogoEditor() {
     Column({ space: 12 }) {
       Stack() {
-        this.IssuerLogoView(this.formLogoUri(), this.nameInput, this.remarkInput, FORM_LOGO_SIZE,
-          this.logoSourceInput !== LOGO_SOURCE_MANUAL)
+        ForEach([this.formLogoRenderVersion], (version: number) => {
+          this.IssuerLogoView(this.formLogoUri(), this.nameInput, this.remarkInput, FORM_LOGO_SIZE,
+            this.logoSourceInput !== LOGO_SOURCE_MANUAL)
+        }, (version: number) => {
+          return 'form-logo-' + version.toString() + '-' + this.formLogoUri();
+        })
         Circle()
           .width(FORM_LOGO_SIZE)
           .height(FORM_LOGO_SIZE)
@@ -3121,6 +3310,10 @@ struct Index {
     return this.isDarkTheme() ? '#555555' : '#DADBDD';
   }
 
+  private disabledButtonTextColor(): string {
+    return this.isDarkTheme() ? '#E2E2E2' : '#555555';
+  }
+
   @Builder
   private Separator() {
     Divider()
@@ -3129,7 +3322,28 @@ struct Index {
   }
 
   private currentHomeTitle(): string {
+    if (this.isWatchLayout()) {
+      return this.t('令牌');
+    }
     return this.selectedHomeTab === HomeTab.Token ? this.t('令牌') : this.t('我的');
+  }
+
+  private isWatchLayout(): boolean {
+    const deviceType = this.deviceType.toLowerCase();
+    return deviceType.indexOf('wear') >= 0 || deviceType.indexOf('watch') >= 0 ||
+      (this.pageWidth <= WATCH_LAYOUT_MAX_WIDTH && this.pageHeight <= WATCH_LAYOUT_MAX_HEIGHT);
+  }
+
+  private shouldShowAddFloatingButton(): boolean {
+    return !this.isWatchLayout() && this.selectedHomeTab === HomeTab.Token &&
+      this.pageMode === PageMode.Home && this.homePathStack.size() === 0;
+  }
+
+  private homeNavigationScrollers(): Scroller[] {
+    if (this.isWatchLayout()) {
+      return [this.watchScroller];
+    }
+    return this.selectedHomeTab === HomeTab.Token ? [this.homeScroller] : [this.meScroller];
   }
 
   private navigationDestinationTitle(name: string): string {
@@ -4487,17 +4701,16 @@ struct Index {
       const options = new photoAccessHelper.PhotoSelectOptions();
       options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
       options.maxSelectNumber = 1;
+      options.isEditSupported = true;
       const photoPicker = new photoAccessHelper.PhotoViewPicker();
       const result = await photoPicker.select(options);
       if (!result.photoUris || result.photoUris.length === 0) {
         return;
       }
-      const logoUri = await this.persistPickedLogo(context, result.photoUris[0]);
-      this.clearLogoLookupTimer();
-      this.logoUriInput = logoUri;
-      this.logoLightUriInput = logoUri;
-      this.logoDarkUriInput = logoUri;
-      this.logoSourceInput = LOGO_SOURCE_MANUAL;
+      const pickedUri = result.photoUris[0];
+      this.applyManualFormLogo(pickedUri);
+      const logoUri = await this.persistPickedLogo(context, pickedUri);
+      this.applyManualFormLogo(logoUri);
     } catch (error) {
       this.showToast('选择图片失败');
       console.error(`Failed to pick issuer logo: ${JSON.stringify(error)}`);
@@ -4521,6 +4734,7 @@ struct Index {
     this.logoLightUriInput = '';
     this.logoDarkUriInput = '';
     this.logoSourceInput = '';
+    this.formLogoRenderVersion += 1;
   }
 
   private clearLogoLookupTimer(): void {
@@ -4540,6 +4754,7 @@ struct Index {
     this.logoLightUriInput = '';
     this.logoDarkUriInput = '';
     this.logoSourceInput = '';
+    this.formLogoRenderVersion += 1;
     const lookupIssuer = this.logoLookupIssuer(this.typeInput, this.remarkInput);
     const lookupName = this.logoLookupName(this.typeInput, this.nameInput);
     if (lookupName.trim().length === 0 && lookupIssuer.trim().length === 0) {
@@ -4619,6 +4834,16 @@ struct Index {
     this.logoLightUriInput = result.logoLightUri;
     this.logoDarkUriInput = result.logoDarkUri;
     this.logoSourceInput = result.logoSource;
+    this.formLogoRenderVersion += 1;
+  }
+
+  private applyManualFormLogo(uri: string): void {
+    this.clearLogoLookupTimer();
+    this.logoUriInput = uri;
+    this.logoLightUriInput = uri;
+    this.logoDarkUriInput = uri;
+    this.logoSourceInput = LOGO_SOURCE_MANUAL;
+    this.formLogoRenderVersion += 1;
   }
 
   private completeOnboarding(): void {
@@ -4650,7 +4875,7 @@ struct Index {
     if (index === 0) {
       this.openExternalUrl('https://gitcode.com/mroble/Tool_2FA');
     } else if (index === 1) {
-      this.openPrivacyLink(privacyManager.AppPrivacyLinkType.USER_AGREEMENT_LINK, '用户协议');
+      this.openExternalUrl(USER_AGREEMENT_URL);
     } else if (index === 2) {
       this.openPrivacyLink(privacyManager.AppPrivacyLinkType.PRIVACY_STATEMENT_LINK, '隐私声明');
     } else {
@@ -4712,6 +4937,7 @@ struct Index {
     this.logoLightUriInput = token.logoLightUri || token.logoUri || '';
     this.logoDarkUriInput = token.logoDarkUri || token.logoUri || '';
     this.logoSourceInput = token.logoSource || '';
+    this.formLogoRenderVersion += 1;
     this.typeInput = this.normalizeTokenType(token.type);
     this.algorithmInput = this.normalizeAlgorithm(token.algorithm);
     this.secretInput = token.secret;
@@ -4768,6 +4994,12 @@ struct Index {
       return;
     }
 
+    if (this.isDesktopDevice()) {
+      this.showToast('当前设备暂不支持相机扫码，请选择文件导入');
+      await this.importTokenFile();
+      return;
+    }
+
     const context = this.getAbilityContext();
     if (!context) {
       this.showToast('无法打开扫码');
@@ -4793,6 +5025,10 @@ struct Index {
     } finally {
       this.isScanning = false;
     }
+  }
+
+  private isDesktopDevice(): boolean {
+    return this.deviceType === '2in1';
   }
 
   private async saveScannedToken(scannedValue: string): Promise<void> {
@@ -5095,23 +5331,29 @@ struct Index {
     const info = this.objectValue(this.importedJsonValue(source, 'info'));
     const otp = this.objectValue(this.importedJsonValue(source, 'otp'));
     const tokenSource = info || otp || source;
-    const secret = this.firstString(source, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret', 'seed']) ||
-      this.firstString(tokenSource, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret', 'seed']);
+    const secret = this.firstString(source, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret',
+      'otpSecret', 'otp_secret', 'seed', 'key']) ||
+      this.firstString(tokenSource, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret', 'otpSecret',
+        'otp_secret', 'seed', 'key']);
     if (secret.length > 0) {
-      let jsonType = this.firstString(source, ['type', 'tokenType']) || this.firstString(tokenSource, ['type', 'tokenType']);
+      let jsonType = this.firstString(source, ['type', 'tokenType', 'otpType', 'otp_type']) ||
+        this.firstString(tokenSource, ['type', 'tokenType', 'otpType', 'otp_type']);
       if (jsonType.length === 0 && this.firstString(tokenSource, ['shared_secret']).length > 0) {
         jsonType = 'Steam';
       }
       records.push(this.createImportedTokenRecord(
-        this.firstString(source, ['name', 'service', 'label', 'accountName', 'account_name']) ||
-          this.firstString(tokenSource, ['name', 'service', 'label', 'accountName', 'account_name']),
-        this.firstString(source, ['issuer', 'remark', 'account', 'email']) ||
-          this.firstString(tokenSource, ['issuer', 'remark', 'account', 'email']),
+        this.firstString(source, ['name', 'service', 'label', 'accountName', 'account_name', 'account', 'accountId',
+          'account_id', 'username']) ||
+          this.firstString(tokenSource, ['name', 'service', 'label', 'accountName', 'account_name', 'account',
+            'accountId', 'account_id', 'username']),
+        this.firstString(source, ['issuer', 'remark', 'platform', 'provider', 'vendor', 'email']) ||
+          this.firstString(tokenSource, ['issuer', 'remark', 'platform', 'provider', 'vendor', 'email']),
         secret,
         jsonType,
         this.firstString(source, ['algorithm', 'algo']) || this.firstString(tokenSource, ['algorithm', 'algo']),
         this.firstNumber(source, ['digits']) || this.firstNumber(tokenSource, ['digits']),
-        this.firstNumber(source, ['period']) || this.firstNumber(tokenSource, ['period']),
+        this.firstNumber(source, ['period', 'interval', 'timeStep', 'time_step']) ||
+          this.firstNumber(tokenSource, ['period', 'interval', 'timeStep', 'time_step']),
         this.firstNumber(source, ['counter']) || this.firstNumber(tokenSource, ['counter'])
       ));
       return;
@@ -5408,7 +5650,16 @@ struct Index {
   }
 
   private createTokensFromScannedValue(scannedValue: string): TokenRecord[] {
-    if (scannedValue.trim().toLowerCase().startsWith('otpauth-migration://offline?')) {
+    const trimmedValue = scannedValue.trim();
+    if (trimmedValue.startsWith('{') || trimmedValue.startsWith('[')) {
+      const records: TokenRecord[] = [];
+      try {
+        this.collectImportedJsonTokens(JSON.parse(trimmedValue), records);
+      } catch (error) {
+      }
+      return this.uniqueTokenRecords(records);
+    }
+    if (trimmedValue.toLowerCase().startsWith('otpauth-migration://offline?')) {
       return GoogleAuthenticatorMigration.parse(scannedValue).map((item: GoogleOtpParameter): TokenRecord => {
         return this.createImportedTokenRecord(
           item.name,
@@ -5615,12 +5866,14 @@ struct Index {
     await FormManager.updateAllForms(this.tokens);
   }
 
-  private openCardTokenPicker(): void {
+  private async openCardTokenPicker(): Promise<void> {
+    this.cardSelectedTokenIds = await FormManager.getCardTokenIds();
     this.pendingCardTokenIds = [...this.cardSelectedTokenIds];
     this.showCardTokenPicker = true;
   }
 
-  private openSystemFormManager(): void {
+  private async openSystemFormManager(): Promise<void> {
+    await this.updateWidgetCards();
     const want: Want = {
       bundleName: 'com.example.tool_2fa',
       abilityName: 'FormAbility',

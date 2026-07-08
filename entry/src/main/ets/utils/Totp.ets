@@ -226,7 +226,7 @@ function normalizeBase32(value: string): string {
 }
 
 function isValidBase32(value: string): boolean {
-  if (value.length < 8 || [1, 3, 6].includes(value.length % 8)) {
+  if (value.length < 6 || [1, 3, 6].includes(value.length % 8)) {
     return false;
   }
   for (let index = 0; index < value.length; index++) {
@@ -237,7 +237,7 @@ function isValidBase32(value: string): boolean {
       return false;
     }
   }
-  return decodeBase32(value).length >= 5;
+  return decodeBase32(value).length >= 4;
 }
 
 function decodeBase32(value: string): number[] {

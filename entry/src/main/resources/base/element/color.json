@@ -3,6 +3,18 @@
     {
       "name": "start_window_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "widget_card_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "widget_text_primary",
+      "value": "#111111"
+    },
+    {
+      "name": "widget_refresh_background",
+      "value": "#1A000000"
     }
   ]
 }

@@ -9,10 +9,8 @@ export struct WidgetCountdownRing {
   @Prop inactiveColor: string = '#B8BBC1';
   @Prop trackColor: string = '#E8EAED';
   @Prop textColor: string = '#9A9A9E';
-  @Prop requestsRefresh: boolean = false;
   @State private liveRemaining: number = 0;
   @State private liveProgress: number = 0;
-  @State private refreshRequested: boolean = false;
   private controller: TextTimerController = new TextTimerController();
 
   aboutToAppear(): void {
@@ -21,7 +19,6 @@ export struct WidgetCountdownRing {
   }
 
   private onRemainingUpdate(): void {
-    this.refreshRequested = false;
     this.liveRemaining = this.initialRemaining;
     this.liveProgress = this.period > 0 ? this.initialRemaining / this.period * 100 : 0;
     try {
@@ -54,13 +51,6 @@ export struct WidgetCountdownRing {
         .onTimer((utc: number, elapsedTime: number) => {
           this.liveRemaining = Math.max(0, this.initialRemaining - Math.floor(elapsedTime / 1000));
           this.liveProgress = this.period > 0 ? this.liveRemaining / this.period * 100 : 0;
-          if (this.requestsRefresh && this.liveRemaining === 0 && !this.refreshRequested) {
-            this.refreshRequested = true;
-            postCardAction(this, {
-              'action': 'message',
-              'params': 'refresh'
-            });
-          }
         })
     }
     .width(this.diameter)

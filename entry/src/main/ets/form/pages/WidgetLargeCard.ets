@@ -73,12 +73,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t1Name, this.t1Remark)).fontSize(11).fontColor(L_SUB).maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t1Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t1Type !== 'HOTP') {
                 WidgetCountdownRing({ initialRemaining: this.t1Remaining, period: this.t1Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: true })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -87,12 +87,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t2Name, this.t2Remark)).fontSize(11).fontColor(L_SUB).maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t2Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t2Type !== 'HOTP' && this.t2Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t2Remaining, period: this.t2Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -101,12 +101,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t3Name, this.t3Remark)).fontSize(11).fontColor(L_SUB).maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t3Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t3Type !== 'HOTP' && this.t3Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t3Remaining, period: this.t3Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -115,12 +115,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t4Name, this.t4Remark)).fontSize(11).fontColor(L_SUB).maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t4Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t4Type !== 'HOTP' && this.t4Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t4Remaining, period: this.t4Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
           }.layoutWeight(1).height('100%')
@@ -131,12 +131,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t5Name, this.t5Remark)).fontSize(11).fontColor(L_SUB).maxLines(1
                   ).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t5Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t5Type !== 'HOTP' && this.t5Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t5Remaining, period: this.t5Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -145,12 +145,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t6Name, this.t6Remark)).fontSize(11).fontColor(L_SUB).maxLines(1
                   ).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t6Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t6Type !== 'HOTP' && this.t6Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t6Remaining, period: this.t6Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -159,12 +159,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t7Name, this.t7Remark)).fontSize(11).fontColor(L_SUB).maxLines(1
                   ).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t7Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t7Type !== 'HOTP' && this.t7Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t7Remaining, period: this.t7Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
             Divider().color('#F0F0F0').strokeWidth(1).width('100%')
@@ -173,12 +173,12 @@ struct WidgetLargeCard {
                 Text(this.dn(this.t8Name, this.t8Remark)).fontSize(11).fontColor(L_SUB).maxLines(1
                   ).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
                 Text(this.t8Code).fontSize(20).fontWeight(FontWeight.Medium).fontColor(L_TEXT)
-                  .letterSpacing(1).maxLines(1)
+                  .letterSpacing(1).maxLines(1).width('100%').textOverflow({ overflow: TextOverflow.Ellipsis })
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (this.t8Type !== 'HOTP' && this.t8Name.length > 0) {
                 WidgetCountdownRing({ initialRemaining: this.t8Remaining, period: this.t8Period,
                   diameter: 22, strokeWidth: 2.5, fontSize: 9, accentColor: L_YELLOW,
-                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB, requestsRefresh: false })
+                  inactiveColor: '#B8BBC1', trackColor: '#E8EAED', textColor: L_SUB })
               }
             }.width('100%').layoutWeight(1).alignItems(VerticalAlign.Center)
           }.layoutWeight(1).height('100%')

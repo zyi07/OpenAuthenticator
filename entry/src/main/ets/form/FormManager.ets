@@ -103,7 +103,7 @@ export class FormManager {
     }
   }
 
-  private static async saveCardTokenSnapshot(tokens: TokenRecord[]): Promise<void> {
+  static async saveCardTokenSnapshot(tokens: TokenRecord[]): Promise<void> {
     if (!FormManager.context) {
       return;
     }
@@ -138,6 +138,7 @@ export class FormManager {
     const formData = FormManager.buildFormData(selected);
     try {
       await formProvider.updateForm(formId, formBindingData.createFormBindingData(formData));
+      hilog.info(DOMAIN, TAG, 'updateForm ok formId=%{public}s count=%{public}d time=%{public}d', formId, selected.length, Date.now());
     } catch (error) {
       hilog.error(DOMAIN, TAG, 'updateForm formId=%{public}s err=%{public}s', formId, JSON.stringify(error));
     }
@@ -176,6 +177,68 @@ export class FormManager {
       result.push(...allTokens.slice(0, MAX_SLOTS));
     }
     return result.slice(0, MAX_SLOTS);
+  }
+
+  static getSnapshotSync(context: common.Context): TokenRecord[] {
+    try {
+      const store = preferences.getPreferencesSync(context.getApplicationContext(), { name: PREFS_NAME });
+      const value = store.getSync(CARD_TOKEN_SNAPSHOT_KEY, '[]');
+      const json = typeof value === 'string' ? value : '[]';
+      const records = JSON.parse(json) as TokenRecord[];
+      return records.map((r: TokenRecord) => sanitizeTokenRecord(r));
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'getSnapshotSync failed: %{public}s', JSON.stringify(e));
+      return [];
+    }
+  }
+
+  private static getCardTokenIdsSync(context: common.Context): string[] {
+    try {
+      const store = preferences.getPreferencesSync(context.getApplicationContext(), { name: PREFS_NAME });
+      const value = store.getSync(CARD_TOKEN_IDS_KEY, '[]');
+      const json = typeof value === 'string' ? value : '[]';
+      return JSON.parse(json) as string[];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  private static selectedTokensSync(context: common.Context, allTokens: TokenRecord[]): TokenRecord[] {
+    const selectedIds = FormManager.getCardTokenIdsSync(context);
+    const result: TokenRecord[] = [];
+    for (const id of selectedIds) {
+      const token = allTokens.find((t: TokenRecord) => t.id === id);
+      if (token) {
+        result.push(token);
+      }
+    }
+    if (result.length === 0 && allTokens.length > 0) {
+      result.push(...allTokens.slice(0, MAX_SLOTS));
+    }
+    return result.slice(0, MAX_SLOTS);
+  }
+
+  static buildInitialDataSync(context: common.Context): formBindingData.FormBindingData {
+    const tokens = FormManager.getSnapshotSync(context);
+    if (tokens.length > 0) {
+      const selected = FormManager.selectedTokensSync(context, tokens);
+      return formBindingData.createFormBindingData(FormManager.buildFormData(selected));
+    }
+    const data: Record<string, number | string> = {};
+    data['count'] = 0;
+    data['t1Name'] = '加载中...';
+    for (let index = 1; index <= 8; index++) {
+      data[`t${index}Code`] = '';
+      data[`t${index}Remaining`] = 0;
+      data[`t${index}Period`] = 30;
+      data[`t${index}Progress`] = 0;
+      data[`t${index}Remark`] = '';
+      data[`t${index}Type`] = '';
+      if (index > 1) {
+        data[`t${index}Name`] = '';
+      }
+    }
+    return formBindingData.createFormBindingData(data);
   }
 
   static buildFormData(tokens: TokenRecord[]): Record<string, number | string> {
