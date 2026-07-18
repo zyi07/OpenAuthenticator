@@ -24,6 +24,7 @@ const SQL_CREATE_TABLE = `
     digits INTEGER,
     period INTEGER,
     counter INTEGER,
+    steamData TEXT,
     createdAt INTEGER,
     modifiedTime INTEGER,
     sortIndex INTEGER
@@ -44,6 +45,7 @@ const REQUIRED_COLUMNS: string[] = [
   'digits',
   'period',
   'counter',
+  'steamData',
   'createdAt',
   'modifiedTime',
   'sortIndex'
@@ -212,6 +214,7 @@ function tokenFromRow(resultSet: relationalStore.ResultSet): TokenRecord {
     digits: rowLong(resultSet, 'digits'),
     period: rowLong(resultSet, 'period'),
     counter: rowLong(resultSet, 'counter'),
+    steamData: rowString(resultSet, 'steamData'),
     createdAt: rowLong(resultSet, 'createdAt') || Date.now(),
     modifiedTime: rowLong(resultSet, 'modifiedTime') || rowLong(resultSet, 'createdAt') || Date.now()
   });
@@ -279,6 +282,7 @@ function tokenToBucket(record: TokenRecord, index: number): relationalStore.Valu
   bucket['digits'] = token.digits || 6;
   bucket['period'] = token.period || 30;
   bucket['counter'] = token.counter || 0;
+  bucket['steamData'] = token.steamData || '';
   bucket['createdAt'] = token.createdAt || Date.now();
   bucket['modifiedTime'] = Date.now();
   bucket['sortIndex'] = index;

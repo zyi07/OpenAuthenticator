@@ -9,6 +9,9 @@
   },
   "buildOptionSet": [
     {
+      "name": "debug"
+    },
+    {
       "name": "release",
       "arkOptions": {
         "obfuscation": {
@@ -24,7 +27,7 @@
   ],
   "targets": [
     {
-      "name": "release"
+      "name": "default"
     },
     {
       "name": "ohosTest",

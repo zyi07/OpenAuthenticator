@@ -1,8 +1,8 @@
-import { abilityAccessCtrl, common, ConfigurationConstant, Permissions, Want } from '@kit.AbilityKit';
+import { abilityAccessCtrl, bundleManager, common, ConfigurationConstant, Permissions, Want } from '@kit.AbilityKit';
 import { authentication } from '@kit.AccountKit';
-import { privacyManager } from '@kit.AppGalleryKit';
+import { commentManager, privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
-import { LengthMetrics, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ButtonModifier, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import deviceInfo from '@ohos.deviceInfo';
 import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
@@ -13,8 +13,11 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { motion } from '@kit.MultimodalAwarenessKit';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
+import { wearEngine } from '@kit.WearEngine';
+import { webview } from '@kit.ArkWeb';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { formInfo, formProvider } from '@kit.FormKit';
+import { ImmersionButton, ImmersionSearch } from '@tangs/components';
 import {
   BlurStrategy,
   HdsNavigation,
@@ -22,7 +25,10 @@ import {
   HdsNavigationTitleMode,
   HdsTabs,
   HdsTabsAttribute,
+  IconStyleMode,
   ScrollEffectType,
+  SystemMaterialParams,
+  TitleBarStyleOptions,
   hdsEffect,
   hdsMaterial
 } from '@kit.UIDesignKit';
@@ -33,6 +39,13 @@ import { SettingsRepository } from '../data/SettingsRepository';
 import { FormManager } from '../form/FormManager';
 import { GoogleAuthenticatorMigration, GoogleOtpParameter } from '../utils/GoogleAuthenticatorMigration';
 import { LogoResolver, LogoResolveResult } from '../utils/LogoResolver';
+import { SteamService } from '../data/SteamService';
+import {
+  canUseSteamRemoteFeatures,
+  parseSteamGuardData,
+  SteamConfirmation,
+  SteamGuardData
+} from '../model/SteamGuardData';
 import {
   LANGUAGE_EN_GB,
   LANGUAGE_EN_US,
@@ -46,10 +59,12 @@ import {
 
 const APPLOCK_DOMAIN = 0x0001;
 const APPLOCK_TAG = 'AppLock';
+const APP_COMMENT_TAG = 'AppComment';
 const DATA_SYNC_PERMISSION: Permissions = 'ohos.permission.DISTRIBUTED_DATASYNC';
 const DETECT_GESTURE_PERMISSION: Permissions = 'ohos.permission.DETECT_GESTURE';
 const DLP_ANTI_PEEP_PERMISSION: Permissions = 'ohos.permission.DLP_GET_HIDE_STATUS';
 const ERROR_RED: string = '#D93025';
+const ERROR_RED_TINT: string = '#33D93025';
 const LOGO_SOURCE_MANUAL: string = 'manual';
 const TYPE_OPTIONS: SelectOption[] = [{ value: 'TOTP' }, { value: 'Steam' }, { value: 'HOTP' }];
 const SHA1_OPTIONS: SelectOption[] = [{ value: 'SHA1' }];
@@ -80,6 +95,17 @@ const THEME_COLOR_OPTIONS: SelectOption[] = [
   { value: '灰豆沙粉' },
   { value: '清透炭黑' }
 ];
+const MATERIAL_TYPE_OPTIONS: SelectOption[] = [
+  { value: '自适应' },
+  { value: '沉浸' },
+  { value: '无材质' }
+];
+const MATERIAL_LEVEL_OPTIONS: SelectOption[] = [
+  { value: '自适应' },
+  { value: '精致' },
+  { value: '柔和' },
+  { value: '平滑' }
+];
 const LANGUAGE_OPTIONS: SelectOption[] = [
   { value: LANGUAGE_SYSTEM },
   { value: LANGUAGE_ZH_CN },
@@ -90,9 +116,16 @@ const LANGUAGE_OPTIONS: SelectOption[] = [
 const ISSUER_LOGO_COLOR_OPTIONS: SelectOption[] = [{ value: '品牌色' }, { value: '纯色' }];
 const TOKEN_LAYOUT_SINGLE: string = 'single';
 const TOKEN_LAYOUT_DOUBLE: string = 'double';
+const CARD_PRESSED_SCALE: number = 0.97;
+const CARD_PRESS_ANIMATION_DURATION: number = 160;
 const DEFAULT_TOKEN_DIGITS: number = 6;
 const DEFAULT_TOKEN_PERIOD: number = 30;
-const USER_AGREEMENT_URL: string = 'https://gitcode.com/mroble/Tool_2FA/raw/main/cloud-hosting/public/user-agreement.html';
+const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
+const CAMLINK_URL: string =
+  'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
+const QQ_GROUP_NUMBER: string = '1061983927';
+const APP_VERSION: string = 'V1.2.0';
+const UPDATE_NOTICE_VERSION: string = 'V1.2.0-appearance-steam-1';
 const FORM_TEXT_SIZE: number = 16;
 const PAGE_CARD_GAP: number = 10;
 const FORM_ROW_HEIGHT: number = 60;
@@ -120,13 +153,24 @@ const RESPONSIVE_CARD_MAX_WIDTH: number = 480;
 const CARD_TOKEN_LIMIT: number = 8;
 const TOKEN_CARD_HEIGHT: number = 75;
 const TOKEN_CARD_RADIUS: number = 15;
+const TOKEN_CARD_PADDING: number = 12;
+const TOKEN_LAYOUT_TRANSITION_DURATION: number = 420;
 const TOKEN_NAME_TEXT_SIZE: number = 14;
 const TOKEN_CODE_TEXT_SIZE: number = 24;
 const TOKEN_TIME_TEXT_SIZE: number = 14;
 const TOKEN_NEXT_CODE_TEXT_SIZE: number = 24;
+const TOKEN_DIGIT_HEIGHT_FACTOR: number = 1.35;
+const TOKEN_DIGIT_WIDTH_FACTOR: number = 0.62;
+const TOKEN_STEAM_CHARACTER_WIDTH_FACTOR: number = 0.72;
+const TOKEN_DIGIT_SPACE_FACTOR: number = 0.34;
+const TOKEN_DIGIT_SCROLL_DURATION: number = 400;
 const TOKEN_COUNTDOWN_SIZE: number = 40;
 const TOKEN_COUNTDOWN_STROKE: number = 4;
 const TOKEN_LOGO_SIZE: number = 40;
+const ACCENT_TINT_ALPHA: number = 51;
+const PRIMARY_ACTION_FILL_ALPHA: number = 26;
+const ACCENT_GLOW_ALPHA: number = 92;
+const ACCENT_GLOW_RADIUS: number = 5;
 const ME_CARD_RADIUS: number = 15;
 const ME_LOGIN_CARD_HEIGHT: number = 75;
 const ME_ROW_HEIGHT: number = 60;
@@ -136,13 +180,18 @@ const ME_ACTION_TEXT_SIZE: number = 15;
 const ME_ACTION_ICON_SIZE: number = 20;
 const ME_ARROW_WIDTH: number = 8;
 const ME_ARROW_HEIGHT: number = 15;
+const BACKGROUND_THUMBNAIL_WIDTH: number = 38;
+const BACKGROUND_THUMBNAIL_HEIGHT: number = 56;
+const BACKGROUND_PICKER_ROW_HEIGHT: number = 146;
+const BACKGROUND_BLUR_ROW_HEIGHT: number = 82;
+const BACKGROUND_BLUR_MAX_RADIUS: number = 50;
 const ADD_BUTTON_SIZE: number = 50;
 const ADD_BUTTON_RIGHT: number = 36;
 const ADD_BUTTON_BOTTOM: number = 142;
 const ADD_BUTTON_ICON_SIZE: number = 24;
 const LOGO_SAVE_LOOKUP_TIMEOUT_MS: number = 1500;
 const SWIPE_ACTION_SIZE: number = 40;
-const SWIPE_ACTION_ICON_SIZE: number = 32;
+const SWIPE_ACTION_ICON_SIZE: number = 20;
 const SWIPE_ACTION_GAP: number = 10;
 const SWIPE_ACTION_AREA_WIDTH: number = SWIPE_ACTION_SIZE * 2 + SWIPE_ACTION_GAP * 3;
 const WATCH_LAYOUT_MAX_WIDTH: number = 320;
@@ -150,6 +199,104 @@ const WATCH_LAYOUT_MAX_HEIGHT: number = 360;
 const WATCH_HORIZONTAL_PADDING: number = 18;
 const WATCH_TOKEN_CARD_HEIGHT: number = 108;
 const WATCH_TOKEN_CODE_SIZE: number = 28;
+const WATCH_SYNC_ACTION: string = 'tool2fa.watch.tokens.replace';
+const SHEET_TITLE_BLUR_HEIGHT: number = 56;
+const SHEET_HORIZONTAL_PADDING: number = 20;
+const SHEET_CONTENT_TOP_PADDING: number = 12;
+const SHEET_ROW_HEIGHT: number = 58;
+const SHEET_PRIMARY_TEXT_SIZE: number = 15;
+const SHEET_SECONDARY_TEXT_SIZE: number = 12;
+const SHEET_ACTION_BUTTON_HEIGHT: number = 44;
+const SHEET_ACTION_GAP: number = 12;
+const SHEET_ACTION_BAR_RADIUS: number = 28;
+const SHEET_ACTION_BOTTOM_GAP: number = 12;
+const SHEET_ACTION_SAFE_SPACE: number = 88;
+const SHEET_EMPTY_STATE_HEIGHT: number = 120;
+const SHEET_OPTION_CARD_RADIUS: number = 18;
+const UPDATE_NOTICE_SHEET_HEIGHT: number = 560;
+const SHEET_ADD_METHOD_HEIGHT: number = 228;
+const SHEET_EXPORT_FORMAT_HEIGHT: number = 344;
+const SHEET_QR_BASE_HEIGHT: number = 252;
+const STEAM_CONFIRMATION_POLL_INTERVAL_MS: number = 30000;
+const ONBOARDING_PAGE_COUNT: number = 4;
+const ONBOARDING_CONTENT_MAX_WIDTH: number = 560;
+const ONBOARDING_CARD_MAX_WIDTH: number = 420;
+const ONBOARDING_PAGE_SIDE: number = 24;
+const ONBOARDING_PAGE_SIDE_WIDE: number = 32;
+const ONBOARDING_CARD_RADIUS: number = 24;
+const ONBOARDING_ICON_CONTAINER_SIZE: number = 40;
+const ONBOARDING_ICON_SIZE: number = 20;
+const ONBOARDING_ACTION_HEIGHT: number = 48;
+const ONBOARDING_ACTION_MAX_WIDTH: number = 240;
+const ONBOARDING_TOP_BAR_HEIGHT: number = 40;
+const ONBOARDING_TOP_OVERLAY_VERTICAL_SPACE: number = 24;
+const ONBOARDING_BOTTOM_SAFE_GAP: number = 16;
+const ONBOARDING_BOTTOM_CONTROL_GAP: number = 16;
+const ONBOARDING_INDICATOR_HEIGHT: number = 6;
+const ONBOARDING_CONTENT_CHROME_GAP: number = 24;
+const ONBOARDING_HERO_SIZE: number = 68;
+const ONBOARDING_FEATURE_ROW_HEIGHT: number = 64;
+const ONBOARDING_FEATURE_CARD_HEIGHT: number = ONBOARDING_FEATURE_ROW_HEIGHT * 3 + 2;
+const ONBOARDING_TOKEN_PREVIEW_HEIGHT: number = 116;
+const ONBOARDING_TITLE_SIZE: number = 30;
+const ONBOARDING_BODY_SIZE: number = 14;
+const ONBOARDING_ROW_TITLE_SIZE: number = 15;
+const ONBOARDING_ROW_BODY_SIZE: number = 12;
+const ONBOARDING_ACCENT_COLOR: string = '#F2CF3A';
+const ONBOARDING_PRIMARY_TEXT_COLOR: string = '#FFFFFFFF';
+const ONBOARDING_SECONDARY_TEXT_COLOR: string = '#BFFFFFFF';
+const ONBOARDING_DIVIDER_COLOR: string = '#33FFFFFF';
+const ONBOARDING_BORDER_COLOR: string = '#66FFFFFF';
+const ONBOARDING_ICON_TINT_COLOR: string = '#22F2CF3A';
+const ONBOARDING_GLOW_COLOR: string = '#5CF2CF3A';
+const ONBOARDING_MATERIAL_TINT_COLOR: string = '#30000000';
+const ONBOARDING_BUTTON_TINT_COLOR: string = '#4D000000';
+const FORCE_DARK_SYSTEM_BARS_KEY: string = 'tool2fa_forceDarkSystemBars';
+const STEAM_BEIAN_URL: string = 'https://beian.miit.gov.cn/';
+const STEAM_REFERENCE_URL: string = 'https://github.com/kdada/Authenticator';
+const TANGS_COMPONENTS_URL: string = 'https://ohpm.openharmony.cn/#/cn/detail/@tangs%2Fcomponents';
+
+class HomeSearchModifier implements AttributeModifier<SearchAttribute> {
+  private textColor: ResourceColor;
+  private hintColor: ResourceColor;
+  private change: (value: string) => void;
+
+  constructor(textColor: ResourceColor, hintColor: ResourceColor, change: (value: string) => void) {
+    this.textColor = textColor;
+    this.hintColor = hintColor;
+    this.change = change;
+  }
+
+  applyNormalAttribute(instance: SearchAttribute): void {
+    instance.fontColor(this.textColor)
+      .placeholderColor(this.hintColor)
+      .onWillChange((value: EditableTextChangeValue): boolean => {
+        this.change(value.content);
+        return true;
+      });
+  }
+}
+
+class ActionButtonModifier implements AttributeModifier<ButtonModifier> {
+  private buttonWidth: Length;
+  private buttonHeight: number;
+  private fillColor: ResourceColor;
+  private strokeColor: ResourceColor;
+
+  constructor(buttonWidth: Length, buttonHeight: number, fillColor: ResourceColor, strokeColor: ResourceColor) {
+    this.buttonWidth = buttonWidth;
+    this.buttonHeight = buttonHeight;
+    this.fillColor = fillColor;
+    this.strokeColor = strokeColor;
+  }
+
+  applyNormalAttribute(instance: ButtonModifier): void {
+    instance.width(this.buttonWidth)
+      .height(this.buttonHeight)
+      .backgroundColor(this.fillColor)
+      .border({ width: 0.5, color: this.strokeColor });
+  }
+}
 
 enum PageMode {
   Home,
@@ -164,6 +311,48 @@ enum HomeTab {
 enum HoldingHandStatus {
   NOT_HELD = 0,
   LEFT_HAND_HELD = 1
+}
+
+interface WearMessageReceiver {
+  deviceId: string;
+  appParam: wearEngine.P2pAppParam;
+  callback: (message: wearEngine.P2pMessage) => void;
+}
+
+interface WatchSyncPayload {
+  action: string;
+  version: number;
+  tokens: TokenRecord[];
+  pushedAt: number;
+}
+
+interface SheetActionButtonParam {
+  label: string;
+  isPrimary: boolean;
+  isEnabled: boolean;
+  isLoading: boolean;
+  action: () => void;
+}
+
+interface SheetFloatingActionsParam {
+  secondaryLabel: string;
+  secondaryAction: () => void;
+  secondaryIsPrimary?: boolean;
+  primaryLabel: string;
+  primaryEnabled: boolean;
+  primaryLoading: boolean;
+  primaryAction: () => void;
+}
+
+interface SheetSingleFloatingActionParam {
+  label: string;
+  action: () => void;
+}
+
+interface SteamPendingConfirmation {
+  tokenId: string;
+  tokenName: string;
+  confirmation: SteamConfirmation;
 }
 
 @Entry
@@ -196,7 +385,7 @@ struct Index {
   @State private pageHeight: number = 844;
   @State private editingTokenId: string = '';
   @State private selectedHomeTab: HomeTab = HomeTab.Token;
-  @State private homeScrollY: number = 0;
+  private homeScrollY: number = 0;
   @State private isHomeSearchCollapsed: boolean = false;
   @State private isHuaweiLoggedIn: boolean = false;
   @State private huaweiNickname: string = '';
@@ -215,6 +404,14 @@ struct Index {
   @State private formLogoRenderVersion: number = 0;
   @State private themeModeInput: string = '跟随系统';
   @State private themeColorInput: string = '灰豆沙粉';
+  @State private materialTypeInput: string = '自适应';
+  @State private materialLevelInput: string = '自适应';
+  @State private globalImmersionEnabled: boolean = false;
+  @State private backgroundSelection: string = 'none';
+  @State private customBackgroundUri: string = '';
+  @State private backgroundBlurPercent: number = 0;
+  @State private updateNoticeVersion: string = '';
+  @State private showUpdateNotice: boolean = false;
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
@@ -224,9 +421,9 @@ struct Index {
   @State private onboardingCompleted: boolean = false;
   @State private showOnboarding: boolean = false;
   @State private onboardingPage: number = 0;
-  @StorageLink('tool2fa_systemDark') private systemDark: boolean = false;
+  @StorageLink('tool2fa_systemDark') @Watch('onSystemDarkChanged') private systemDark: boolean = false;
   @StorageLink('tool2fa_requireAuth') private requireAuth: boolean = false;
-  @StorageLink('tool2fa_isLocked') private isLocked: boolean = false;
+  @StorageLink('tool2fa_isLocked') @Watch('onLockStateChanged') private isLocked: boolean = false;
 
   aboutToAppear(): void {
     this.refreshSystemLanguage();
@@ -234,7 +431,11 @@ struct Index {
     this.loadSettings();
     this.loadCardTokenIds();
     this.timerId = setInterval(() => {
-      this.currentTimeMs = Date.now();
+      if (!this.isHomeListScrolling &&
+        (this.selectedHomeTab === HomeTab.Token || this.isWatchLayout())) {
+        this.currentTimeMs = Date.now();
+      }
+      this.checkSteamConfirmationsIfNeeded();
     }, 1000);
   }
 
@@ -243,21 +444,52 @@ struct Index {
       clearInterval(this.timerId);
       this.timerId = -1;
     }
+    if (this.updateNoticePresentationTimer >= 0) {
+      clearTimeout(this.updateNoticePresentationTimer);
+      this.updateNoticePresentationTimer = -1;
+    }
     this.stopSmartGrip();
     this.stopAntiPeep();
     this.clearLogoLookupTimer();
+    this.unregisterWearSyncReceivers();
+  }
+
+  onPageShow(): void {
+    this.phoneRootReady = true;
+    this.scheduleUpdateNoticePresentation();
   }
   @StorageProp('tool2fa_statusBarHeight') private statusBarHeight: number = 0;
   @StorageProp('tool2fa_naviIndicatorHeight') private naviIndicatorHeight: number = 0;
   private homeScroller: Scroller = new Scroller();
   private meScroller: Scroller = new Scroller();
   private settingsScroller: Scroller = new Scroller();
+  private appearanceSettingsScroller: Scroller = new Scroller();
+  private featureSecurityScroller: Scroller = new Scroller();
   private cloudSpaceScroller: Scroller = new Scroller();
   private watchScroller: Scroller = new Scroller();
+  private watchSyncScroller: Scroller = new Scroller();
+  private moreAppsScroller: Scroller = new Scroller();
+  private donationScroller: Scroller = new Scroller();
+  private aboutScroller: Scroller = new Scroller();
+  private watchTokenPickerSheetScroller: Scroller = new Scroller();
+  private exportTokenPickerSheetScroller: Scroller = new Scroller();
+  private exportFormatSheetScroller: Scroller = new Scroller();
+  private exportQRCodeSheetScroller: Scroller = new Scroller();
+  private cardTokenPickerSheetScroller: Scroller = new Scroller();
+  private addMethodSheetScroller: Scroller = new Scroller();
+  private userAgreementSheetScroller: Scroller = new Scroller();
+  private updateNoticeSheetScroller: Scroller = new Scroller();
+  private steamLoginSheetScroller: Scroller = new Scroller();
   private homePathStack: NavPathStack = new NavPathStack();
   private addPageScroller: Scroller = new Scroller();
   private onboardingSwiperController: SwiperController = new SwiperController();
   private timerId: number = -1;
+  private updateNoticePresentationTimer: number = -1;
+  private settingsLoaded: boolean = false;
+  private phoneRootReady: boolean = false;
+  private isHomeListScrolling: boolean = false;
+  private tokenCodeCache: Map<string, string> = new Map<string, string>();
+  private tokenCodeCacheVersion: number = -1;
   private authInstance: userAuth.UserAuthInstance | null = null;
   private holdingHandCallback: ((status: motion.HoldingHandStatus) => void) | null = null;
   private antiPeepCallback: ((status: dlpAntiPeep.DlpAntiPeepStatus) => void) | null = null;
@@ -267,26 +499,55 @@ struct Index {
   private deviceType: string = deviceInfo.deviceType;
   private addButtonDragStartX: number = 0;
   private addButtonDragStartY: number = 0;
+  private webSheetController: webview.WebviewController = new webview.WebviewController();
   @State private cardSelectedTokenIds: string[] = [];
   @State private pendingCardTokenIds: string[] = [];
   @State private showCardTokenPicker: boolean = false;
   @State private showExportPicker: boolean = false;
   @State private exportSelectedIds: string[] = [];
+  @State private sheetSelectionRevision: number = 0;
   @State private openSwipeTokenId: string = '';
   @State private activeSwipeTokenId: string = '';
   @State private activeSwipeOffset: number = 0;
   @State private draggingTokenId: string = '';
+  @State private pressedTokenId: string = '';
+  @State private pressedCardId: string = '';
+  @State private measuredCardHeights: Map<string, number> = new Map<string, number>();
   @State private showExportFormat: boolean = false;
   @State private showExportQR: boolean = false;
   @State private exportQRIndex: number = 0;
   @State private isSavingQRCode: boolean = false;
+  @State private showUserAgreementSheet: boolean = false;
+  @State private showWebSheet: boolean = false;
+  @State private showQQGroupSheet: boolean = false;
+  @State private webSheetTitle: string = '';
+  @State private webSheetUrl: string = 'about:blank';
   @State private importProgressVisible: boolean = false;
   @State private importProgressTotal: number = 0;
   @State private importProgressProcessed: number = 0;
   @State private importProgressSuccess: number = 0;
   @State private importProgressFailed: number = 0;
   @State private importProgressMessage: string = '';
+  @State private watchSelectedTokenIds: string[] = [];
+  @State private pendingWatchTokenIds: string[] = [];
+  @State private showWatchTokenPicker: boolean = false;
+  @State private watchPushStatus: string = '尚未同步';
+  @State private watchLastPushTime: number = 0;
+  @State private watchPushing: boolean = false;
+  @State private watchReceiverStatus: string = '';
+  @State private steamEnhancedAccess: boolean = false;
+  @State private steamGatewayUrl: string = '';
+  @State private steamGatewayToken: string = '';
+  @State private showSteamLoginPicker: boolean = false;
+  @State private pendingSteamLoginTokenId: string = '';
+  @State private steamLoading: boolean = false;
+  private steamConfirmationChecking: boolean = false;
+  private steamConfirmationDialogVisible: boolean = false;
+  private lastSteamConfirmationCheckMs: number = 0;
+  private pendingSteamConfirmations: SteamPendingConfirmation[] = [];
   private tokenDragReordered: boolean = false;
+  private wearMessageReceivers: WearMessageReceiver[] = [];
+  private thirdPartyScroller: Scroller = new Scroller();
   private async loadSettings(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
@@ -306,12 +567,28 @@ struct Index {
     this.huaweiUserId = settings.huaweiUserId;
     this.themeModeInput = settings.themeMode;
     this.themeColorInput = settings.themeColor;
+    this.materialTypeInput = settings.materialType;
+    this.materialLevelInput = settings.materialLevel;
+    this.globalImmersionEnabled = settings.globalImmersionEnabled;
+    this.backgroundSelection = settings.backgroundSelection;
+    this.customBackgroundUri = settings.customBackgroundUri;
+    this.backgroundBlurPercent = this.clamp(settings.backgroundBlurPercent, 0, 100);
+    this.updateNoticeVersion = settings.updateNoticeVersion;
     this.languageInput = normalizeSelectedLanguage(settings.language);
     this.refreshSystemLanguage();
     this.cloudSyncStatus = settings.cloudSyncStatus;
     this.cloudLastSyncTime = settings.cloudLastSyncTime;
+    this.watchSelectedTokenIds = settings.watchSelectedTokenIds;
+    this.watchPushStatus = settings.watchPushStatus;
+    this.watchLastPushTime = settings.watchLastPushTime;
+    this.steamEnhancedAccess = settings.steamEnhancedAccess;
+    this.steamGatewayUrl = settings.steamGatewayUrl;
+    this.steamGatewayToken = settings.steamGatewayToken;
     this.onboardingCompleted = settings.onboardingCompleted;
     this.showOnboarding = !settings.onboardingCompleted;
+    if (this.showOnboarding) {
+      this.showUpdateNotice = false;
+    }
     this.applyColorMode();
     if (this.cloudBackupEnabled && this.isHuaweiLoggedIn) {
       this.configureCloudAutoSync(true);
@@ -326,6 +603,11 @@ struct Index {
         this.antiPeepEnabled = started;
       });
     }
+    if (this.isWatchLayout()) {
+      this.registerWearSyncReceivers();
+    }
+    this.settingsLoaded = true;
+    this.scheduleUpdateNoticePresentation();
     hilog.info(APPLOCK_DOMAIN, APPLOCK_TAG, 'loadSettings: appLock=%{public}d, isLocked=%{public}d, huaweiLoggedIn=%{public}d', this.appLockEnabled ? 1 : 0, this.isLocked ? 1 : 0, this.isHuaweiLoggedIn ? 1 : 0);
   }
 
@@ -348,10 +630,23 @@ struct Index {
       huaweiUserId: this.huaweiUserId,
       themeMode: this.themeModeInput,
       themeColor: this.themeColorInput,
+      materialType: this.materialTypeInput,
+      materialLevel: this.materialLevelInput,
+      globalImmersionEnabled: this.globalImmersionEnabled,
+      backgroundSelection: this.backgroundSelection,
+      customBackgroundUri: this.customBackgroundUri,
+      backgroundBlurPercent: this.backgroundBlurPercent,
+      updateNoticeVersion: this.updateNoticeVersion,
       language: normalizeSelectedLanguage(this.languageInput),
       cloudSyncStatus: this.cloudSyncStatus,
       cloudLastSyncTime: this.cloudLastSyncTime,
-      onboardingCompleted: this.onboardingCompleted
+      watchSelectedTokenIds: this.watchSelectedTokenIds,
+      watchPushStatus: this.watchPushStatus,
+      watchLastPushTime: this.watchLastPushTime,
+      onboardingCompleted: this.onboardingCompleted,
+      steamEnhancedAccess: this.steamEnhancedAccess,
+      steamGatewayUrl: this.steamGatewayUrl,
+      steamGatewayToken: this.steamGatewayToken
     });
   }
 
@@ -417,16 +712,21 @@ struct Index {
             .fontSize(14)
             .fontColor(this.secondaryTextColor())
             .margin({ top: 8 })
-          Button(this.t('验证身份'))
+          ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+            text: this.t('验证身份'),
+            buttonModify: {
+              applyNormalAttribute(instance: ButtonModifier): void {
+                instance.width(160).height(44)
+              }
+            },
+            click: (): void => {
+              this.startAppLockAuth();
+            }
+          })
             .margin({ top: 24 })
             .width(160)
             .height(44)
-            .fontSize(16)
-            .backgroundColor(this.accentColor())
-            .borderRadius(22)
-            .onClick(() => {
-              this.startAppLockAuth();
-            })
         }
         .width('100%')
         .height('100%')
@@ -462,8 +762,8 @@ struct Index {
           originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
           scrollEffectStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
           systemMaterialEffect: {
-            materialType: hdsMaterial.MaterialType.ADAPTIVE,
-            materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+            materialType: this.configuredMaterialType(),
+            materialLevel: this.configuredMaterialLevel()
           }
         },
         avoidLayoutSafeArea: true,
@@ -477,6 +777,7 @@ struct Index {
       .width('100%')
       .height('100%')
 
+      this.SteamLoginSheetAnchor()
       if (this.shouldShowAddFloatingButton()) {
         this.AddFloatingButton()
       }
@@ -501,6 +802,19 @@ struct Index {
       if (nextHeight > 0 && Math.abs(nextHeight - this.pageHeight) > 0.5) {
         this.pageHeight = nextHeight;
       }
+    })
+    .onAppear(() => {
+      this.phoneRootReady = true;
+      this.scheduleUpdateNoticePresentation();
+    })
+    .bindSheet($$this.showUpdateNotice, this.UpdateNoticeSheet(), {
+      height: this.sheetShortHeight(UPDATE_NOTICE_SHEET_HEIGHT),
+      dragBar: true,
+      showClose: false,
+      maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28)
     })
   }
 
@@ -530,17 +844,224 @@ struct Index {
 
   @Builder
   private PageBackground() {
-    Column()
+    Stack() {
+      if (this.backgroundSelection !== 'none') {
+        this.SelectedBackgroundImage(Math.max(this.pageHeight, 1), 0)
+      }
+    }
       .width('100%')
       .height('100%')
       .position({ x: 0, y: 0 })
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .backgroundColor(this.pageBackgroundColor())
+      .clip(true)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private SelectedBackgroundImage(height: number, radius: number) {
+    if (this.backgroundSelection === 'custom' && this.customBackgroundUri.length > 0) {
+      this.CustomBackgroundImageLayer(this.customBackgroundUri, height, radius)
+    } else if (this.backgroundSelection === 'preset_2') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_2'), height, radius)
+    } else if (this.backgroundSelection === 'preset_3') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_3'), height, radius)
+    } else if (this.backgroundSelection === 'preset_4') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_4'), height, radius)
+    } else if (this.backgroundSelection === 'preset_5') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_5'), height, radius)
+    } else if (this.backgroundSelection === 'preset_6') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_6'), height, radius)
+    } else if (this.backgroundSelection === 'preset_7') {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_7'), height, radius)
+    } else {
+      this.PresetBackgroundImageLayer($r('app.media.background_preset_1'), height, radius)
+    }
+  }
+
+  @Builder
+  private PresetBackgroundImageLayer(source: Resource, height: number, radius: number) {
+    Image(source)
+      .width('100%')
+      .height(height)
+      .objectFit(ImageFit.Cover)
+      .borderRadius(radius)
+      .blur(this.backgroundBlurRadius())
+      .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
+      .zIndex(0)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private CustomBackgroundImageLayer(source: string, height: number, radius: number) {
+    Image(source)
+      .width('100%')
+      .height(height)
+      .objectFit(ImageFit.Cover)
+      .borderRadius(radius)
+      .blur(this.backgroundBlurRadius())
+      .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
+      .zIndex(0)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private ImmersionMaterialLayer(cardHeight: Length, cardRadius: number) {
+    Stack({ alignContent: Alignment.Center }) {
+      HdsTabs() {
+        TabContent() {
+        }
+        .backdropBlur(0)
+        .tabBar(this.ImmersionMaterialContent(cardHeight))
+        .clip(false)
+      }
+      .width(this.immersionExpandedWidth(cardHeight))
+      .height(cardHeight)
+      .barWidth(this.immersionExpandedWidth(cardHeight))
+      .barHeight(this.immersionMaterialBarHeight(cardHeight))
+      .barOverlap(true)
+      .barPosition(BarPosition.End)
+      .barBackgroundStyle({
+        maskColor: '#00000000'
+      })
+      .barBackgroundBlurStyle(BlurStyle.NONE)
+      .barFloatingStyle({
+        barBottomMargin: 0,
+        systemMaterialEffect: {
+          materialType: this.configuredMaterialType(),
+          materialLevel: this.configuredMaterialLevel()
+        },
+        gradientMask: {
+          maskColor: '#09999999'
+        }
+      })
+      .backgroundColor(Color.Transparent)
+      .hitTestBehavior(HitTestMode.None)
+      .clip(false)
+    }
+    .width('100%')
+    .height(cardHeight)
+    .borderRadius(cardRadius)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(1)
+  }
+
+  @Builder
+  private OnboardingImmersionMaterialLayer(cardHeight: Length, cardRadius: number) {
+    Stack({ alignContent: Alignment.Center }) {
+      HdsTabs() {
+        TabContent() {
+        }
+        .backdropBlur(0)
+        .tabBar(this.ImmersionMaterialContent(cardHeight))
+        .clip(false)
+      }
+      .width(this.immersionExpandedWidth(cardHeight))
+      .height(cardHeight)
+      .barWidth(this.immersionExpandedWidth(cardHeight))
+      .barHeight(this.immersionMaterialBarHeight(cardHeight))
+      .barOverlap(true)
+      .barPosition(BarPosition.End)
+      .barBackgroundStyle({ maskColor: '#00000000' })
+      .barBackgroundBlurStyle(BlurStyle.NONE)
+      .barFloatingStyle({
+        barBottomMargin: 0,
+        systemMaterialEffect: this.onboardingMaterialEffect(),
+        gradientMask: { maskColor: '#09999999' }
+      })
+      .backgroundColor(Color.Transparent)
+      .hitTestBehavior(HitTestMode.None)
+      .clip(false)
+      Column()
+        .width('100%')
+        .height(cardHeight)
+        .backgroundColor(ONBOARDING_MATERIAL_TINT_COLOR)
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .height(cardHeight)
+    .borderRadius(cardRadius)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(1)
+  }
+
+  @Builder
+  private ImmersionMaterialContent(cardHeight: Length) {
+    Stack()
+      .width(this.immersionExpandedWidth(cardHeight))
+      .height(this.immersionMaterialBarHeight(cardHeight))
+      .backgroundColor(Color.Transparent)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private ImmersionCardSurface(cardHeight: Length, cardRadius: number) {
+    this.ImmersionMaterialLayer(cardHeight, cardRadius)
+  }
+
+  @Builder
+  private MeasuredImmersionCardSurface(cardId: string, cardRadius: number) {
+    if (this.shouldUseCardMaterial() && this.measuredCardHeight(cardId) > 0) {
+      this.ImmersionCardSurface(this.measuredCardHeight(cardId), cardRadius)
+    }
+  }
+
+  @Builder
+  private SheetActionMaterialBackground() {
+    if (this.shouldUseCardMaterial()) {
+      this.ImmersionCardSurface('100%', SHEET_ACTION_BAR_RADIUS)
+    } else {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.sheetFloatingBarColor())
+        .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+    }
+  }
+
+  private immersionExpandedWidth(cardHeight: Length): number {
+    return Math.max(this.pageWidth, RESPONSIVE_CARD_MAX_WIDTH) + this.immersionMaterialBarHeight(cardHeight) * 2;
+  }
+
+  private immersionMaterialBarHeight(cardHeight: Length): number {
+    return typeof cardHeight === 'number' ? cardHeight : RESPONSIVE_CARD_MAX_WIDTH;
+  }
+
+  private measuredCardHeight(cardId: string): number {
+    const height = this.measuredCardHeights.get(cardId);
+    return height === undefined ? 0 : height;
+  }
+
+  private updateMeasuredCardHeight(cardId: string, area: Area): void {
+    const height = this.lengthToNumber(area.height, 0);
+    if (height <= 0 || Math.abs(height - this.measuredCardHeight(cardId)) <= 0.5) {
+      return;
+    }
+    const nextHeights = new Map<string, number>(this.measuredCardHeights);
+    nextHeights.set(cardId, height);
+    this.measuredCardHeights = nextHeights;
+  }
+
+  private immersionBorderColor(): ResourceColor {
+    return this.isDarkTheme() ? '#80FFFFFF' : '#80000000';
+  }
+
+  private backgroundBlurRadius(): number {
+    return this.backgroundBlurPercent / 100 * BACKGROUND_BLUR_MAX_RADIUS;
+  }
+
+  private backgroundImageScale(): number {
+    return 1 + this.backgroundBlurPercent / 100 * 0.12;
   }
 
   @Builder
   private OnboardingOverlay() {
-    Column() {
+    Stack() {
+      this.OnboardingBackdrop()
       Swiper(this.onboardingSwiperController) {
         this.OnboardingPage(0)
         this.OnboardingPage(1)
@@ -549,166 +1070,570 @@ struct Index {
       }
       .index(this.onboardingPage)
       .loop(false)
-      .indicator(true)
+      .indicator(false)
       .duration(360)
       .curve(Curve.EaseInOut)
       .onChange((index: number) => {
         this.onboardingPage = index;
       })
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
+      .zIndex(1)
 
-      Row({ space: 12 }) {
-        Button(this.t('跳过'))
-          .height(44)
-          .layoutWeight(1)
-          .fontSize(14)
-          .fontColor(this.primaryTextColor())
-          .backgroundColor(this.cardBackgroundColor())
-          .onClick(() => {
-            this.completeOnboarding();
-          })
+      this.OnboardingTopOverlay()
+      this.OnboardingBottomOverlay()
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#000000')
+    .clip(true)
+    .zIndex(200)
+    .onAppear(() => {
+      this.setOnboardingSystemBars(true);
+    })
+  }
 
-        Button(this.onboardingPage === 3 ? this.t('开始使用') : this.t('下一页'))
-          .height(44)
-          .layoutWeight(2)
-          .fontSize(15)
-          .fontColor(this.accentContrastColor())
-          .backgroundColor(this.accentColor())
-          .onClick(() => {
-            if (this.onboardingPage < 3) {
+  @Builder
+  private OnboardingTopOverlay() {
+    Column() {
+      this.OnboardingTopBar()
+    }
+    .width('100%')
+    .height(this.onboardingTopOverlayHeight())
+    .padding({
+      top: this.statusBarHeight + 8,
+      left: this.onboardingPageSide(),
+      right: this.onboardingPageSide(),
+      bottom: 16
+    })
+    .position({ x: 0, y: 0 })
+    .hitTestBehavior(HitTestMode.Transparent)
+    .zIndex(10)
+  }
+
+  @Builder
+  private OnboardingBottomOverlay() {
+    Column() {
+      this.OnboardingPageIndicator()
+      Stack({ alignContent: Alignment.Center }) {
+        ImmersionButton({
+          systemMaterialEffect: this.onboardingMaterialEffect(),
+          buttonModify: new ActionButtonModifier(
+            '100%', ONBOARDING_ACTION_HEIGHT, ONBOARDING_BUTTON_TINT_COLOR, ONBOARDING_ACCENT_COLOR),
+          click: (): void => {
+            if (this.onboardingPage < ONBOARDING_PAGE_COUNT - 1) {
               this.onboardingSwiperController.showNext();
             } else {
               this.completeOnboarding();
             }
-          })
+          }
+        }) {
+          Text(this.onboardingPage === ONBOARDING_PAGE_COUNT - 1 ? this.t('开始使用') : this.t('下一页'))
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(ONBOARDING_ACCENT_COLOR)
+        }
       }
       .width('100%')
-      .constraintSize({ maxWidth: 560 })
-      .padding({ left: 24, right: 24, bottom: this.naviIndicatorHeight + 20 })
+      .height(ONBOARDING_ACTION_HEIGHT)
+      .constraintSize({ maxWidth: ONBOARDING_ACTION_MAX_WIDTH })
+      .margin({ top: ONBOARDING_BOTTOM_CONTROL_GAP })
     }
     .width('100%')
-    .height('100%')
-    .padding({ top: this.statusBarHeight + 16 })
-    .backgroundColor(this.pageBackgroundColor())
-    .zIndex(200)
+    .height(this.onboardingBottomOverlayHeight())
+    .padding({
+      left: this.onboardingPageSide(),
+      right: this.onboardingPageSide(),
+      bottom: this.naviIndicatorHeight + ONBOARDING_BOTTOM_SAFE_GAP
+    })
+    .justifyContent(FlexAlign.End)
+    .position({ x: 0, y: Math.max(this.pageHeight - this.onboardingBottomOverlayHeight(), 0) })
+    .hitTestBehavior(HitTestMode.Transparent)
+    .zIndex(10)
+  }
+
+  @Builder
+  private OnboardingBackdrop() {
+    Image($r('app.media.background_preset_1'))
+      .width('100%')
+      .height('100%')
+      .objectFit(ImageFit.Cover)
+      .scale({ x: 1.015, y: 1.015 })
+      .hitTestBehavior(HitTestMode.None)
+    Column()
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#52000000')
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private OnboardingTopBar() {
+    Row() {
+      Row({ space: 8 }) {
+        Image($r('app.media.app_icon_black'))
+          .width(28)
+          .height(28)
+          .borderRadius(8)
+          .objectFit(ImageFit.Cover)
+        Text(this.t('开源验证器'))
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#FFFFFF')
+      }
+      .layoutWeight(1)
+
+      Stack({ alignContent: Alignment.Center }) {
+        ImmersionButton({
+          systemMaterialEffect: this.onboardingMaterialEffect(),
+          buttonModify: new ActionButtonModifier(
+            64, 40, ONBOARDING_BUTTON_TINT_COLOR, ONBOARDING_ACCENT_COLOR),
+          click: (): void => {
+            this.completeOnboarding();
+          }
+        }) {
+          Text(this.t('跳过'))
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(ONBOARDING_ACCENT_COLOR)
+        }
+      }
+      .width(64)
+      .height(40)
+      .clip(false)
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: ONBOARDING_CONTENT_MAX_WIDTH })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private OnboardingPageIndicator() {
+    Row({ space: 8 }) {
+      ForEach([0, 1, 2, 3], (index: number) => {
+        Row()
+          .width(this.onboardingPage === index ? 24 : 6)
+          .height(6)
+          .backgroundColor(this.onboardingPage === index ? ONBOARDING_ACCENT_COLOR : '#66FFFFFF')
+          .borderRadius(3)
+          .animation({ duration: 220, curve: Curve.EaseInOut })
+      }, (index: number) => index.toString())
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
   private OnboardingPage(index: number) {
-    Column({ space: 18 }) {
-      if (index === 0) {
-        Image($r('app.media.app_icon_black'))
-          .width(112)
-          .height(112)
-          .borderRadius(28)
-          .objectFit(ImageFit.Cover)
-        Text(this.t('开源验证器'))
-          .fontSize(30)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-        Text(this.t('专注、安全、随时可用的二次验证器'))
-          .fontSize(16)
-          .fontColor(this.secondaryTextColor())
-          .textAlign(TextAlign.Center)
-        this.OnboardingFeatureList(['TOTP、HOTP 与 Steam 令牌', '秘钥仅保存在你掌控的设备中'])
-      } else if (index === 1) {
-        Row() {
-          this.OnboardingRoundIcon($r('app.media.ic_sheet_manual_input'))
-          this.OnboardingRoundIcon($r('app.media.ic_sheet_scan'))
-          this.OnboardingRoundIcon($r('app.media.ic_sheet_import'))
+    Scroll() {
+      Column({ space: 20 }) {
+        if (index === 0) {
+          this.OnboardingSecurityPage()
+        } else if (index === 1) {
+          this.OnboardingImportPage()
+        } else if (index === 2) {
+          this.OnboardingAppearancePage()
+        } else {
+          this.OnboardingBackupPage()
         }
-        .width('100%')
-        .justifyContent(FlexAlign.SpaceAround)
-        Text(this.t('多种录入方式'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-        Text(this.t('录入密钥、扫描二维码或导入备份，轻松迁移你的令牌。'))
-          .fontSize(16)
-          .fontColor(this.secondaryTextColor())
-          .textAlign(TextAlign.Center)
-        this.OnboardingFeatureList(['兼容 Google Authenticator 迁移二维码', '支持 JSON 和 otpauth 数据'])
-      } else if (index === 2) {
-        Image($r('app.media.ic_tab_token_selected'))
-          .width(80)
-          .height(80)
-          .objectFit(ImageFit.Contain)
-        Text(this.t('一眼掌握所有令牌'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-        Text(this.t('手机、折叠屏和平板自适应排版，桌面服务卡片让常用令牌抬眼即见。'))
-          .fontSize(16)
-          .fontColor(this.secondaryTextColor())
-          .textAlign(TextAlign.Center)
-        this.OnboardingFeatureList(['多列响应式布局', '1×2 至 4×4 服务卡片', '浅色与深色外观'])
-      } else {
-        Row() {
-          this.OnboardingRoundIcon($r('app.media.ic_me_cloud'))
-          this.OnboardingRoundIcon($r('app.media.ic_me_contract'))
-          this.OnboardingRoundIcon($r('app.media.ic_me_settings'))
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.SpaceAround)
-        Text(this.t('备份与隐私，都由你决定'))
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .textAlign(TextAlign.Center)
-        Text(this.t('可选华为云空间同步、JSON 或二维码备份，并提供应用锁与防窥保护。'))
-          .fontSize(16)
-          .fontColor(this.secondaryTextColor())
-          .textAlign(TextAlign.Center)
-        this.OnboardingFeatureList(['备份与恢复由你主动控制', '支持应用锁、防窥和主题切换'])
       }
+      .width('100%')
+      .constraintSize({ maxWidth: ONBOARDING_CONTENT_MAX_WIDTH })
+      .padding({
+        top: this.onboardingContentTopInset(),
+        left: this.onboardingPageSide(),
+        right: this.onboardingPageSide(),
+        bottom: this.onboardingContentBottomInset()
+      })
     }
     .width('100%')
     .height('100%')
-    .constraintSize({ maxWidth: 620 })
-    .padding({ left: 32, right: 32, bottom: 56 })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+  }
+
+  @Builder
+  private OnboardingSecurityPage() {
+    Column({ space: 18 }) {
+      this.OnboardingPageHeader('01 / 04', $r('sys.symbol.key_shield'))
+      this.OnboardingPageCopy(
+        '安全底座',
+        '密钥留在本地，安全从第一步开始',
+        '验证码在设备端生成；不开启同步时，令牌数据不会离开你的设备。')
+      this.OnboardingSecurityCard()
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: ONBOARDING_CARD_MAX_WIDTH })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private OnboardingPageHeader(sequence: string, icon: Resource) {
+    Row() {
+      Text(sequence)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#E6FFFFFF')
+        .letterSpacing(0.8)
+        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+        .backgroundColor('#1FFFFFFF')
+        .border({ width: 0.5, color: '#4DFFFFFF' })
+        .borderRadius(16)
+      Blank()
+      Stack({ alignContent: Alignment.Center }) {
+        this.OnboardingImmersionMaterialLayer(ONBOARDING_HERO_SIZE, ONBOARDING_HERO_SIZE / 2)
+        SymbolGlyph(icon)
+          .fontSize(30)
+          .fontColor([ONBOARDING_ACCENT_COLOR])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          .zIndex(2)
+      }
+      .width(ONBOARDING_HERO_SIZE)
+      .height(ONBOARDING_HERO_SIZE)
+      .backgroundColor(Color.Transparent)
+      .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+      .borderRadius(ONBOARDING_HERO_SIZE / 2)
+      .clip(true)
+      .shadow({ radius: 24, color: ONBOARDING_GLOW_COLOR, offsetX: 0, offsetY: 8 })
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private OnboardingImportPage() {
+    Column({ space: 18 }) {
+      this.OnboardingPageHeader('02 / 04', $r('sys.symbol.qrcode'))
+      this.OnboardingPageCopy(
+        '导入与兼容',
+        '从常用验证器，轻松迁移',
+        '手动录入、扫码或文件导入，兼容主流标准与发行方。')
+      this.OnboardingImportHero()
+      this.OnboardingImportCard()
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: ONBOARDING_CARD_MAX_WIDTH })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private OnboardingImportHero() {
+    Column({ space: 14 }) {
+      Row() {
+        this.OnboardingRoundIcon($r('sys.symbol.square_and_pencil'))
+        this.OnboardingRoundIcon($r('sys.symbol.barcode_viewfinder'))
+        this.OnboardingRoundIcon($r('sys.symbol.square_and_arrow_down'))
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.SpaceAround)
+      Column({ space: 8 }) {
+        this.OnboardingProviderTag('Google Authenticator')
+        Row({ space: 8 }) {
+          this.OnboardingProviderTag('OpenAI')
+          this.OnboardingProviderTag('Steam')
+        }
+      }
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private OnboardingProviderTag(label: string) {
+    Text(label)
+      .fontSize(12)
+      .fontWeight(FontWeight.Medium)
+      .fontColor('#FFFFFF')
+      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .backgroundColor('#20FFFFFF')
+      .border({ width: 0.5, color: '#55FFFFFF' })
+      .borderRadius(18)
+  }
+
+  @Builder
+  private OnboardingAppearancePage() {
+    Column({ space: 18 }) {
+      this.OnboardingPageHeader('03 / 04', $r('sys.symbol.paintpalette'))
+      this.OnboardingPageCopy(
+        '沉浸体验',
+        '精致光感，让令牌抬眼即见',
+        '全局沉浸材质贯穿页面与卡片，手机、平板和折叠屏自然适配。')
+      this.OnboardingTokenPreview()
+      this.OnboardingAppearanceCard()
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: ONBOARDING_CARD_MAX_WIDTH })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private OnboardingTokenPreview() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.OnboardingImmersionMaterialLayer(ONBOARDING_TOKEN_PREVIEW_HEIGHT, ONBOARDING_CARD_RADIUS)
+      Column({ space: 8 }) {
+        Row() {
+          Row({ space: 8 }) {
+            Circle()
+              .width(28)
+              .height(28)
+              .fill(ONBOARDING_ACCENT_COLOR)
+            Text('OpenAI')
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(ONBOARDING_PRIMARY_TEXT_COLOR)
+          }
+          .layoutWeight(1)
+          Text('18s')
+            .fontSize(12)
+            .fontColor(ONBOARDING_SECONDARY_TEXT_COLOR)
+        }
+        .width('100%')
+        Text('482 193')
+          .fontSize(30)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(ONBOARDING_PRIMARY_TEXT_COLOR)
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.square_grid_2x2'))
+            .fontSize(14)
+            .fontColor([ONBOARDING_ACCENT_COLOR])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          Text(this.t('服务卡片 · 精致材质'))
+            .fontSize(12)
+            .fontColor(ONBOARDING_SECONDARY_TEXT_COLOR)
+        }
+      }
+      .width('100%')
+      .height(ONBOARDING_TOKEN_PREVIEW_HEIGHT)
+      .padding(20)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ONBOARDING_TOKEN_PREVIEW_HEIGHT)
+    .constraintSize({ maxWidth: 340 })
+    .borderRadius(ONBOARDING_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+    .shadow({
+      radius: 28,
+      color: '#52000000',
+      offsetX: 0,
+      offsetY: 10
+    })
+  }
+
+  @Builder
+  private OnboardingBackupPage() {
+    Column({ space: 18 }) {
+      this.OnboardingPageHeader('04 / 04', $r('sys.symbol.person_shield'))
+      this.OnboardingPageCopy(
+        '备份与隐私',
+        '数据去哪里，始终由你决定',
+        '需要时再导出或同步；本地优先，备份、云空间与隐私能力均可独立控制。')
+      this.OnboardingBackupHero()
+      this.OnboardingBackupCard()
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: ONBOARDING_CARD_MAX_WIDTH })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private OnboardingBackupHero() {
+    Row() {
+      this.OnboardingRoundIcon($r('sys.symbol.square_and_arrow_down'))
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(16)
+        .fontColor(['#99FFFFFF'])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      this.OnboardingRoundIcon($r('sys.symbol.icloud'))
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(16)
+        .fontColor(['#99FFFFFF'])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      this.OnboardingRoundIcon($r('sys.symbol.person_shield'))
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceAround)
+  }
+
+  @Builder
+  private OnboardingPageCopy(eyebrow: string, title: string, body: string) {
+    Column({ space: 8 }) {
+      Text(this.t(eyebrow))
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(ONBOARDING_ACCENT_COLOR)
+      Text(this.t(title))
+        .fontSize(ONBOARDING_TITLE_SIZE)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .textAlign(TextAlign.Start)
+        .maxLines(2)
+      Text(this.t(body))
+        .fontSize(ONBOARDING_BODY_SIZE)
+        .fontColor('#CCFFFFFF')
+        .textAlign(TextAlign.Start)
+        .lineHeight(21)
+        .maxLines(3)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   private OnboardingRoundIcon(icon: Resource) {
-    Stack() {
-      Circle()
-        .width(72)
-        .height(72)
-        .fill(this.accentColor())
-      Image(icon)
-        .width(28)
-        .height(28)
-        .objectFit(ImageFit.Contain)
+    Stack({ alignContent: Alignment.Center }) {
+      this.OnboardingImmersionMaterialLayer(52, 26)
+      SymbolGlyph(icon)
+        .fontSize(22)
+        .fontColor([ONBOARDING_ACCENT_COLOR])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        .zIndex(2)
     }
-    .width(72)
-    .height(72)
+    .width(52)
+    .height(52)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+    .borderRadius(26)
+    .clip(true)
   }
 
   @Builder
-  private OnboardingFeatureList(features: string[]) {
-    Column({ space: 10 }) {
-      ForEach(features, (feature: string) => {
-        Row({ space: 10 }) {
-          Circle()
-            .width(7)
-            .height(7)
-            .fill(this.accentColor())
-          Text(this.t(feature))
-            .fontSize(14)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-        }
-        .width('100%')
-      }, (feature: string) => feature)
+  private OnboardingSecurityCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.OnboardingImmersionMaterialLayer(ONBOARDING_FEATURE_CARD_HEIGHT, 18)
+      Column() {
+        this.OnboardingInfoRow($r('sys.symbol.key_fill'), '本地存储', '密钥与令牌默认保存在当前设备')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.checkmark_shield'), '离线可用', 'TOTP、HOTP 与 Steam 验证码本地生成')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.person_shield'), '隐私守护', '应用锁与系统防窥保护敏感信息')
+      }
+      .width('100%')
+      .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+      .zIndex(2)
     }
     .width('100%')
-    .constraintSize({ maxWidth: 460 })
-    .padding(18)
-    .borderRadius(16)
-    .backgroundColor(this.cardBackgroundColor())
+    .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+  }
+
+  @Builder
+  private OnboardingImportCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.OnboardingImmersionMaterialLayer(ONBOARDING_FEATURE_CARD_HEIGHT, 18)
+      Column() {
+        this.OnboardingInfoRow($r('sys.symbol.qrcode'), '扫码导入', '支持 otpauth 与 Google Authenticator 迁移二维码')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.square_and_arrow_down'), '文件导入', '支持 JSON 备份与 Steam maFile')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.gamecontroller'), 'Steam 增强能力', '扫码登录，并处理交易与市场确认')
+      }
+      .width('100%')
+      .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+  }
+
+  @Builder
+  private OnboardingAppearanceCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.OnboardingImmersionMaterialLayer(ONBOARDING_FEATURE_CARD_HEIGHT, 18)
+      Column() {
+        this.OnboardingInfoRow($r('sys.symbol.paintpalette'), '全局沉浸光感', '自适应、沉浸等材质效果可自由选择')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.square_grid_2x2'), '服务卡片', '多种规格展示常用令牌，无需进入应用')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.key_fill'), '自适应布局', '单列、双列、深色模式与自定义背景')
+      }
+      .width('100%')
+      .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+  }
+
+  @Builder
+  private OnboardingBackupCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.OnboardingImmersionMaterialLayer(ONBOARDING_FEATURE_CARD_HEIGHT, 18)
+      Column() {
+        this.OnboardingInfoRow($r('sys.symbol.square_and_arrow_down'), '备份导出', '导出 JSON 文件或二维码，便于恢复与迁移')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.icloud'), '华为云空间', '登录后可选择自动同步或手动推送、获取')
+        this.OnboardingFeatureDivider()
+        this.OnboardingInfoRow($r('sys.symbol.person_shield'), '隐私守护', '应用锁、防窥保护与隐私声明清晰可控')
+      }
+      .width('100%')
+      .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ONBOARDING_FEATURE_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 0.5, color: ONBOARDING_BORDER_COLOR })
+  }
+
+  @Builder
+  private OnboardingFeatureDivider() {
+    Divider()
+      .strokeWidth(1)
+      .color(ONBOARDING_DIVIDER_COLOR)
+      .margin({ left: ONBOARDING_ICON_CONTAINER_SIZE + 28 })
+  }
+
+  @Builder
+  private OnboardingInfoRow(icon: Resource, title: string, body: string) {
+    Row({ space: 12 }) {
+      Stack() {
+        Circle()
+          .width(ONBOARDING_ICON_CONTAINER_SIZE)
+          .height(ONBOARDING_ICON_CONTAINER_SIZE)
+          .fill(ONBOARDING_ICON_TINT_COLOR)
+        SymbolGlyph(icon)
+          .fontSize(ONBOARDING_ICON_SIZE)
+          .fontColor([ONBOARDING_ACCENT_COLOR])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      }
+      .width(ONBOARDING_ICON_CONTAINER_SIZE)
+      .height(ONBOARDING_ICON_CONTAINER_SIZE)
+      Column({ space: 2 }) {
+        Text(this.t(title))
+          .fontSize(ONBOARDING_ROW_TITLE_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(ONBOARDING_PRIMARY_TEXT_COLOR)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.t(body))
+          .fontSize(ONBOARDING_ROW_BODY_SIZE)
+          .fontColor(ONBOARDING_SECONDARY_TEXT_COLOR)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height(ONBOARDING_FEATURE_ROW_HEIGHT)
+    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
   }
 
   @Builder
@@ -742,12 +1667,16 @@ struct Index {
         },
         lightColor: this.accentColor(),
         systemMaterialEffect: {
-          materialType: hdsMaterial.MaterialType.IMMERSIVE,
-          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+          materialType: this.configuredMaterialType(),
+          materialLevel: this.configuredMaterialLevel()
         }
       })
       .onChange((index: number) => {
         this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
+        this.isHomeListScrolling = false;
+        if (this.selectedHomeTab === HomeTab.Token) {
+          this.currentTimeMs = Date.now();
+        }
       })
       .width('100%')
       .height('100%')
@@ -758,30 +1687,12 @@ struct Index {
   private WatchHomePageContent() {
     Scroll(this.watchScroller) {
       Column({ space: 10 }) {
-        this.WatchCloudCard()
-
-        if (this.tokens.length === 0) {
-          Column({ space: 8 }) {
-            Text(this.t('暂无令牌，请先添加令牌'))
-              .fontSize(13)
-              .fontColor(this.secondaryTextColor())
-              .textAlign(TextAlign.Center)
-              .width('100%')
-
-            Text(this.t('登录华为账号'))
-              .fontSize(12)
-              .fontColor(this.secondaryTextColor())
-              .textAlign(TextAlign.Center)
-              .width('100%')
-          }
-          .width('100%')
-          .padding({ top: 18, bottom: 18, left: 12, right: 12 })
-          .borderRadius(18)
-          .backgroundColor(this.cardBackgroundColor())
+        if (this.watchVisibleTokens().length === 0) {
+          this.WatchEmptyCard()
         } else {
-          ForEach(this.tokens, (token: TokenRecord) => {
+          ForEach(this.watchVisibleTokens(), (token: TokenRecord) => {
             this.WatchTokenCard(token)
-          }, (token: TokenRecord) => `${token.id}-${this.currentTimeMs}`)
+          }, (token: TokenRecord) => token.id)
         }
       }
       .width('100%')
@@ -792,14 +1703,70 @@ struct Index {
         bottom: this.naviIndicatorHeight + 18
       })
     }
+      .width('100%')
+      .layoutWeight(1)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .clip(false)
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+
+  @Builder
+  private WatchEmptyCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(62, 18)
+      }
+      Column({ space: 8 }) {
+        Text(this.t('暂无令牌，请先添加令牌'))
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+      }
+      .width('100%')
+      .height(62)
+      .padding({ top: 18, bottom: 18, left: 12, right: 12 })
+      .zIndex(2)
+    }
     .width('100%')
-    .height('100%')
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.Off)
+    .height(62)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-empty'), y: this.appCardScale('watch-empty') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-empty', event.type);
+    })
   }
 
   @Builder
   private WatchCloudCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      this.MeasuredImmersionCardSurface('watch-cloud', 18)
+      this.WatchCloudCardContent()
+    }
+    .width('100%')
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-cloud'), y: this.appCardScale('watch-cloud') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-cloud', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('watch-cloud', newValue);
+    })
+  }
+
+  @Builder
+  private WatchCloudCardContent() {
     Column({ space: 8 }) {
       Text(this.isHuaweiLoggedIn ? this.displayHuaweiNickname() : this.t('登录华为账号'))
         .fontSize(13)
@@ -810,39 +1777,69 @@ struct Index {
         .width('100%')
         .textAlign(TextAlign.Center)
 
-      Button({ type: ButtonType.Capsule }) {
-        if (this.cloudSyncing) {
-          LoadingProgress()
-            .width(18)
-            .height(18)
-            .color(this.accentContrastColor())
-        } else {
-          Text(this.isHuaweiLoggedIn ? this.t('手动获取') : this.t('登录华为账号'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.accentContrastColor())
+      Stack({ alignContent: Alignment.Center }) {
+        ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+          buttonModify: {
+            applyNormalAttribute(instance: ButtonModifier): void {
+              instance.width('100%').height(36)
+            }
+          },
+          click: (): void => {
+            if (this.cloudSyncing) {
+              return;
+            }
+            if (this.isHuaweiLoggedIn) {
+              this.pullTokensFromCloud();
+            } else {
+              this.loginHuaweiAccount();
+            }
+          }
+        }) {
+          if (this.cloudSyncing) {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color(this.accentContrastColor())
+          } else {
+            Text(this.isHuaweiLoggedIn ? this.t('手动获取') : this.t('登录华为账号'))
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.accentContrastColor())
+          }
         }
       }
       .width('100%')
       .height(36)
-      .backgroundColor(this.accentColor())
-      .enabled(!this.cloudSyncing)
-      .onClick(() => {
-        if (this.isHuaweiLoggedIn) {
-          this.pullTokensFromCloud();
-        } else {
-          this.loginHuaweiAccount();
-        }
-      })
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 12, bottom: 12 })
-    .borderRadius(18)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
   private WatchTokenCard(token: TokenRecord) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(WATCH_TOKEN_CARD_HEIGHT, 18)
+      }
+      this.WatchTokenCardContent(token)
+    }
+    .width('100%')
+    .height(WATCH_TOKEN_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-token-' + token.id), y: this.appCardScale('watch-token-' + token.id) })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-token-' + token.id, event.type);
+    })
+  }
+
+  @Builder
+  private WatchTokenCardContent(token: TokenRecord) {
     Column({ space: 4 }) {
       Text(token.name)
         .fontSize(13)
@@ -859,18 +1856,7 @@ struct Index {
         .width('100%')
 
       Row() {
-        Text(this.tokenCode(token))
-          .fontSize(WATCH_TOKEN_CODE_SIZE)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tokenValueColor())
-          .letterSpacing(0)
-          .maxLines(1)
-          .contentTransition(new NumericTextTransition({
-            flipDirection: FlipDirection.UP,
-            enableBlur: true
-          }))
-          .animation({ duration: 400, curve: Curve.Smooth })
-          .layoutWeight(1)
+        this.TokenCodeView(token, false, WATCH_TOKEN_CODE_SIZE, this.tokenValueColor(), FontWeight.Medium, 1)
 
         Text(this.tokenCountdownText(token))
           .fontSize(11)
@@ -883,8 +1869,7 @@ struct Index {
     .height(WATCH_TOKEN_CARD_HEIGHT)
     .padding({ left: 14, right: 14, top: 12, bottom: 10 })
     .justifyContent(FlexAlign.Center)
-    .borderRadius(18)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
@@ -895,6 +1880,20 @@ struct Index {
           this.AddTokenContent()
         } else if (name === 'cloudSpace') {
           this.CloudSpacePageContent()
+        } else if (name === 'watchSync') {
+          this.WatchSyncPageContent()
+        } else if (name === 'moreApps') {
+          this.MoreAppsPageContent()
+        } else if (name === 'donation') {
+          this.DonationPageContent()
+        } else if (name === 'about') {
+          this.AboutPageContent()
+        } else if (name === 'thirdParty') {
+          this.ThirdPartyPageContent()
+        } else if (name === 'appearanceSettings') {
+          this.AppearanceSettingsPageContent()
+        } else if (name === 'featureSecurity') {
+          this.FeatureSecurityPageContent()
         } else {
           this.SettingsPageContent()
         }
@@ -926,8 +1925,8 @@ struct Index {
           originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
           scrollEffectStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
           systemMaterialEffect: {
-            materialType: hdsMaterial.MaterialType.ADAPTIVE,
-            materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+            materialType: this.configuredMaterialType(),
+            materialLevel: this.configuredMaterialLevel()
           }
         },
         avoidLayoutSafeArea: true,
@@ -953,12 +1952,8 @@ struct Index {
 
   @Builder
   private TokenListContent() {
-    List({ scroller: this.homeScroller }) {
-      ListItemGroup({
-        header: this.HomeSearchGroupHeader,
-        space: 0
-      }) {
-      }
+    Stack({ alignContent: Alignment.Top }) {
+      List({ scroller: this.homeScroller }) {
 
       if (this.filteredTokens().length === 0) {
         ListItem() {
@@ -980,27 +1975,39 @@ struct Index {
         }) {
         }
       }
+      }
+      .width('100%')
+      .height('100%')
+      .lanes(this.filteredTokens().length === 0 ? 1 : this.tokenListLaneCount(), PAGE_CARD_GAP)
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + HOME_LAYOUT_GAP + HOME_SEARCH_HEIGHT + PAGE_CARD_GAP
+      })
+      .contentEndOffset(this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP)
+      .cachedCount(HOME_LIST_CACHE_COUNT, true)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .clip(false)
+      .onScrollStart(() => {
+        this.isHomeListScrolling = true;
+      })
+      .onScrollStop(() => {
+        this.isHomeListScrolling = false;
+        this.currentTimeMs = Date.now();
+      })
+
+      Row() {
+        this.HomeSearchBar()
+      }
+      .width('100%')
+      .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+      .position({ x: 0, y: this.statusBarHeight + HOME_TITLE_HEIGHT + HOME_LAYOUT_GAP })
+      .zIndex(12)
     }
     .width('100%')
     .height('100%')
-    .lanes(this.filteredTokens().length === 0 ? 1 : this.tokenListLaneCount(), PAGE_CARD_GAP)
-    .padding({
-      left: HOME_HORIZONTAL_PADDING,
-      right: HOME_HORIZONTAL_PADDING,
-      top: this.statusBarHeight + HOME_TITLE_HEIGHT + HOME_LAYOUT_GAP
-    })
-    .contentEndOffset(this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP)
-    .cachedCount(HOME_LIST_CACHE_COUNT, true)
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.Off)
     .clip(false)
-    .onReachStart(() => {
-      this.homeScrollY = 0;
-      this.setHomeSearchCollapsed(false);
-    })
-    .onDidScroll((scrollOffset: number, scrollState: ScrollState) => {
-      this.updateHomeScroll(scrollOffset);
-    })
   }
 
   @Builder
@@ -1010,9 +2017,8 @@ struct Index {
         this.TokenListItem(token)
       }
       .width('100%')
-      .padding({ bottom: PAGE_CARD_GAP })
-      .clip(true)
-      .borderRadius(TOKEN_CARD_RADIUS)
+      .margin({ bottom: PAGE_CARD_GAP })
+      .clip(false)
     }, (token: TokenRecord) => `${token.id}-${this.logoRenderVersion}`)
   }
 
@@ -1023,9 +2029,8 @@ struct Index {
         this.TokenListItem(token)
       }
       .width('100%')
-      .padding({ bottom: PAGE_CARD_GAP })
-      .clip(true)
-      .borderRadius(TOKEN_CARD_RADIUS)
+      .margin({ bottom: PAGE_CARD_GAP })
+      .clip(false)
       .dragPreviewOptions({
         mode: [DragPreviewMode.DISABLE_SCALE, DragPreviewMode.ENABLE_DEFAULT_RADIUS],
         numberBadge: false,
@@ -1058,16 +2063,20 @@ struct Index {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
 
-      Button(this.t('新增令牌'), { type: ButtonType.Capsule })
+      ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+        text: this.t('新增令牌'),
+        buttonModify: {
+          applyNormalAttribute(instance: ButtonModifier): void {
+            instance.width(148).height(44)
+          }
+        },
+        click: (): void => {
+          this.isAddMenuOpen = true;
+        }
+      })
         .width(148)
         .height(44)
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
-        .backgroundColor(this.accentColor())
-        .onClick(() => {
-          this.isAddMenuOpen = true;
-        })
 
       Text(this.t('代码开源，本地存储'))
         .fontSize(14)
@@ -1091,6 +2100,19 @@ struct Index {
         .backgroundColor(this.isDarkTheme() ? '#99000000' : '#66FFFFFF')
         .backdropBlur(18)
 
+      this.ImportProgressCard()
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Center)
+    .zIndex(180)
+    .hitTestBehavior(HitTestMode.Block)
+  }
+
+  @Builder
+  private ImportProgressCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('import-progress', 24)
       Column({ space: 14 }) {
         LoadingProgress()
           .width(28)
@@ -1123,101 +2145,549 @@ struct Index {
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
       }
-      .width(Math.min(300, this.pageWidth - HOME_HORIZONTAL_PADDING * 2))
+      .width('100%')
       .padding({ left: 22, right: 22, top: 22, bottom: 22 })
-      .borderRadius(24)
-      .backgroundColor(this.cardBackgroundColor())
-      .shadow({
-        radius: 24,
-        color: this.isDarkTheme() ? '#66000000' : '#18000000',
-        offsetX: 0,
-        offsetY: 10
-      })
+      .zIndex(2)
     }
-    .width('100%')
-    .height('100%')
-    .alignContent(Alignment.Center)
-    .zIndex(180)
-    .hitTestBehavior(HitTestMode.Block)
+    .width(Math.min(300, this.pageWidth - HOME_HORIZONTAL_PADDING * 2))
+    .borderRadius(24)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('import-progress'), y: this.appCardScale('import-progress') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('import-progress', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('import-progress', newValue);
+    })
+    .shadow({
+      radius: 24,
+      color: this.isDarkTheme() ? '#66000000' : '#18000000',
+      offsetX: 0,
+      offsetY: 10
+    })
   }
 
   @Builder
   private MePageContent() {
-    List({ scroller: this.meScroller }) {
-      ListItemGroup({ header: this.MeLoginGroupHeader, space: PAGE_CARD_GAP }) {
-        ListItem() {
-          this.MeActionCard([
-            ['华为云空间', $r('app.media.ic_me_cloud')],
-            ['备份导出', $r('app.media.ic_me_export')],
-            ['设置', $r('app.media.ic_me_settings')]
-          ], 0)
-        }
-        .width('100%')
-        .bindSheet(this.showExportPicker, this.ExportTokenPickerSheet(), {
-          height: SheetSize.MEDIUM,
-          dragBar: true,
-          showClose: false,
-          backgroundColor: this.cardBackgroundColor(),
-          blurStyle: BlurStyle.COMPONENT_THIN,
-          radius: LengthMetrics.vp(28),
-          onDisappear: () => {
-            this.showExportPicker = false;
+    Stack() {
+      List({ scroller: this.meScroller }) {
+        ListItemGroup({ header: this.MeLoginGroupHeader, space: PAGE_CARD_GAP }) {
+          ListItem() {
+            this.MeActionCard([
+              ['华为云空间', $r('sys.symbol.icloud')],
+              ['手表端数据同步', $r('sys.symbol.square_grid_2x2')],
+              ['备份导出', $r('sys.symbol.square_and_arrow_down')]
+            ], 0)
           }
-        })
+          .width('100%')
+          .bindSheet($$this.showExportPicker, this.ExportTokenPickerSheet(), {
+            height: SheetSize.MEDIUM,
+            dragBar: true,
+            showClose: false,
+            backgroundColor: this.sheetSurfaceBackgroundColor(),
+            blurStyle: this.sheetSurfaceBlurStyle(),
+            radius: LengthMetrics.vp(28)
+          })
 
-        ListItem() {
-          this.MeActionCard([
-            ['订阅会员服务', $r('app.media.ic_me_subscription')],
-            ['更多作品', $r('app.media.ic_me_more')]
-          ], 1)
-        }
-        .width('100%')
-        .bindSheet(this.showExportQR, this.ExportQRCodeSheet(), {
-          height: SheetSize.FIT_CONTENT,
-          dragBar: true,
-          showClose: false,
-          backgroundColor: this.cardBackgroundColor(),
-          blurStyle: BlurStyle.COMPONENT_THIN,
-          radius: LengthMetrics.vp(28),
-          onDisappear: () => {
-            this.showExportQR = false;
+          ListItem() {
+            this.MeActionCard([
+              ['外观与主题', $r('sys.symbol.paintpalette')],
+              ['功能与安全', $r('sys.symbol.key_shield')]
+            ], 1)
           }
-        })
-        ListItem() {
-          this.MeActionCard([
-            ['开源地址', $r('app.media.ic_me_gitcode')],
-            ['用户协议', $r('app.media.ic_me_contract')],
-            ['隐私声明', $r('app.media.ic_me_contract')],
-            ['建议与反馈', $r('app.media.ic_me_feedback')]
-          ], 2)
-        }
-        .width('100%')
-        .bindSheet(this.showExportFormat, this.ExportFormatSheet(), {
-          height: SheetSize.FIT_CONTENT,
-          dragBar: true,
-          showClose: false,
-          backgroundColor: this.cardBackgroundColor(),
-          blurStyle: BlurStyle.COMPONENT_THIN,
-          radius: LengthMetrics.vp(28),
-          onDisappear: () => {
-            this.showExportFormat = false;
+          .width('100%')
+
+          ListItem() {
+            this.MeActionCard([
+              ['打赏一杯咖啡', $r('sys.symbol.heart')],
+              ['更多作品', $r('sys.symbol.square_grid_2x2')]
+            ], 2)
           }
-        })
+          .width('100%')
+          .bindSheet($$this.showExportQR, this.ExportQRCodeSheet(), {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: true,
+            showClose: false,
+            backgroundColor: this.sheetSurfaceBackgroundColor(),
+            blurStyle: this.sheetSurfaceBlurStyle(),
+            radius: LengthMetrics.vp(28)
+          })
+          ListItem() {
+            this.MeActionCard([
+              ['开源地址', $r('sys.symbol.link_slash')],
+              ['用户协议', $r('sys.symbol.checkmark_shield')],
+              ['隐私声明', $r('sys.symbol.person_shield')],
+              ['关于', $r('sys.symbol.person_2')]
+            ], 3)
+          }
+          .width('100%')
+          .bindSheet($$this.showExportFormat, this.ExportFormatSheet(), {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: true,
+            showClose: false,
+            backgroundColor: this.sheetSurfaceBackgroundColor(),
+            blurStyle: this.sheetSurfaceBlurStyle(),
+            radius: LengthMetrics.vp(28)
+          })
+        }
       }
+      .width('100%')
+      .height('100%')
+      .lanes({ minLength: RESPONSIVE_CARD_MIN_WIDTH, maxLength: RESPONSIVE_CARD_MAX_WIDTH }, PAGE_CARD_GAP)
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP
+      })
+      .contentEndOffset(this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP + 18)
+      .cachedCount(HOME_LIST_CACHE_COUNT, true)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .clip(false)
+
+      this.MeSheetAnchors()
     }
     .width('100%')
     .height('100%')
-    .lanes({ minLength: RESPONSIVE_CARD_MIN_WIDTH, maxLength: RESPONSIVE_CARD_MAX_WIDTH }, PAGE_CARD_GAP)
-    .padding({
-      left: HOME_HORIZONTAL_PADDING,
-      right: HOME_HORIZONTAL_PADDING,
-      top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP
+  }
+
+  @Builder
+  private MeSheetAnchors() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showUserAgreementSheet, this.UserAgreementSheet(), {
+        height: SheetSize.LARGE,
+        dragBar: true,
+        showClose: false,
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28)
+      })
+
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showWebSheet, this.WebPageSheet(), {
+        height: SheetSize.LARGE,
+        dragBar: true,
+        showClose: false,
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28)
+      })
+  }
+
+  @Builder
+  private SteamLoginSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showSteamLoginPicker, this.SteamLoginPickerSheet(), {
+        height: SheetSize.MEDIUM,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28),
+        onDisappear: () => {
+          this.pendingSteamLoginTokenId = '';
+        }
+      })
+  }
+
+  @Builder
+  private UpdateNoticeSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Scroll(this.updateNoticeSheetScroller) {
+          Column({ space: 12 }) {
+            this.UpdateNoticeHero()
+            this.UpdateNoticeItem('1', '全局沉浸光感',
+              '令牌页和我的页卡片支持透明沉浸材质。',
+              '我的 → 外观与主题 → 全局沉浸光感')
+            this.UpdateNoticeItem('2', '自定义背景',
+              '可关闭背景图、选择 7 张预制图，或从图库选择。',
+              '我的 → 外观与主题 → 背景图选择')
+            this.UpdateNoticeItem('3', '模糊程度调节',
+              '使用滑杆将背景图模糊程度调整为 0–100%。',
+              '我的 → 外观与主题 → 背景图模糊程度')
+            this.UpdateNoticeItem('4', 'Steam 扫码登录',
+              '导入包含完整登录凭据的 maFile，即可扫描 Steam 登录二维码并确认登录。',
+              '令牌页 → 顶部扫码按钮 → 选择 Steam 账号 → 扫码登录')
+            this.UpdateNoticeItem('5', 'Steam 交易确认',
+              '自动检查待确认请求，可直接确认或拒绝交易、市场出售等操作。',
+              '导入含 identity_secret 的 maFile → 返回令牌页 → 处理确认弹窗')
+          }
+          .width('100%')
+          .padding({
+            left: SHEET_HORIZONTAL_PADDING,
+            right: SHEET_HORIZONTAL_PADDING,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetSingleFloatingAction({
+          label: this.t('不再提醒'),
+          action: () => {
+            this.dismissUpdateNotice();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('本次更新') },
+        menu: this.sheetCloseMenu(() => {
+          this.showUpdateNotice = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
     })
-    .contentEndOffset(this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP + 18)
-    .cachedCount(HOME_LIST_CACHE_COUNT, true)
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.Off)
-    .clip(false)
+    .bindToScrollable([this.updateNoticeSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private UpdateNoticeHero() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('update-hero', SHEET_OPTION_CARD_RADIUS)
+      this.UpdateNoticeHeroContent()
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.accentTintColor()))
+    .border({
+      width: this.shouldUseCardMaterial() ? this.cardSurfaceBorderWidth() : 0.5,
+      color: this.shouldUseCardMaterial() ? this.immersionBorderColor() : this.accentColor()
+    })
+    .scale({ x: this.appCardScale('update-hero'), y: this.appCardScale('update-hero') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('update-hero', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('update-hero', newValue);
+    })
+  }
+
+  @Builder
+  private UpdateNoticeHeroContent() {
+    Row({ space: 14 }) {
+      Image($r('app.media.app_icon_black'))
+        .width(52)
+        .height(52)
+        .borderRadius(14)
+        .objectFit(ImageFit.Cover)
+
+      Column({ space: 4 }) {
+        Text(this.t('界面焕新'))
+          .fontSize(19)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+
+        Text(this.t('背景与卡片外观，现在由你定义。'))
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .maxLines(2)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding(16)
+    .alignItems(VerticalAlign.Center)
+    .zIndex(2)
+  }
+
+  @Builder
+  private UpdateNoticeItem(index: string, title: string, description: string, path: string) {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('update-item-' + index, SHEET_OPTION_CARD_RADIUS)
+      this.UpdateNoticeItemContent(index, title, description, path)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.pageBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('update-item-' + index), y: this.appCardScale('update-item-' + index) })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('update-item-' + index, event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('update-item-' + index, newValue);
+    })
+  }
+
+  @Builder
+  private UpdateNoticeItemContent(index: string, title: string, description: string, path: string) {
+    Column({ space: 10 }) {
+      Row({ space: 12 }) {
+        Text(index)
+          .width(28)
+          .height(28)
+          .fontSize(13)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.accentContrastColor())
+          .textAlign(TextAlign.Center)
+          .backgroundColor(this.accentColor())
+          .borderRadius(14)
+
+        Column({ space: 3 }) {
+          Text(this.t(title))
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+
+          Text(this.t(description))
+            .fontSize(12)
+            .lineHeight(18)
+            .fontColor(this.secondaryTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      Column({ space: 3 }) {
+        Text(this.t('操作路径'))
+          .fontSize(10)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accentColor())
+
+        Text(this.t(path))
+          .fontSize(11)
+          .lineHeight(16)
+          .fontColor(this.primaryTextColor())
+          .maxLines(2)
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .borderRadius(12)
+      .backgroundColor(this.sheetControlBackgroundColor())
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding(14)
+    .zIndex(2)
+  }
+
+  @Builder
+  private SteamLoginPickerSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        List({ scroller: this.steamLoginSheetScroller }) {
+          ListItem() {
+            this.SheetMetaRow(
+              this.t('仅显示已通过登录凭据完整性校验的 Steam 令牌'),
+              this.steamLoginTokens().length.toString()
+            )
+          }
+
+          if (this.steamLoginTokens().length === 0) {
+            ListItem() {
+              this.SteamLoginEmptyState()
+            }
+          } else {
+            ForEach(this.steamLoginTokens(), (token: TokenRecord) => {
+              ListItem() {
+                Row({ space: 12 }) {
+                  SymbolGlyph($r('sys.symbol.gamecontroller'))
+                    .fontSize(22)
+                    .fontColor([this.accentColor()])
+                    .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+                  Column({ space: 2 }) {
+                    Text(this.tokenDisplayName(token))
+                      .fontSize(SHEET_PRIMARY_TEXT_SIZE)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                    Text(this.steamLoginAccountText(token))
+                      .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+                      .fontColor(this.secondaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Checkbox({ name: 'steam-login-' + token.id + '-' + this.sheetSelectionRevision.toString() })
+                    .select(this.pendingSteamLoginTokenId === token.id)
+                    .selectedColor(this.accentColor())
+                    .hitTestBehavior(HitTestMode.None)
+                }
+                .width('100%')
+                .height(SHEET_ROW_HEIGHT)
+                .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.selectSteamLoginToken(token.id);
+                })
+              }
+            }, (token: TokenRecord) => token.id + '-steam-login-' + this.sheetSelectionRevision.toString())
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: SHEET_CONTENT_TOP_PADDING, bottom: this.sheetListBottomPadding() })
+        .cachedCount(HOME_LIST_CACHE_COUNT, true)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        if (this.steamLoginTokens().length === 0) {
+          this.SheetSingleFloatingAction({
+            label: this.t('导入 Steam maFile'),
+            action: () => {
+              this.importSteamTokenFromLoginSheet();
+            }
+          })
+        } else {
+          this.SheetFloatingActions({
+            secondaryLabel: this.t('取消'),
+            secondaryAction: () => {
+              this.showSteamLoginPicker = false;
+            },
+            primaryLabel: this.t('打开相机扫码'),
+            primaryEnabled: this.pendingSteamLoginTokenId.length > 0,
+            primaryLoading: this.steamLoading,
+            primaryAction: () => {
+              this.startSelectedSteamLoginScan();
+            }
+          })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('选择 Steam 登录账号') },
+        menu: this.sheetCloseMenu(() => {
+          this.showSteamLoginPicker = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.steamLoginSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private SteamLoginEmptyState() {
+    Column({ space: 12 }) {
+      SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
+        .fontSize(34)
+        .fontColor([this.accentColor()])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+      Text(this.t('暂无可用于扫码登录的 Steam 令牌'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .textAlign(TextAlign.Center)
+
+      Text(this.t('仅包含共享密钥的令牌只能生成验证码。扫码登录还需要 Steam ID，以及 access_token 或 refresh_token。应用会在导入后自动验证这些字段。'))
+        .fontSize(13)
+        .fontColor(this.secondaryTextColor())
+        .lineHeight(19)
+        .textAlign(TextAlign.Center)
+
+      this.SteamLoginGuideCard()
+    }
+    .width('100%')
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, top: 18, bottom: 18 })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  private SteamLoginGuideCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-empty-guide', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 10 }) {
+        this.SteamLoginGuideStep('1', '从 Steam Desktop Authenticator 或其他兼容工具导出 maFile。')
+        this.SteamLoginGuideStep('2', '确认文件包含 steamid、shared_secret，以及 access_token 或 refresh_token。')
+        this.SteamLoginGuideStep('3', '点击下方导入；验证通过后重新打开此面板并勾选账号扫码。')
+      }
+      .width('100%')
+      .padding(14)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.pageBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-empty-guide'), y: this.appCardScale('steam-empty-guide') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-empty-guide', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-empty-guide', newValue);
+    })
+  }
+
+  @Builder
+  private SteamLoginGuideStep(index: string, content: string) {
+    Row({ space: 10 }) {
+      Text(index)
+        .width(24)
+        .height(24)
+        .fontSize(12)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.accentContrastColor())
+        .textAlign(TextAlign.Center)
+        .backgroundColor(this.accentColor())
+        .borderRadius(12)
+
+      Text(this.t(content))
+        .fontSize(13)
+        .fontColor(this.primaryTextColor())
+        .lineHeight(19)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
   }
 
   @Builder
@@ -1231,6 +2701,30 @@ struct Index {
 
   @Builder
   private MeLoginCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_LOGIN_CARD_HEIGHT, ME_CARD_RADIUS)
+      }
+      this.MeLoginCardContent()
+    }
+    .width('100%')
+    .height(ME_LOGIN_CARD_HEIGHT)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('me-login'), y: this.appCardScale('me-login') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('me-login', event.type);
+    })
+    .onClick(() => {
+      this.handleMeLoginClick();
+    })
+  }
+
+  @Builder
+  private MeLoginCardContent() {
     Row({ space: 16 }) {
       this.MeAvatar()
 
@@ -1254,16 +2748,16 @@ struct Index {
     .width('100%')
     .height(ME_LOGIN_CARD_HEIGHT)
     .padding({ left: 18, right: 20 })
-    .borderRadius(ME_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
     .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      if (this.isHuaweiLoggedIn) {
-        this.logoutHuaweiAccount();
-      } else if (!this.huaweiLoginInProgress) {
-        this.loginHuaweiAccount();
-      }
-    })
+    .zIndex(2)
+  }
+
+  private handleMeLoginClick(): void {
+    if (this.isHuaweiLoggedIn) {
+      this.logoutHuaweiAccount();
+    } else if (!this.huaweiLoginInProgress) {
+      this.loginHuaweiAccount();
+    }
   }
 
   @Builder
@@ -1304,6 +2798,28 @@ struct Index {
 
   @Builder
   private MeActionCard(items: Array<[string, Resource]>, group: number) {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(items.length * ME_ROW_HEIGHT + items.length - 1, ME_CARD_RADIUS)
+      }
+      this.MeActionCardContent(items, group)
+    }
+    .width('100%')
+    .height(items.length * ME_ROW_HEIGHT + items.length - 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('me-action-' + group.toString()),
+      y: this.appCardScale('me-action-' + group.toString()) })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('me-action-' + group.toString(), event.type);
+    })
+  }
+
+  @Builder
+  private MeActionCardContent(items: Array<[string, Resource]>, group: number) {
     Column() {
       ForEach(items, (item: [string, Resource], index: number) => {
         this.MeActionRow(item[0], item[1], () => {
@@ -1317,17 +2833,23 @@ struct Index {
     .width('100%')
     .height(items.length * ME_ROW_HEIGHT + items.length - 1)
     .padding({ left: 20, right: 18 })
-    .borderRadius(ME_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
   private MeActionRow(label: string, icon: Resource, action: () => void) {
     Row({ space: 16 }) {
-      Image(icon)
-        .width(ME_ACTION_ICON_SIZE)
-        .height(ME_ACTION_ICON_SIZE)
-        .objectFit(ImageFit.Contain)
+      if (label === '手表端数据同步') {
+        Image($r('app.media.ic_watch_sync'))
+          .width(ME_ACTION_ICON_SIZE)
+          .height(ME_ACTION_ICON_SIZE)
+          .objectFit(ImageFit.Contain)
+      } else {
+        SymbolGlyph(icon)
+          .fontSize(ME_ACTION_ICON_SIZE)
+          .fontColor([this.primaryTextColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      }
 
       Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
@@ -1335,15 +2857,643 @@ struct Index {
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
-      Image($r('app.media.ic_me_right'))
-        .width(ME_ARROW_WIDTH)
-        .height(ME_ARROW_HEIGHT)
-        .objectFit(ImageFit.Contain)
+      this.TrailingArrowSymbol()
     }
     .width('100%')
     .height(ME_ROW_HEIGHT)
     .alignItems(VerticalAlign.Center)
     .onClick(action)
+  }
+
+  @Builder
+  private TrailingArrowSymbol() {
+    SymbolGlyph($r('sys.symbol.chevron_right'))
+      .fontSize(ME_ACTION_ICON_SIZE)
+      .fontColor([this.secondaryTextColor()])
+      .fontWeight(FontWeight.Medium)
+      .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+  }
+
+  @Builder
+  private MoreAppsPageContent() {
+    Scroll(this.moreAppsScroller) {
+      Column() {
+        this.MoreAppsHeroCard()
+      }
+      .width('100%')
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private MoreAppsHeroCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('more-apps-hero', ME_CARD_RADIUS)
+      Column({ space: 18 }) {
+          Image($r('app.media.camlink'))
+            .width(92)
+            .height(92)
+            .borderRadius(22)
+            .objectFit(ImageFit.Cover)
+
+          Text('CamLink')
+            .fontSize(24)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+
+          Text(this.t('相机直连，极速传输'))
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.accentColor())
+
+          Text(this.t('Wi-Fi直连单反相机传输照片与视频，适配索尼、尼康、佳能等多种相机。支持扫码连接、相机图片预览、深色模式与防窥保护等功能。'))
+            .width('100%')
+            .fontSize(16)
+            .lineHeight(26)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+
+          ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+            text: this.t('在应用市场查看'),
+            buttonModify: {
+              applyNormalAttribute(instance: ButtonModifier): void {
+                instance.width(220).height(46)
+              }
+            },
+            click: (): void => {
+              this.openExternalUrl(CAMLINK_URL);
+            }
+          })
+            .width(220)
+            .height(46)
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: 560 })
+        .padding({ left: 28, right: 28, top: 36, bottom: 36 })
+        .alignItems(HorizontalAlign.Center)
+        .zIndex(2)
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 560 })
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('more-apps-hero'), y: this.appCardScale('more-apps-hero') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('more-apps-hero', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('more-apps-hero', newValue);
+    })
+  }
+
+  @Builder
+  private DonationPageContent() {
+    Scroll(this.donationScroller) {
+      Column({ space: PAGE_CARD_GAP }) {
+        this.DonationHeroCard()
+        this.DonationQrCard()
+        this.DonationBenefitsCard()
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 620 })
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private DonationHeroCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('donation-hero', ME_CARD_RADIUS)
+      Column({ space: 10 }) {
+          Text('☕')
+            .fontSize(56)
+
+          Text(this.t('赞助开发者'))
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+
+          Text(this.t('您的支持是作者持续迭代的底气'))
+            .fontSize(14)
+            .fontColor(this.secondaryTextColor())
+
+          Text(this.t('全部功能始终免费，赞助完全自愿，不解锁任何隐藏内容！'))
+            .fontSize(16)
+            .lineHeight(24)
+            .fontColor(this.accentColor())
+            .textAlign(TextAlign.Center)
+            .margin({ top: 8 })
+        }
+        .width('100%')
+        .padding({ left: 24, right: 24, top: 26, bottom: 26 })
+        .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('donation-hero'), y: this.appCardScale('donation-hero') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('donation-hero', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('donation-hero', newValue);
+    })
+  }
+
+  @Builder
+  private DonationQrCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('donation-qr', ME_CARD_RADIUS)
+      Column({ space: 16 }) {
+          Row({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.qrcode'))
+              .fontSize(24)
+              .fontColor([this.accentColor()])
+
+            Column({ space: 3 }) {
+              Text(this.t('微信打赏'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+              Text(this.t('扫码或长按识别'))
+                .fontSize(13)
+                .fontColor(this.secondaryTextColor())
+            }
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+
+          Image($rawfile('wechat_donation_qr.png'))
+            .width('100%')
+            .constraintSize({ maxWidth: 420 })
+            .aspectRatio(1397 / 1653)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(16)
+
+          Stack({ alignContent: Alignment.Center }) {
+            ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+              buttonModify: new ActionButtonModifier(
+                220, 44, this.primaryActionFillColor(), this.accentColor()),
+              click: (): void => {
+                this.saveRawImageToGallery('wechat_donation_qr.png', 'OpenAuthenticator_Donation');
+              }
+            }) {
+              Text(this.t('保存到相册'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.accentColor())
+            }
+          }
+          .width(220)
+          .height(44)
+        }
+        .width('100%')
+        .padding({ left: 24, right: 24, top: 24, bottom: 24 })
+        .alignItems(HorizontalAlign.Center)
+        .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('donation-qr'), y: this.appCardScale('donation-qr') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('donation-qr', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('donation-qr', newValue);
+    })
+  }
+
+  @Builder
+  private DonationBenefitsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('donation-benefits', ME_CARD_RADIUS)
+      Column({ space: 12 }) {
+          Text(this.t('赞助者福利'))
+            .width('100%')
+            .fontSize(17)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+          Text(this.t('打赏时请在备注里写下QQ号，需求与BUG优先响应，并提供可行范围内的使用指导。'))
+            .width('100%')
+            .fontSize(14)
+            .lineHeight(23)
+            .fontColor(this.secondaryTextColor())
+        }
+        .width('100%')
+        .padding({ left: 24, right: 24, top: 24, bottom: 24 })
+        .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('donation-benefits'), y: this.appCardScale('donation-benefits') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('donation-benefits', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('donation-benefits', newValue);
+    })
+  }
+
+  @Builder
+  private AboutPageContent() {
+    Scroll(this.aboutScroller) {
+      Column({ space: PAGE_CARD_GAP }) {
+        this.AboutHeroCard()
+        this.AboutActionsCard()
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 620 })
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+    .bindSheet($$this.showQQGroupSheet, this.QQGroupSheet(), {
+      height: SheetSize.MEDIUM,
+      dragBar: true,
+      showClose: false,
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28)
+    })
+  }
+
+  @Builder
+  private AboutHeroCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('about-hero', ME_CARD_RADIUS)
+      Column({ space: 12 }) {
+          Image($r('app.media.app_icon_black'))
+            .width(82)
+            .height(82)
+            .borderRadius(20)
+            .objectFit(ImageFit.Cover)
+
+          Text(this.t('开源验证器'))
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+          Text('OpenAuthenticator')
+            .fontSize(20)
+            .fontColor(this.primaryTextColor())
+
+          Text(this.t('开源免费，本地存储'))
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.accentColor())
+            .margin({ top: 6 })
+
+          Text(this.t('鸿蒙原生2FA/MFA令牌管理，兼容 OpenAI、Steam、Google Authenticator 等令牌。支持多端、华为云空间、服务卡片、深色模式、防窥保护与智感握姿等功能。'))
+            .width('100%')
+            .fontSize(15)
+            .lineHeight(25)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+
+          this.AboutCommentButton()
+        }
+        .width('100%')
+        .padding({ left: 28, right: 28, top: 26, bottom: 26 })
+        .alignItems(HorizontalAlign.Center)
+        .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('about-hero', newValue);
+    })
+  }
+
+  @Builder
+  private AboutCommentButton() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(44, 22)
+      }
+      Button({ type: ButtonType.Capsule }) {
+        Text(this.t('给一个好评'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accentColor())
+      }
+      .width(220)
+      .height(44)
+      .padding(0)
+      .backgroundColor(this.shouldUseCardMaterial() ? Color.Transparent : this.primaryActionFillColor())
+      .border({ width: 0.5, color: this.accentColor() })
+      .stateEffect(true)
+      .hitTestBehavior(HitTestMode.Block)
+      .visualEffect(new hdsEffect.HdsEffectBuilder()
+        .pressShadow(hdsEffect.PressShadowType.BLEND_WHITE)
+        .pointLight({
+          sourceType: hdsEffect.PointLightSourceType.SOFT,
+          illuminatedType: hdsEffect.PointLightIlluminatedType.DEFAULT_FEATHERING_BORDER,
+          options: {
+            color: this.accentColor(),
+            intensity: 0.1,
+            height: 6,
+            bloom: 0.08
+          }
+        })
+        .buildEffect())
+      .onClick(() => {
+        this.showAppCommentDialog();
+      })
+      .zIndex(2)
+    }
+    .width(220)
+    .height(44)
+    .borderRadius(22)
+    .clip(true)
+  }
+
+  @Builder
+  private AboutActionsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 4 + 3, ME_CARD_RADIUS)
+      }
+      Column() {
+          this.AboutActionRow('加入QQ群', QQ_GROUP_NUMBER, () => {
+            this.showQQGroupSheet = true;
+          })
+          this.MeCardDivider()
+          this.AboutActionRow('开源三方库使用清单', '', () => {
+            this.homePathStack.pushPath({ name: 'thirdParty' }, true);
+          })
+          this.MeCardDivider()
+          this.AboutActionRow('备案号', '京ICP备2026040690号-1A', () => {
+            this.openExternalUrl(STEAM_BEIAN_URL);
+          })
+          this.MeCardDivider()
+          this.AboutActionRow('应用版本', APP_VERSION, () => {
+          })
+        }
+        .width('100%')
+        .height(ME_ROW_HEIGHT * 4 + 3)
+        .padding({ left: 20, right: 18 })
+        .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 4 + 3)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('about-actions'), y: this.appCardScale('about-actions') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('about-actions', event.type);
+    })
+  }
+
+  @Builder
+  private AboutActionRow(label: string, value: string, action: () => void) {
+    Row({ space: 12 }) {
+      Text(this.t(label))
+        .fontSize(ME_ACTION_TEXT_SIZE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+      Text(value)
+        .fontSize(ME_ACTION_TEXT_SIZE)
+        .fontColor(this.primaryTextColor())
+      this.TrailingArrowSymbol()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+    .onClick(action)
+  }
+
+  @Builder
+  private ThirdPartyPageContent() {
+    Scroll(this.thirdPartyScroller) {
+      Column({ space: PAGE_CARD_GAP }) {
+        Text(this.t('感谢以下开源项目与三方库作者的贡献'))
+          .width('100%')
+          .fontSize(15)
+          .fontColor(this.secondaryTextColor())
+          .padding({ left: 4, right: 4, bottom: 4 })
+
+        this.ThirdPartyLibraryCard('@tangs/components', 'Apache-2.0',
+          this.t('提供 ImmersionButton 与 ImmersionSearch 沉浸光感组件'), TANGS_COMPONENTS_URL)
+        this.ThirdPartyLibraryCard('kdada/Authenticator', 'MIT',
+          this.t('Steam Authenticator 功能实现参考'), STEAM_REFERENCE_URL)
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 620 })
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private ThirdPartyLibraryCard(name: string, license: string, description: string, link: string) {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('third-party-' + name, ME_CARD_RADIUS)
+      this.ThirdPartyLibraryCardContent(name, license, description)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('third-party-' + name), y: this.appCardScale('third-party-' + name) })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('third-party-' + name, event.type);
+    })
+    .onClick(() => {
+      this.openExternalUrl(link);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('third-party-' + name, newValue);
+    })
+  }
+
+  @Builder
+  private ThirdPartyLibraryCardContent(name: string, license: string, description: string) {
+    Row({ space: 12 }) {
+      Column({ space: 5 }) {
+        Text(name)
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text(description)
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+        Text('License: ' + license)
+          .fontSize(12)
+          .fontColor(this.secondaryTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      this.TrailingArrowSymbol()
+    }
+    .width('100%')
+    .padding({ left: 20, right: 18, top: 18, bottom: 18 })
+    .zIndex(2)
+  }
+
+  @Builder
+  private QQGroupSheet() {
+    HdsNavigation() {
+      Column({ space: 14 }) {
+        Image($rawfile('qq_group_qr.png'))
+          .width('100%')
+          .constraintSize({ maxWidth: 320, maxHeight: 420 })
+          .layoutWeight(1)
+          .objectFit(ImageFit.Contain)
+          .borderRadius(18)
+
+        Text(this.t('扫描二维码加入QQ群'))
+          .fontSize(14)
+          .fontColor(this.secondaryTextColor())
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ left: 24, right: 24, top: 12, bottom: this.naviIndicatorHeight + 18 })
+      .alignItems(HorizontalAlign.Center)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('加入QQ群') },
+        menu: this.sheetCloseMenu(() => {
+          this.showQQGroupSheet = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private AppearanceSettingsPageContent() {
+    Scroll(this.appearanceSettingsScroller) {
+      GridRow({
+        columns: { xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 },
+        gutter: PAGE_CARD_GAP,
+        breakpoints: {
+          value: ['600vp'],
+          reference: BreakpointsReference.ComponentSize
+        }
+      }) {
+        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
+          this.SettingsAppearanceSection()
+        }
+      }
+      .width('100%')
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private FeatureSecurityPageContent() {
+    Scroll(this.featureSecurityScroller) {
+      GridRow({
+        columns: { xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 },
+        gutter: PAGE_CARD_GAP,
+        breakpoints: {
+          value: ['600vp'],
+          reference: BreakpointsReference.ComponentSize
+        }
+      }) {
+        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
+          this.SettingsSecuritySection()
+        }
+
+        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
+          this.SettingsWidgetSection()
+        }
+
+        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
+          this.SettingsSteamAccessSection()
+        }
+      }
+      .width('100%')
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
   }
 
   @Builder
@@ -1367,6 +3517,10 @@ struct Index {
 
         GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
           this.SettingsWidgetSection()
+        }
+
+        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
+          this.SettingsSteamAccessSection()
         }
       }
       .width('100%')
@@ -1395,9 +3549,24 @@ struct Index {
 
   @Builder
   private SettingsAppearanceSection() {
-    Column() {
-      this.SettingsSectionTitle(this.t('界面外观'))
-      this.SettingsAppearanceCard()
+    Column({ space: PAGE_CARD_GAP }) {
+      Column() {
+        this.SettingsSectionTitle(this.t('令牌外观'))
+        this.SettingsAppearanceTokenCard()
+      }
+      .width('100%')
+
+      Column() {
+        this.SettingsSectionTitle(this.t('高级材质'))
+        this.SettingsAppearanceMaterialCard()
+      }
+      .width('100%')
+
+      Column() {
+        this.SettingsSectionTitle(this.t('颜色与背景'))
+        this.SettingsAppearanceBackgroundCard()
+      }
+      .width('100%')
     }
     .width('100%')
   }
@@ -1409,6 +3578,85 @@ struct Index {
       this.SettingsCardWidgetCard()
     }
     .width('100%')
+  }
+
+  @Builder
+  private SettingsSteamAccessSection() {
+    Column() {
+      this.SettingsSectionTitle(this.t('Steam 增强访问'))
+      this.SettingsSteamAccessCard()
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private SettingsSteamAccessCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-access', ME_CARD_RADIUS)
+      this.SettingsSteamAccessCardContent()
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-access'), y: this.appCardScale('steam-access') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-access', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-access', newValue);
+    })
+  }
+
+  @Builder
+  private SettingsSteamAccessCardContent() {
+      Column() {
+        this.SettingsSwitchRow('启用 Steam 增强访问', this.steamEnhancedAccess, (enabled: boolean) => {
+          this.steamEnhancedAccess = enabled;
+          this.saveSettings();
+        })
+
+        if (this.steamEnhancedAccess) {
+          this.MeCardDivider()
+          TextInput({ text: this.steamGatewayUrl, placeholder: this.t('兼容网关地址（HTTPS）') })
+            .width('100%')
+            .height(ME_ROW_HEIGHT)
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.secondaryTextColor())
+            .backgroundColor(Color.Transparent)
+            .onChange((value: string) => {
+              this.steamGatewayUrl = value.trim();
+              this.saveSettings();
+            })
+
+          this.MeCardDivider()
+          TextInput({ text: this.steamGatewayToken, placeholder: this.t('网关访问令牌（可选）') })
+            .width('100%')
+            .height(ME_ROW_HEIGHT)
+            .type(InputType.Password)
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.secondaryTextColor())
+            .backgroundColor(Color.Transparent)
+            .onChange((value: string) => {
+              this.steamGatewayToken = value;
+              this.saveSettings();
+            })
+
+          Text(this.t('仅在无法直接访问 Steam 服务时启用。网关需兼容原 Steam API 请求路径。'))
+            .width('100%')
+            .fontSize(12)
+            .fontColor(this.secondaryTextColor())
+            .lineHeight(18)
+            .padding({ top: 8, bottom: 14 })
+        }
+      }
+      .width('100%')
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
   }
 
   @Builder
@@ -1424,7 +3672,7 @@ struct Index {
   @Builder
   private CloudSpacePageContent() {
     Stack() {
-      Scroll(this.cloudSpaceScroller) {
+      Scroll(this.watchSyncScroller) {
         Column({ space: PAGE_CARD_GAP }) {
           Text(this.t('同步设置'))
             .fontSize(ME_ACTION_TEXT_SIZE)
@@ -1433,16 +3681,7 @@ struct Index {
             .width('100%')
             .padding({ left: 20, top: 10, bottom: 8 })
 
-          Column() {
-            this.SettingsSwitchRow('云空间自动同步', this.cloudBackupEnabled, (isOn: boolean) => {
-              this.toggleCloudBackup(isOn);
-            })
-          }
-          .width('100%')
-          .height(ME_ROW_HEIGHT)
-          .padding({ left: 20, right: 18 })
-          .borderRadius(ME_CARD_RADIUS)
-          .backgroundColor(this.cardBackgroundColor())
+          this.CloudAutoSyncCard()
 
           Text(this.t('同步操作'))
             .fontSize(ME_ACTION_TEXT_SIZE)
@@ -1451,24 +3690,7 @@ struct Index {
             .width('100%')
             .padding({ left: 20, top: 18, bottom: 8 })
 
-          Column() {
-            this.CloudSpaceActionRow('手动推送', () => {
-              this.pushTokensToCloud();
-            })
-            this.MeCardDivider()
-            this.CloudSpaceActionRow('手动获取', () => {
-              this.pullTokensFromCloud();
-            })
-            this.MeCardDivider()
-            this.CloudSpaceActionRow('云空间管理', () => {
-              this.openCloudSpaceSettings();
-            })
-          }
-          .width('100%')
-          .height(ME_ROW_HEIGHT * 3 + 2)
-          .padding({ left: 20, right: 18 })
-          .borderRadius(ME_CARD_RADIUS)
-          .backgroundColor(this.cardBackgroundColor())
+          this.CloudActionsCard()
 
           Text(this.t('同步记录'))
             .fontSize(ME_ACTION_TEXT_SIZE)
@@ -1477,64 +3699,7 @@ struct Index {
             .width('100%')
             .padding({ left: 20, top: 18, bottom: 8 })
 
-          Column() {
-            Row() {
-              Text(this.t('同步状态'))
-                .fontSize(ME_ACTION_TEXT_SIZE)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.primaryTextColor())
-                .layoutWeight(1)
-
-              if (this.cloudSyncing) {
-                LoadingProgress()
-                  .width(18)
-                  .height(18)
-                  .color(this.accentColor())
-                  .margin({ right: 6 })
-              }
-
-              Text(this.cloudSyncing ? this.t('同步中') : this.t(this.cloudSyncStatus))
-                .fontSize(ME_ACTION_TEXT_SIZE)
-                .fontColor(this.secondaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .width('100%')
-            .height(ME_ROW_HEIGHT)
-            .alignItems(VerticalAlign.Center)
-
-            this.MeCardDivider()
-
-            Row() {
-              Text(this.t('最后同步时间'))
-                .fontSize(ME_ACTION_TEXT_SIZE)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.primaryTextColor())
-                .layoutWeight(1)
-
-              Text(this.cloudLastSyncTimeText())
-                .fontSize(ME_ACTION_TEXT_SIZE)
-                .fontColor(this.secondaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .width('100%')
-            .height(ME_ROW_HEIGHT)
-            .alignItems(VerticalAlign.Center)
-            if (this.shouldShowCloudDisabledHint()) {
-              Text('请点击「云空间管理」或前往「设置-云空间」，找到开源验证器应用，并开启云同步！')
-                .fontSize(12)
-                .fontColor(this.secondaryTextColor())
-                .lineHeight(18)
-                .width('100%')
-                .padding({ top: 8, bottom: 10 })
-            }
-          }
-          .width('100%')
-          .height(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 : ME_ROW_HEIGHT * 2 + 1)
-          .padding({ left: 20, right: 18 })
-          .borderRadius(ME_CARD_RADIUS)
-          .backgroundColor(this.cardBackgroundColor())
+          this.CloudRecordsCard()
         }
         .width('100%')
         .padding({
@@ -1556,129 +3721,652 @@ struct Index {
   }
 
   @Builder
-  private ExportTokenPickerSheet() {
-    Column() {
-      Row() {
-        Text(this.t('选择要导出的令牌'))
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-
-        Text(this.exportSelectedIds.length === this.tokens.length ? this.t('取消全选') : this.t('全选'))
-          .fontSize(14)
-          .fontColor(this.accentColor())
-          .onClick(() => {
-            this.exportSelectedIds = this.exportSelectedIds.length === this.tokens.length ? [] :
-              this.tokens.map((token: TokenRecord) => token.id);
-          })
+  private CloudAutoSyncCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.SettingsSwitchRow('云空间自动同步', this.cloudBackupEnabled, (isOn: boolean) => {
+          this.toggleCloudBackup(isOn);
+        })
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
+      .height(ME_ROW_HEIGHT)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('cloud-auto-sync'), y: this.appCardScale('cloud-auto-sync') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('cloud-auto-sync', event.type);
+    })
+  }
 
-      Text(this.tf('已选 {0} 个令牌', [`${this.exportSelectedIds.length}`]))
-        .width('100%')
-        .fontSize(12)
-        .fontColor(this.secondaryTextColor())
-        .padding({ left: 20, right: 20, bottom: 8 })
+  @Builder
+  private CloudActionsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 3 + 2, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.CloudSpaceActionRow('手动推送', () => {
+          this.pushTokensToCloud();
+        })
+        this.MeCardDivider()
+        this.CloudSpaceActionRow('手动获取', () => {
+          this.pullTokensFromCloud();
+        })
+        this.MeCardDivider()
+        this.CloudSpaceActionRow('云空间管理', () => {
+          this.openCloudSpaceSettings();
+        })
+      }
+      .width('100%')
+      .height(ME_ROW_HEIGHT * 3 + 2)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 3 + 2)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('cloud-actions'), y: this.appCardScale('cloud-actions') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('cloud-actions', event.type);
+    })
+  }
 
-      List() {
-        if (this.tokens.length === 0) {
-          ListItem() {
-            Text(this.t('暂无令牌，请先添加令牌'))
-              .fontSize(14)
-              .fontColor(this.secondaryTextColor())
-              .width('100%')
-              .height(100)
-              .textAlign(TextAlign.Center)
+  @Builder
+  private CloudRecordsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 :
+          ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+      }
+      Column() {
+        Row() {
+          Text(this.t('同步状态'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .layoutWeight(1)
+
+          if (this.cloudSyncing) {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color(this.accentColor())
+              .margin({ right: 6 })
           }
-        } else {
-          ForEach(this.tokens, (token: TokenRecord) => {
-            ListItem() {
-              Row({ space: 12 }) {
-                Column({ space: 2 }) {
-                  Text(this.tokenDisplayName(token))
-                    .fontSize(15)
-                    .fontColor(this.primaryTextColor())
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(this.normalizeTokenType(token.type))
-                    .fontSize(12)
-                    .fontColor(this.secondaryTextColor())
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
 
-                Checkbox({ name: token.id, group: 'exportTokenPicker' })
-                  .select(this.exportSelectedIds.includes(token.id))
-                  .selectedColor(this.accentColor())
-                  .hitTestBehavior(HitTestMode.None)
-              }
-              .width('100%')
-              .height(58)
-              .padding({ left: 20, right: 20 })
-              .alignItems(VerticalAlign.Center)
-              .onClick(() => {
-                this.toggleExportToken(token.id);
-              })
-            }
-          }, (token: TokenRecord) => token.id)
+          Text(this.cloudSyncing ? this.t('同步中') : this.t(this.cloudSyncStatus))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .height(ME_ROW_HEIGHT)
+        .alignItems(VerticalAlign.Center)
+
+        this.MeCardDivider()
+
+        Row() {
+          Text(this.t('最后同步时间'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .layoutWeight(1)
+
+          Text(this.cloudLastSyncTimeText())
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .height(ME_ROW_HEIGHT)
+        .alignItems(VerticalAlign.Center)
+
+        if (this.shouldShowCloudDisabledHint()) {
+          Text('请点击「云空间管理」或前往「设置-云空间」，找到开源验证器应用，并开启云同步！')
+            .fontSize(12)
+            .fontColor(this.secondaryTextColor())
+            .lineHeight(18)
+            .width('100%')
+            .padding({ top: 8, bottom: 10 })
         }
       }
       .width('100%')
-      .layoutWeight(1)
-      .cachedCount(HOME_LIST_CACHE_COUNT, true)
+      .height(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 : ME_ROW_HEIGHT * 2 + 1)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 : ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('cloud-records'), y: this.appCardScale('cloud-records') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('cloud-records', event.type);
+    })
+  }
+
+  @Builder
+  private WatchSyncPageContent() {
+    Stack() {
+      Scroll(this.cloudSpaceScroller) {
+        Column({ space: PAGE_CARD_GAP }) {
+          Text(this.t('同步设置'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width('100%')
+            .padding({ left: 20, top: 10, bottom: 8 })
+
+          this.WatchTokenSelectionCard()
+
+          Text(this.t('同步操作'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width('100%')
+            .padding({ left: 20, top: 18, bottom: 8 })
+
+          this.WatchActionsCard()
+
+          Text(this.t('同步记录'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width('100%')
+            .padding({ left: 20, top: 18, bottom: 8 })
+
+          this.WatchRecordsCard()
+        }
+        .width('100%')
+        .padding({
+          left: HOME_HORIZONTAL_PADDING,
+          right: HOME_HORIZONTAL_PADDING,
+          top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
+          bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .height('100%')
+    .bindSheet($$this.showWatchTokenPicker, this.WatchTokenPickerSheet(), {
+      height: SheetSize.MEDIUM,
+      dragBar: true,
+      showClose: false,
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28),
+      onDisappear: () => {
+        this.pendingWatchTokenIds = [];
+      }
+    })
+  }
 
-      Row({ space: 12 }) {
-        Button(this.t('取消'))
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor(this.primaryTextColor())
-          .backgroundColor(this.searchBackgroundColor())
-          .onClick(() => {
+  @Builder
+  private WatchTokenSelectionCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.CloudSpaceActionRow('选择同步到手表端的令牌', () => {
+          this.openWatchTokenPicker();
+        })
+        this.MeCardDivider()
+        Row() {
+          Text(this.watchTokenSelectionSummary())
+            .fontSize(13)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(ME_ROW_HEIGHT)
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .height(ME_ROW_HEIGHT * 2 + 1)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-token-selection'), y: this.appCardScale('watch-token-selection') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-token-selection', event.type);
+    })
+  }
+
+  @Builder
+  private WatchActionsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.WatchSyncActionRow('推送手表端', () => {
+          this.pushTokensToWear();
+        })
+      }
+      .width('100%')
+      .height(ME_ROW_HEIGHT)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-actions'), y: this.appCardScale('watch-actions') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-actions', event.type);
+    })
+  }
+
+  @Builder
+  private WatchRecordsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.WatchSyncInfoRow('推送状态', this.watchPushing ? this.t('推送中') : this.t(this.watchPushStatus))
+        this.MeCardDivider()
+        this.WatchSyncInfoRow('最后推送时间', this.watchLastPushTimeText())
+      }
+      .width('100%')
+      .height(ME_ROW_HEIGHT * 2 + 1)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-records'), y: this.appCardScale('watch-records') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-records', event.type);
+    })
+  }
+
+  @Builder
+  private WatchSyncActionRow(label: string, action: () => void) {
+    Row() {
+      Text(this.t(label))
+        .fontSize(ME_ACTION_TEXT_SIZE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+
+      if (this.watchPushing) {
+        LoadingProgress()
+          .width(20)
+          .height(20)
+          .color(this.accentColor())
+      } else {
+        this.TrailingArrowSymbol()
+      }
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+    .opacity(this.watchPushing ? 0.6 : 1)
+    .onClick(() => {
+      if (!this.watchPushing) {
+        action();
+      }
+    })
+  }
+
+  @Builder
+  private WatchSyncInfoRow(label: string, value: string) {
+    Row() {
+      Text(this.t(label))
+        .fontSize(ME_ACTION_TEXT_SIZE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+
+      if (label === '推送状态' && this.watchPushing) {
+        LoadingProgress()
+          .width(18)
+          .height(18)
+          .color(this.accentColor())
+          .margin({ right: 6 })
+      }
+
+      Text(value)
+        .fontSize(ME_ACTION_TEXT_SIZE)
+        .fontColor(this.secondaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private WatchTokenPickerSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        List({ scroller: this.watchTokenPickerSheetScroller }) {
+          ListItem() {
+            this.SheetMetaRow(
+              this.t('手表端按勾选顺序显示令牌'),
+              this.pendingWatchTokenIds.length.toString() + '/' + this.tokens.length.toString()
+            )
+          }
+
+          if (this.tokens.length === 0) {
+            ListItem() {
+              Text(this.t('暂无令牌，请先添加令牌'))
+                .fontSize(14)
+                .fontColor(this.secondaryTextColor())
+                .width('100%')
+                .height(SHEET_EMPTY_STATE_HEIGHT)
+                .textAlign(TextAlign.Center)
+            }
+          } else {
+            ForEach(this.tokens, (token: TokenRecord) => {
+              ListItem() {
+                Row({ space: 12 }) {
+                  Stack() {
+                    if (this.pendingWatchTokenIndex(token.id) >= 0) {
+                      Circle()
+                        .width(24)
+                        .height(24)
+                        .fill(this.accentColor())
+
+                      Text((this.pendingWatchTokenIndex(token.id) + 1).toString())
+                        .fontSize(12)
+                        .fontWeight(FontWeight.Bold)
+                        .fontColor(this.accentContrastColor())
+                    }
+                  }
+                  .width(24)
+                  .height(24)
+
+                  Column({ space: 2 }) {
+                    Text(this.tokenDisplayName(token))
+                      .fontSize(SHEET_PRIMARY_TEXT_SIZE)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                    Text(this.normalizeTokenType(token.type))
+                      .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+                      .fontColor(this.secondaryTextColor())
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Checkbox({ name: 'watch-' + token.id + '-' + this.sheetSelectionRevision.toString() })
+                    .select(this.pendingWatchTokenIndex(token.id) >= 0)
+                    .selectedColor(this.accentColor())
+                    .hitTestBehavior(HitTestMode.None)
+                }
+                .width('100%')
+                .height(SHEET_ROW_HEIGHT)
+                .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.togglePendingWatchToken(token.id);
+                })
+              }
+            }, (token: TokenRecord) => token.id + '-watch-' + this.sheetSelectionRevision.toString())
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: SHEET_CONTENT_TOP_PADDING, bottom: this.sheetListBottomPadding() })
+        .cachedCount(HOME_LIST_CACHE_COUNT, true)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('取消'),
+          secondaryAction: () => {
+            this.showWatchTokenPicker = false;
+          },
+          primaryLabel: this.t('完成'),
+          primaryEnabled: this.pendingWatchTokenIds.length > 0,
+          primaryLoading: false,
+          primaryAction: () => {
+            this.commitWatchTokenSelection();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('选择同步到手表端的令牌') },
+        menu: this.sheetCloseMenu(() => {
+          this.showWatchTokenPicker = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.watchTokenPickerSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private ExportTokenPickerSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        List({ scroller: this.exportTokenPickerSheetScroller }) {
+          ListItem() {
+            this.SheetMetaActionRow(
+              this.tf('已选 {0} 个令牌', [this.exportSelectedIds.length.toString()]),
+              this.exportSelectedIds.length === this.tokens.length ? this.t('取消全选') : this.t('全选'),
+              () => {
+                this.exportSelectedIds = this.exportSelectedIds.length === this.tokens.length ? [] :
+                  this.tokens.map((token: TokenRecord) => token.id);
+                this.bumpSheetSelectionRevision();
+              }
+            )
+          }
+
+          if (this.tokens.length === 0) {
+            ListItem() {
+              Text(this.t('暂无令牌，请先添加令牌'))
+                .fontSize(14)
+                .fontColor(this.secondaryTextColor())
+                .width('100%')
+                .height(SHEET_EMPTY_STATE_HEIGHT)
+                .textAlign(TextAlign.Center)
+            }
+          } else {
+            ForEach(this.tokens, (token: TokenRecord) => {
+              ListItem() {
+                Row({ space: 12 }) {
+                  Column({ space: 2 }) {
+                    Text(this.tokenDisplayName(token))
+                      .fontSize(SHEET_PRIMARY_TEXT_SIZE)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(this.normalizeTokenType(token.type))
+                      .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+                      .fontColor(this.secondaryTextColor())
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Checkbox({ name: 'export-' + token.id + '-' + this.sheetSelectionRevision.toString() })
+                    .select(this.exportSelectedIds.includes(token.id))
+                    .selectedColor(this.accentColor())
+                    .hitTestBehavior(HitTestMode.None)
+                }
+                .width('100%')
+                .height(SHEET_ROW_HEIGHT)
+                .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.toggleExportToken(token.id);
+                })
+              }
+            }, (token: TokenRecord) => token.id + '-export-' + this.sheetSelectionRevision.toString())
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: SHEET_CONTENT_TOP_PADDING, bottom: this.sheetListBottomPadding() })
+        .cachedCount(HOME_LIST_CACHE_COUNT, true)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('取消'),
+          secondaryAction: () => {
             this.showExportPicker = false;
-          })
-
-        Button(this.t('下一步'))
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor(this.accentContrastColor())
-          .backgroundColor(this.exportSelectedIds.length > 0 ? this.accentColor() : this.dividerColor())
-          .enabled(this.exportSelectedIds.length > 0)
-          .onClick(() => {
+          },
+          primaryLabel: this.t('下一步'),
+          primaryEnabled: this.exportSelectedIds.length > 0,
+          primaryLoading: false,
+          primaryAction: () => {
             this.showExportPicker = false;
             setTimeout(() => {
               this.showExportFormatMenu();
             }, 180);
-          })
+          }
+        })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 15, bottom: this.naviIndicatorHeight + 12 })
+      .height('100%')
+      .clip(false)
     }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('选择要导出的令牌') },
+        menu: this.sheetCloseMenu(() => {
+          this.showExportPicker = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.exportTokenPickerSheetScroller])
+    .hideBackButton(true)
     .width('100%')
     .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
   }
 
   @Builder
   private ExportFormatSheet() {
-    Column({ space: 16 }) {
-      Column({ space: 6 }) {
-        Text(this.t('选择导出格式'))
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Scroll(this.exportFormatSheetScroller) {
+          Column({ space: 16 }) {
+            Text(this.t('请选择密钥备份的导出方式'))
+              .width('100%')
+              .fontSize(13)
+              .fontColor(this.secondaryTextColor())
+              .padding({ left: 2, right: 2 })
 
-        Text(this.t('请选择密钥备份的导出方式'))
-          .fontSize(13)
-          .fontColor(this.secondaryTextColor())
+            this.ExportFormatOptionsCard()
+          }
+          .width('100%')
+          .padding({
+            left: SHEET_HORIZONTAL_PADDING,
+            right: SHEET_HORIZONTAL_PADDING,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetSingleFloatingAction({
+          label: this.t('取消'),
+          action: () => {
+            this.showExportFormat = false;
+          }
+        })
       }
       .width('100%')
-      .alignItems(HorizontalAlign.Start)
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('选择导出格式') },
+        menu: this.sheetCloseMenu(() => {
+          this.showExportFormat = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.exportFormatSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height(this.sheetShortHeight(SHEET_EXPORT_FORMAT_HEIGHT))
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
 
+  @Builder
+  private ExportFormatOptionsCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, SHEET_OPTION_CARD_RADIUS)
+      }
       Column() {
         this.ExportFormatOption(
           this.t('密钥 JSON 文件'),
@@ -1706,26 +4394,20 @@ struct Index {
         )
       }
       .width('100%')
+      .height(ME_ROW_HEIGHT * 2 + 1)
       .padding({ left: 18, right: 18 })
-      .borderRadius(ME_CARD_RADIUS)
-      .backgroundColor(this.searchBackgroundColor())
-
-      Button(this.t('取消'))
-        .width('100%')
-        .height(44)
-        .fontSize(14)
-        .fontColor(this.primaryTextColor())
-        .backgroundColor(this.searchBackgroundColor())
-        .onClick(() => {
-          this.showExportFormat = false;
-        })
+      .zIndex(2)
     }
     .width('100%')
-    .padding({
-      left: HOME_HORIZONTAL_PADDING,
-      right: HOME_HORIZONTAL_PADDING,
-      top: 15,
-      bottom: this.naviIndicatorHeight + 16
+    .height(ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('export-format-options'), y: this.appCardScale('export-format-options') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('export-format-options', event.type);
     })
   }
 
@@ -1734,139 +4416,361 @@ struct Index {
     Row({ space: 12 }) {
       Column({ space: 3 }) {
         Text(title)
-          .fontSize(15)
+          .fontSize(SHEET_PRIMARY_TEXT_SIZE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
 
         Text(description)
-          .fontSize(12)
+          .fontSize(SHEET_SECONDARY_TEXT_SIZE)
           .fontColor(this.secondaryTextColor())
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Image($r('app.media.ic_me_right'))
-        .width(ME_ARROW_WIDTH)
-        .height(ME_ARROW_HEIGHT)
-        .objectFit(ImageFit.Contain)
+      this.TrailingArrowSymbol()
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT)
+    .height(SHEET_ROW_HEIGHT)
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
 
   @Builder
   private ExportQRCodeSheet() {
-    Column() {
-      if (this.exportQRIndex < this.exportSelectedTokens().length) {
-        Text(this.tokenDisplayName(this.exportSelectedTokens()[this.exportQRIndex]))
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 8, bottom: 14 })
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Scroll(this.exportQRCodeSheetScroller) {
+          Column() {
+            if (this.exportQRIndex < this.exportSelectedTokens().length) {
+              Text(this.tokenDisplayName(this.exportSelectedTokens()[this.exportQRIndex]))
+                .fontSize(SHEET_PRIMARY_TEXT_SIZE)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .margin({ top: 8, bottom: 14 })
 
-        Row({ space: 10 }) {
-          Button({ type: ButtonType.Circle }) {
-            Image($r('app.media.ic_me_right'))
-              .width(ME_ARROW_WIDTH)
-              .height(ME_ARROW_HEIGHT)
-              .objectFit(ImageFit.Contain)
-              .rotate({ angle: 180 })
-          }
-          .width(40)
-          .height(40)
-          .backgroundColor(this.searchBackgroundColor())
-          .enabled(this.exportQRIndex > 0 && !this.isSavingQRCode)
-          .opacity(this.exportQRIndex > 0 ? 1 : 0.35)
-          .onClick(() => {
-            if (this.exportQRIndex > 0) {
-              this.exportQRIndex--;
+              Row({ space: 10 }) {
+                Button({ type: ButtonType.Circle }) {
+                  SymbolGlyph($r('sys.symbol.chevron_left'))
+                    .fontSize(ME_ACTION_ICON_SIZE)
+                    .fontColor([this.primaryTextColor()])
+                    .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+                }
+                .width(40)
+                .height(40)
+                .backgroundColor(this.sheetControlBackgroundColor())
+                .enabled(this.exportQRIndex > 0 && !this.isSavingQRCode)
+                .opacity(this.exportQRIndex > 0 ? 1 : 0.35)
+                .stateEffect(true)
+                .onClick(() => {
+                  if (this.exportQRIndex > 0) {
+                    this.exportQRIndex--;
+                  }
+                })
+
+                Stack() {
+                  QRCode(this.buildOtpAuthUri(this.exportSelectedTokens()[this.exportQRIndex]))
+                    .width(this.exportQRCodeSize() - 24)
+                    .height(this.exportQRCodeSize() - 24)
+                    .color('#000000')
+                    .backgroundColor('#FFFFFF')
+                }
+                .id('exportCurrentQrCode')
+                .width(this.exportQRCodeSize())
+                .height(this.exportQRCodeSize())
+                .padding(12)
+                .borderRadius(8)
+                .backgroundColor('#FFFFFF')
+
+                Button({ type: ButtonType.Circle }) {
+                  SymbolGlyph($r('sys.symbol.chevron_right'))
+                    .fontSize(ME_ACTION_ICON_SIZE)
+                    .fontColor([this.primaryTextColor()])
+                    .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+                }
+                .width(40)
+                .height(40)
+                .backgroundColor(this.sheetControlBackgroundColor())
+                .enabled(this.exportQRIndex < this.exportSelectedTokens().length - 1 && !this.isSavingQRCode)
+                .opacity(this.exportQRIndex < this.exportSelectedTokens().length - 1 ? 1 : 0.35)
+                .stateEffect(true)
+                .onClick(() => {
+                  if (this.exportQRIndex < this.exportSelectedTokens().length - 1) {
+                    this.exportQRIndex++;
+                  }
+                })
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+
+              Text((this.exportQRIndex + 1).toString() + '/' + this.exportSelectedTokens().length.toString())
+                .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+                .fontColor(this.secondaryTextColor())
+                .margin({ top: 10, bottom: 14 })
+            } else {
+              Text(this.t('没有可导出的令牌'))
+                .fontSize(14)
+                .fontColor(this.secondaryTextColor())
+                .height(SHEET_EMPTY_STATE_HEIGHT)
+                .textAlign(TextAlign.Center)
             }
-          })
-
-          Stack() {
-            QRCode(this.buildOtpAuthUri(this.exportSelectedTokens()[this.exportQRIndex]))
-              .width(this.exportQRCodeSize() - 24)
-              .height(this.exportQRCodeSize() - 24)
-              .color('#000000')
-              .backgroundColor('#FFFFFF')
           }
-          .id('exportCurrentQrCode')
-          .width(this.exportQRCodeSize())
-          .height(this.exportQRCodeSize())
-          .padding(12)
-          .borderRadius(8)
-          .backgroundColor('#FFFFFF')
-
-          Button({ type: ButtonType.Circle }) {
-            Image($r('app.media.ic_me_right'))
-              .width(ME_ARROW_WIDTH)
-              .height(ME_ARROW_HEIGHT)
-              .objectFit(ImageFit.Contain)
-          }
-          .width(40)
-          .height(40)
-          .backgroundColor(this.searchBackgroundColor())
-          .enabled(this.exportQRIndex < this.exportSelectedTokens().length - 1 && !this.isSavingQRCode)
-          .opacity(this.exportQRIndex < this.exportSelectedTokens().length - 1 ? 1 : 0.35)
-          .onClick(() => {
-            if (this.exportQRIndex < this.exportSelectedTokens().length - 1) {
-              this.exportQRIndex++;
-            }
+          .width('100%')
+          .padding({
+            left: 24,
+            right: 24,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
           })
+          .alignItems(HorizontalAlign.Center)
         }
         .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
+        .height('100%')
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
 
-        Text(`${this.exportQRIndex + 1}/${this.exportSelectedTokens().length}`)
-          .fontSize(12)
-          .fontColor(this.secondaryTextColor())
-          .margin({ top: 10, bottom: 14 })
-
-        Row({ space: 12 }) {
-          Button(this.isSavingQRCode ? this.t('保存中') : this.t('保存当前图片'))
-            .fontSize(14)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-            .height(44)
-            .backgroundColor(this.searchBackgroundColor())
-            .enabled(!this.isSavingQRCode)
-            .onClick(() => {
+        if (this.exportQRIndex < this.exportSelectedTokens().length) {
+          this.SheetFloatingActions({
+            secondaryLabel: this.isSavingQRCode ? this.t('保存中') : this.t('保存当前图片'),
+            secondaryAction: () => {
               if (!this.isSavingQRCode) {
                 this.saveCurrentQRCode();
               }
-            })
-
-          Button(this.isSavingQRCode ? this.t('保存中') : this.t('保存所有图片'))
-            .fontSize(14)
-            .fontColor(this.accentContrastColor())
-            .layoutWeight(1)
-            .height(44)
-            .backgroundColor(this.accentColor())
-            .enabled(!this.isSavingQRCode)
-            .onClick(() => {
+            },
+            secondaryIsPrimary: true,
+            primaryLabel: this.isSavingQRCode ? this.t('保存中') : this.t('保存所有图片'),
+            primaryEnabled: !this.isSavingQRCode,
+            primaryLoading: this.isSavingQRCode,
+            primaryAction: () => {
               if (!this.isSavingQRCode) {
                 this.saveAllQRCodes();
               }
-            })
+            }
+          })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('二维码图片') },
+        menu: this.sheetCloseMenu(() => {
+          this.showExportQR = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.exportQRCodeSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height(this.exportQRCodeSheetHeight())
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private UserAgreementSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Scroll(this.userAgreementSheetScroller) {
+          Column() {
+          this.AgreementTitle('开源验证器（OpenAuthenticator）用户协议')
+          this.AgreementDate('更新日期：2026年6月19日')
+          this.AgreementDate('生效日期：2026年6月19日')
+          this.AgreementNotice('请您在使用开源验证器（OpenAuthenticator）前仔细阅读本协议，尤其是以加粗方式提示的条款。使用本应用即表示您理解并同意本协议。')
+
+          this.AgreementHeading('1. 关于我们')
+          this.AgreementParagraph('开源验证器（OpenAuthenticator，以下简称“本应用”）由开源验证器开发者（以下简称“我们”）提供和运营。本协议是您与我们之间关于下载、安装和使用本应用及相关服务所订立的协议。', false)
+
+          this.AgreementHeading('2. 服务内容')
+          this.AgreementParagraph('本应用用于管理基于时间或计数器的一次性验证码，包括 TOTP、HOTP 和 Steam 令牌。您可以手工录入、扫描二维码或从文件导入令牌信息，并可选择使用华为云空间同步功能。', false)
+          this.AgreementParagraph('一次性验证码由您提供的密钥在设备本地计算。云空间同步属于可选功能，只有在您主动开启并满足华为账号及云空间服务条件后才会使用。', false)
+
+          this.AgreementHeading('3. 使用要求')
+          this.AgreementParagraph('您应具备与使用本应用相适应的民事行为能力。未成年人或限制民事行为能力人应在监护人阅读并同意本协议后使用。', false)
+          this.AgreementParagraph('您应确保录入或导入的令牌密钥来源合法，并有权管理相关账号。不得利用本应用从事任何违法违规、侵犯他人权益或危害网络安全的活动。', true)
+
+          this.AgreementHeading('4. 密钥与设备安全')
+          this.AgreementParagraph('令牌密钥属于高度敏感信息。请妥善保管设备、锁屏凭据、备份数据及华为账号，避免截屏、转发或向他人披露密钥和迁移二维码。', true)
+          this.AgreementParagraph('因设备遗失、越权访问、误删除、第三方账号异常、您主动共享密钥或未妥善保管备份而产生的风险和损失，由您自行承担。建议您同时保留服务提供方发放的恢复码或其他独立恢复方式。', false)
+
+          this.AgreementHeading('5. 华为账号与云空间')
+          this.AgreementParagraph('登录华为账号、云空间同步及标准化隐私声明等能力由相应的系统服务提供，并受华为账号、云空间及相关服务条款约束。网络、账号状态、云空间容量、系统配置或服务维护可能影响同步结果。', false)
+          this.AgreementParagraph('在执行覆盖本地数据的云端获取操作前，请确认云端数据符合预期。您应自行核对同步状态和令牌可用性。', true)
+
+          this.AgreementHeading('6. 服务变更与中止')
+          this.AgreementParagraph('我们可能基于安全、兼容性、法律法规或产品维护需要更新本应用。我们会尽力维护服务稳定，但不保证所有设备、系统版本、第三方二维码格式或第三方账号服务始终兼容。', false)
+
+          this.AgreementHeading('7. 免责声明')
+          this.AgreementParagraph('本应用按现状提供。在法律允许的范围内，因网络故障、系统限制、第三方服务异常、不可抗力、用户操作错误或超出我们合理控制范围的原因导致服务中断、同步失败或数据损失，我们不承担超出法律规定范围的责任。', true)
+          this.AgreementParagraph('本应用生成的验证码是否被第三方服务接受，取决于密钥、时间、算法、位数、刷新周期及第三方服务配置。请以相关第三方服务的实际验证结果为准。', false)
+
+          this.AgreementHeading('8. 知识产权')
+          this.AgreementParagraph('本应用的软件、界面和相关内容的知识产权归其权利人所有。未经授权，您不得对本应用进行违法复制、传播、出租、出售或用于侵犯他人权利的活动。开源组件按照各自许可证使用。', false)
+
+          this.AgreementHeading('9. 隐私保护')
+          this.AgreementParagraph('我们重视您的个人信息和令牌数据安全。关于信息处理范围、权限用途及您的权利，请查阅应用内“隐私声明”。本协议与隐私声明共同构成您使用本应用的依据。', false)
+
+          this.AgreementHeading('10. 协议更新')
+          this.AgreementParagraph('我们可能根据功能变化或法律法规要求更新本协议，并通过应用页面或发布渠道提供新版本。若您不同意更新后的协议，应停止使用本应用；继续使用即表示您接受更新内容。', false)
+
+          this.AgreementHeading('11. 法律适用与争议解决')
+          this.AgreementParagraph('本协议的订立、执行和解释适用中华人民共和国法律。发生争议时，双方应先友好协商；协商不成的，可依法向有管辖权的人民法院提起诉讼。', false)
+
+          this.AgreementHeading('12. 联系我们')
+          this.AgreementParagraph('如对本协议或本应用有疑问，可发送邮件至 ' + USER_AGREEMENT_EMAIL + '。', false)
+          this.AgreementFooter('开源验证器开发者')
         }
         .width('100%')
-        .opacity(this.isSavingQRCode ? 0.65 : 1)
-      } else {
-        Text(this.t('没有可导出的令牌'))
-          .fontSize(14)
-          .fontColor(this.secondaryTextColor())
-          .height(120)
-          .textAlign(TextAlign.Center)
+        .padding({
+          left: SHEET_HORIZONTAL_PADDING,
+          right: SHEET_HORIZONTAL_PADDING,
+          top: SHEET_CONTENT_TOP_PADDING,
+          bottom: this.naviIndicatorHeight + 24
+        })
       }
+      .width('100%')
+      .layoutWeight(1)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .clip(false)
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('用户协议') },
+        menu: this.sheetCloseMenu(() => {
+          this.showUserAgreementSheet = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.userAgreementSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private AgreementTitle(text: string) {
+    Text(text)
+      .width('100%')
+      .fontSize(22)
+      .lineHeight(30)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.primaryTextColor())
+      .margin({ bottom: 4 })
+  }
+
+  @Builder
+  private AgreementDate(text: string) {
+    Text(text)
+      .width('100%')
+      .fontSize(13)
+      .lineHeight(20)
+      .fontColor(this.secondaryTextColor())
+  }
+
+  @Builder
+  private AgreementNotice(text: string) {
+    Text(text)
+      .width('100%')
+      .fontSize(14)
+      .lineHeight(22)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.primaryTextColor())
+      .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .margin({ top: 18, bottom: 4 })
+      .borderRadius(12)
+      .backgroundColor(this.sheetControlBackgroundColor())
+      .border({ width: 1, color: this.accentColor() })
+  }
+
+  @Builder
+  private AgreementHeading(text: string) {
+    Text(text)
+      .width('100%')
+      .fontSize(17)
+      .lineHeight(24)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.primaryTextColor())
+      .margin({ top: 22, bottom: 4 })
+  }
+
+  @Builder
+  private AgreementParagraph(text: string, emphasized: boolean) {
+    Text(text)
+      .width('100%')
+      .fontSize(14)
+      .lineHeight(24)
+      .fontWeight(emphasized ? FontWeight.Medium : FontWeight.Regular)
+      .fontColor(this.primaryTextColor())
+      .margin({ top: 6 })
+  }
+
+  @Builder
+  private AgreementFooter(text: string) {
+    Column({ space: 14 }) {
+      Divider()
+        .color(this.dividerColor())
+      Text(text)
+        .width('100%')
+        .fontSize(13)
+        .lineHeight(20)
+        .fontColor(this.secondaryTextColor())
     }
     .width('100%')
-    .padding({ left: 24, right: 24, bottom: this.naviIndicatorHeight + 20 })
-    .alignItems(HorizontalAlign.Center)
+    .margin({ top: 26 })
+  }
+
+  @Builder
+  private WebPageSheet() {
+    HdsNavigation() {
+      Web({
+        src: 'about:blank',
+        controller: this.webSheetController,
+        renderMode: RenderMode.SYNC_RENDER
+      })
+        .width('100%')
+        .height('100%')
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .onlineImageAccess(true)
+        .backgroundColor(this.cardBackgroundColor())
+        .onAppear(() => {
+          this.loadWebSheetUrl();
+        })
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t(this.webSheetTitle) },
+        menu: this.sheetCloseMenu(() => {
+          this.showWebSheet = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
   }
 
   private toggleExportToken(tokenId: string): void {
@@ -1875,6 +4779,11 @@ struct Index {
     } else {
       this.exportSelectedIds = [...this.exportSelectedIds, tokenId];
     }
+    this.bumpSheetSelectionRevision();
+  }
+
+  private bumpSheetSelectionRevision(): void {
+    this.sheetSelectionRevision = this.sheetSelectionRevision + 1;
   }
 
   @Builder
@@ -1892,10 +4801,7 @@ struct Index {
           .height(20)
           .color(this.accentColor())
       } else {
-        Image($r('app.media.ic_me_right'))
-          .width(ME_ARROW_WIDTH)
-          .height(ME_ARROW_HEIGHT)
-          .objectFit(ImageFit.Contain)
+        this.TrailingArrowSymbol()
       }
     }
     .width('100%')
@@ -1939,6 +4845,27 @@ struct Index {
 
   @Builder
   private SettingsSecurityCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 4 + 3, ME_CARD_RADIUS)
+      }
+      this.SettingsSecurityCardContent()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 4 + 3)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('settings-security'), y: this.appCardScale('settings-security') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('settings-security', event.type);
+    })
+  }
+
+  @Builder
+  private SettingsSecurityCardContent() {
     Column() {
       this.SettingsSwitchRow('智感握姿', this.smartGripEnabled, (isOn: boolean) => {
         this.toggleSmartGrip(isOn);
@@ -1961,8 +4888,7 @@ struct Index {
     .width('100%')
     .height(ME_ROW_HEIGHT * 4 + 3)
     .padding({ left: 20, right: 18 })
-    .borderRadius(ME_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
@@ -1987,19 +4913,29 @@ struct Index {
   }
 
   @Builder
-  private SettingsAppearanceCard() {
+  private SettingsAppearanceTokenCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+      }
+      this.SettingsAppearanceTokenCardContent()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('appearance-token'), y: this.appCardScale('appearance-token') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('appearance-token', event.type);
+    })
+  }
+
+  @Builder
+  private SettingsAppearanceTokenCardContent() {
     Column() {
-      this.SettingsSelectRow('深色模式', this.themeModeInput, THEME_MODE_OPTIONS, false, (value: string) => {
-        this.themeModeInput = value;
-        this.applyColorMode();
-        this.saveSettings();
-      })
-      this.MeCardDivider()
-      this.SettingsSelectRow('主题色', this.themeColorInput, THEME_COLOR_OPTIONS, true, (value: string) => {
-        this.themeColorInput = value;
-        this.saveSettings();
-      })
-      this.MeCardDivider()
       this.SettingsSwitchRow('显示下一组令牌', this.showNextToken, (isOn: boolean) => {
         this.showNextToken = isOn;
         this.saveSettings();
@@ -2013,10 +4949,237 @@ struct Index {
         })
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 4 + 3)
+    .height(ME_ROW_HEIGHT * 2 + 1)
     .padding({ left: 20, right: 18 })
+    .zIndex(2)
+  }
+
+  @Builder
+  private SettingsAppearanceMaterialCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 3 + 2, ME_CARD_RADIUS)
+      }
+      this.SettingsAppearanceMaterialCardContent()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 3 + 2)
     .borderRadius(ME_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('appearance-material'), y: this.appCardScale('appearance-material') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('appearance-material', event.type);
+    })
+  }
+
+  @Builder
+  private SettingsAppearanceMaterialCardContent() {
+    Column() {
+      this.SettingsSwitchRow('全局沉浸光感', this.globalImmersionEnabled, (isOn: boolean) => {
+        this.globalImmersionEnabled = isOn;
+        this.saveSettings();
+      })
+      this.MeCardDivider()
+      this.SettingsSelectRow('材质类型', this.materialTypeInput, MATERIAL_TYPE_OPTIONS, false, (value: string) => {
+        this.materialTypeInput = value;
+        this.saveSettings();
+      })
+      this.MeCardDivider()
+      this.SettingsSelectRow('材质等级', this.materialLevelInput, MATERIAL_LEVEL_OPTIONS, false, (value: string) => {
+        this.materialLevelInput = value;
+        this.saveSettings();
+      })
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 3 + 2)
+    .padding({ left: 20, right: 18 })
+    .zIndex(2)
+  }
+
+  @Builder
+  private SettingsAppearanceBackgroundCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(
+          ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2,
+          ME_CARD_RADIUS
+        )
+      }
+      this.SettingsAppearanceBackgroundCardContent()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('appearance-background'), y: this.appCardScale('appearance-background') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('appearance-background', event.type);
+    })
+  }
+
+  @Builder
+  private SettingsAppearanceBackgroundCardContent() {
+    Column() {
+      this.SettingsSelectRow('主题色', this.themeColorInput, THEME_COLOR_OPTIONS, true, (value: string) => {
+        this.themeColorInput = value;
+        this.saveSettings();
+      })
+      this.MeCardDivider()
+      this.SettingsBackgroundPickerRow()
+      this.MeCardDivider()
+      this.SettingsBackgroundBlurRow()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2)
+    .padding({ left: 20, right: 18 })
+    .zIndex(2)
+  }
+
+  @Builder
+  private SettingsBackgroundPickerRow() {
+    Column({ space: 10 }) {
+      Row() {
+        Text(this.t('背景图选择'))
+          .fontSize(ME_ACTION_TEXT_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+
+        Button(this.t('从图库选择'))
+          .height(34)
+          .fontSize(13)
+          .fontColor(this.accentContrastColor())
+          .backgroundColor(this.accentColor())
+          .borderRadius(17)
+          .padding({ left: 14, right: 14 })
+          .onClick(() => {
+            this.pickCustomBackground();
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Scroll() {
+        Row({ space: 6 }) {
+          this.BackgroundOffThumbnail()
+          if (this.customBackgroundUri.length > 0) {
+            this.CustomBackgroundThumbnail()
+          }
+          this.PresetBackgroundThumbnail('preset_1', $r('app.media.background_preset_1'))
+          this.PresetBackgroundThumbnail('preset_2', $r('app.media.background_preset_2'))
+          this.PresetBackgroundThumbnail('preset_3', $r('app.media.background_preset_3'))
+          this.PresetBackgroundThumbnail('preset_4', $r('app.media.background_preset_4'))
+          this.PresetBackgroundThumbnail('preset_5', $r('app.media.background_preset_5'))
+          this.PresetBackgroundThumbnail('preset_6', $r('app.media.background_preset_6'))
+          this.PresetBackgroundThumbnail('preset_7', $r('app.media.background_preset_7'))
+        }
+        .height(BACKGROUND_THUMBNAIL_HEIGHT)
+      }
+      .width('100%')
+      .height(BACKGROUND_THUMBNAIL_HEIGHT)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+    }
+    .width('100%')
+    .height(BACKGROUND_PICKER_ROW_HEIGHT)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private BackgroundOffThumbnail() {
+    Stack({ alignContent: Alignment.Center }) {
+      Text(this.t('关闭'))
+        .fontSize(10)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.secondaryTextColor())
+    }
+    .width(BACKGROUND_THUMBNAIL_WIDTH)
+    .height(BACKGROUND_THUMBNAIL_HEIGHT)
+    .backgroundColor(this.pageBackgroundColor())
+    .borderRadius(8)
+    .border({
+      width: this.backgroundSelection === 'none' ? 3 : 0.5,
+      color: this.backgroundSelection === 'none' ? this.accentColor() : this.dividerColor()
+    })
+    .onClick(() => {
+      this.backgroundSelection = 'none';
+      this.saveSettings();
+    })
+  }
+
+  @Builder
+  private PresetBackgroundThumbnail(id: string, source: Resource) {
+    Image(source)
+      .width(BACKGROUND_THUMBNAIL_WIDTH)
+      .height(BACKGROUND_THUMBNAIL_HEIGHT)
+      .objectFit(ImageFit.Cover)
+      .borderRadius(8)
+      .border({
+        width: this.backgroundSelection === id ? 3 : 0.5,
+        color: this.backgroundSelection === id ? this.accentColor() : this.dividerColor()
+      })
+      .onClick(() => {
+        this.backgroundSelection = id;
+        this.saveSettings();
+      })
+  }
+
+  @Builder
+  private CustomBackgroundThumbnail() {
+    Image(this.customBackgroundUri)
+      .width(BACKGROUND_THUMBNAIL_WIDTH)
+      .height(BACKGROUND_THUMBNAIL_HEIGHT)
+      .objectFit(ImageFit.Cover)
+      .borderRadius(8)
+      .border({
+        width: this.backgroundSelection === 'custom' ? 3 : 0.5,
+        color: this.backgroundSelection === 'custom' ? this.accentColor() : this.dividerColor()
+      })
+      .onClick(() => {
+        this.backgroundSelection = 'custom';
+        this.saveSettings();
+      })
+  }
+
+  @Builder
+  private SettingsBackgroundBlurRow() {
+    Column({ space: 6 }) {
+      Row() {
+        Text(this.t('背景图模糊程度'))
+          .fontSize(ME_ACTION_TEXT_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+
+        Text(Math.round(this.backgroundBlurPercent).toString() + '%')
+          .fontSize(HOME_SEARCH_TEXT_SIZE)
+          .fontColor(this.secondaryTextColor())
+      }
+      .width('100%')
+
+      Slider({ value: this.backgroundBlurPercent, min: 0, max: 100, step: 1 })
+        .width('100%')
+        .selectedColor(this.accentColor())
+        .trackColor(this.dividerColor())
+        .blockColor(this.accentColor())
+        .enabled(this.backgroundSelection !== 'none')
+        .opacity(this.backgroundSelection === 'none' ? 0.4 : 1)
+        .onChange((value: number) => {
+          this.backgroundBlurPercent = this.clamp(value, 0, 100);
+          this.saveSettings();
+        })
+    }
+    .width('100%')
+    .height(BACKGROUND_BLUR_ROW_HEIGHT)
+    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
@@ -2072,6 +5235,38 @@ struct Index {
 
   @Builder
   private SettingsCardWidgetCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 3 + 2, ME_CARD_RADIUS)
+      }
+      this.SettingsCardWidgetCardContent()
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 3 + 2)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('settings-widget'), y: this.appCardScale('settings-widget') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('settings-widget', event.type);
+    })
+    .bindSheet($$this.showCardTokenPicker, this.CardTokenPickerSheet(), {
+      height: SheetSize.MEDIUM,
+      dragBar: true,
+      showClose: false,
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28),
+      onDisappear: () => {
+        this.pendingCardTokenIds = [];
+      }
+    })
+  }
+
+  @Builder
+  private SettingsCardWidgetCardContent() {
     Column() {
       this.CloudSpaceActionRow('选择卡片显示的令牌', () => {
         this.openCardTokenPicker();
@@ -2105,137 +5300,122 @@ struct Index {
     .width('100%')
     .height(ME_ROW_HEIGHT * 3 + 2)
     .padding({ left: 20, right: 18 })
-    .borderRadius(ME_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
-    .bindSheet(this.showCardTokenPicker, this.CardTokenPickerSheet(), {
-      height: SheetSize.MEDIUM,
-      dragBar: true,
-      showClose: false,
-      backgroundColor: this.cardBackgroundColor(),
-      blurStyle: BlurStyle.COMPONENT_THIN,
-      radius: LengthMetrics.vp(28),
-      onDisappear: () => {
-        this.showCardTokenPicker = false;
-        this.pendingCardTokenIds = [];
-      }
-    })
+    .zIndex(2)
   }
 
   @Builder
   private CardTokenPickerSheet() {
-    Column() {
-      Row() {
-        Text(this.t('选择卡片显示的令牌'))
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-
-        Text(`${this.pendingCardTokenIds.length}/${CARD_TOKEN_LIMIT}`)
-          .fontSize(14)
-          .fontColor(this.secondaryTextColor())
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-
-      Text(this.t('卡片按勾选顺序显示令牌'))
-        .width('100%')
-        .fontSize(12)
-        .fontColor(this.secondaryTextColor())
-        .padding({ left: 20, right: 20, bottom: 8 })
-
-      List() {
-        if (this.tokens.length === 0) {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        List({ scroller: this.cardTokenPickerSheetScroller }) {
           ListItem() {
-            Text(this.t('暂无令牌，请先添加令牌'))
-              .fontSize(14)
-              .fontColor(this.secondaryTextColor())
-              .width('100%')
-              .height(100)
-              .textAlign(TextAlign.Center)
+            this.SheetMetaRow(
+              this.t('卡片按勾选顺序显示令牌'),
+              this.pendingCardTokenIds.length.toString() + '/' + CARD_TOKEN_LIMIT.toString()
+            )
           }
-        } else {
-          ForEach(this.tokens, (token: TokenRecord) => {
+
+          if (this.tokens.length === 0) {
             ListItem() {
-              Row({ space: 12 }) {
-                Stack() {
-                  if (this.pendingCardTokenIndex(token.id) >= 0) {
-                    Circle()
-                      .width(24)
-                      .height(24)
-                      .fill(this.accentColor())
-
-                    Text(`${this.pendingCardTokenIndex(token.id) + 1}`)
-                      .fontSize(12)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor(this.accentContrastColor())
-                  }
-                }
-                .width(24)
-                .height(24)
-
-                Column({ space: 2 }) {
-                  Text(this.tokenDisplayName(token))
-                    .fontSize(15)
-                    .fontColor(this.primaryTextColor())
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-                  Text(this.normalizeTokenType(token.type))
-                    .fontSize(12)
-                    .fontColor(this.secondaryTextColor())
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                Checkbox({ name: token.id, group: 'cardTokenPicker' })
-                  .select(this.pendingCardTokenIndex(token.id) >= 0)
-                  .selectedColor(this.accentColor())
-                  .hitTestBehavior(HitTestMode.None)
-              }
-              .width('100%')
-              .height(58)
-              .padding({ left: 20, right: 20 })
-              .alignItems(VerticalAlign.Center)
-              .onClick(() => {
-                this.togglePendingCardToken(token.id);
-              })
+              Text(this.t('暂无令牌，请先添加令牌'))
+                .fontSize(14)
+                .fontColor(this.secondaryTextColor())
+                .width('100%')
+                .height(SHEET_EMPTY_STATE_HEIGHT)
+                .textAlign(TextAlign.Center)
             }
-          }, (token: TokenRecord) => token.id)
+          } else {
+            ForEach(this.tokens, (token: TokenRecord) => {
+              ListItem() {
+                Row({ space: 12 }) {
+                  Stack() {
+                    if (this.pendingCardTokenIndex(token.id) >= 0) {
+                      Circle()
+                        .width(24)
+                        .height(24)
+                        .fill(this.accentColor())
+
+                      Text((this.pendingCardTokenIndex(token.id) + 1).toString())
+                        .fontSize(12)
+                        .fontWeight(FontWeight.Bold)
+                        .fontColor(this.accentContrastColor())
+                    }
+                  }
+                  .width(24)
+                  .height(24)
+
+                  Column({ space: 2 }) {
+                    Text(this.tokenDisplayName(token))
+                      .fontSize(SHEET_PRIMARY_TEXT_SIZE)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                    Text(this.normalizeTokenType(token.type))
+                      .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+                      .fontColor(this.secondaryTextColor())
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  Checkbox({ name: 'card-' + token.id + '-' + this.sheetSelectionRevision.toString() })
+                    .select(this.pendingCardTokenIndex(token.id) >= 0)
+                    .selectedColor(this.accentColor())
+                    .hitTestBehavior(HitTestMode.None)
+                }
+                .width('100%')
+                .height(SHEET_ROW_HEIGHT)
+                .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.togglePendingCardToken(token.id);
+                })
+              }
+            }, (token: TokenRecord) => token.id + '-card-' + this.sheetSelectionRevision.toString())
+          }
         }
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .cachedCount(HOME_LIST_CACHE_COUNT, true)
-      .scrollBar(BarState.Off)
+        .width('100%')
+        .height('100%')
+        .padding({ top: SHEET_CONTENT_TOP_PADDING, bottom: this.sheetListBottomPadding() })
+        .cachedCount(HOME_LIST_CACHE_COUNT, true)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
 
-      Row({ space: 12 }) {
-        Button(this.t('取消'))
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor(this.primaryTextColor())
-          .backgroundColor(this.searchBackgroundColor())
-          .onClick(() => {
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('取消'),
+          secondaryAction: () => {
             this.showCardTokenPicker = false;
-          })
-
-        Button(this.t('完成'))
-          .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor(this.accentContrastColor())
-          .backgroundColor(this.accentColor())
-          .onClick(() => {
+          },
+          primaryLabel: this.t('完成'),
+          primaryEnabled: this.pendingCardTokenIds.length > 0,
+          primaryLoading: false,
+          primaryAction: () => {
             this.commitCardTokenSelection();
-          })
+          }
+        })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 10, bottom: this.naviIndicatorHeight + 12 })
+      .height('100%')
+      .clip(false)
     }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('选择卡片显示的令牌') },
+        menu: this.sheetCloseMenu(() => {
+          this.showCardTokenPicker = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.cardTokenPickerSheetScroller])
+    .hideBackButton(true)
     .width('100%')
     .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
   }
 
   @Builder
@@ -2275,28 +5455,21 @@ struct Index {
 
   @Builder
   private HomeSearchBar() {
-    Stack({ alignContent: Alignment.Center }) {
-      Search({ value: this.searchText, placeholder: this.t('搜索令牌') })
-        .height(HOME_SEARCH_HEIGHT)
-        .width('100%')
-        .borderRadius(HOME_SEARCH_HEIGHT / 2)
-        .backgroundColor(Color.Transparent)
-        .placeholderColor(this.secondaryTextColor())
-        .fontColor(this.primaryTextColor())
-        .searchIcon({ size: HOME_SEARCH_ICON_SIZE, color: this.secondaryTextColor() })
-        .textFont({ size: HOME_SEARCH_TEXT_SIZE })
-        .placeholderFont({ size: HOME_SEARCH_TEXT_SIZE })
-        .onChange((value: string) => {
+    ImmersionSearch({
+      systemMaterialEffect: this.configuredMaterialEffect(),
+      _height: HOME_SEARCH_HEIGHT,
+      options: { placeholder: this.t('搜索令牌') },
+      modifier: new HomeSearchModifier(
+        this.primaryTextColor(),
+        this.secondaryTextColor(),
+        (value: string): void => {
           this.searchText = value;
-        })
-    }
+        }
+      )
+    })
     .height(HOME_SEARCH_HEIGHT)
     .width('100%')
-    .borderRadius(HOME_SEARCH_HEIGHT / 2)
-    .clip(true)
-    .backgroundColor(this.searchBackgroundColor())
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-    .border({ width: 1, color: this.searchBorderColor() })
+    .clip(false)
   }
 
   private homeSearchMenu(): HdsNavigationMenuContentOptions {
@@ -2304,39 +5477,21 @@ struct Index {
       return { value: [], maxCount: 0 };
     }
 
-    if (!this.isHomeSearchCollapsed) {
-      return {
-        value: [
-          {
-            content: {
-              icon: this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ?
-              $r('app.media.ic_layout_single_black') : $r('app.media.ic_layout_double_black'),
-              label: this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? this.t('单列') : this.t('双列'),
-              action: () => {
-                this.toggleTokenLayoutMode();
-              }
-            }
-          }
-        ],
-        maxCount: 1
-      };
-    }
-
     return {
       value: [
         {
           content: {
-            icon: $r('app.media.ic_home_search_black'),
-            label: this.t('搜索'),
+            icon: $r('sys.symbol.barcode_viewfinder'),
+            label: this.t('Steam 扫码登录'),
             action: () => {
-              this.scrollHomeSearchIntoView();
+              this.openSteamLoginPicker();
             }
           }
         },
         {
           content: {
             icon: this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ?
-            $r('app.media.ic_layout_single_black') : $r('app.media.ic_layout_double_black'),
+            $r('sys.symbol.list_bullet') : $r('sys.symbol.square_grid_2x2'),
             label: this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? this.t('单列') : this.t('双列'),
             action: () => {
               this.toggleTokenLayoutMode();
@@ -2366,8 +5521,13 @@ struct Index {
   }
 
   private toggleTokenLayoutMode(): void {
-    this.tokenLayoutMode = this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? TOKEN_LAYOUT_SINGLE : TOKEN_LAYOUT_DOUBLE;
-    this.resetTokenSwipe();
+    this.getUIContext().animateTo({
+      duration: TOKEN_LAYOUT_TRANSITION_DURATION,
+      curve: Curve.Smooth
+    }, () => {
+      this.tokenLayoutMode = this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? TOKEN_LAYOUT_SINGLE : TOKEN_LAYOUT_DOUBLE;
+      this.resetTokenSwipe();
+    });
     this.saveSettings();
   }
 
@@ -2406,11 +5566,24 @@ struct Index {
   @Builder
   private AddFloatingButton() {
     Stack({ alignContent: Alignment.Center }) {
-      this.AdaptiveAccentCircle($r('app.media.ic_add_page'), ADD_BUTTON_SIZE, ADD_BUTTON_ICON_SIZE, () => {
-        if (!this.addButtonDragging) {
-          this.isAddMenuOpen = true;
+      ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+        buttonModify: new ActionButtonModifier(
+          ADD_BUTTON_SIZE, ADD_BUTTON_SIZE, this.primaryActionFillColor(), this.accentColor()),
+        click: (): void => {
+          if (!this.addButtonDragging) {
+            this.isAddMenuOpen = true;
+          }
         }
-      })
+      }) {
+        Stack({ alignContent: Alignment.Center }) {
+          SymbolGlyph($r('sys.symbol.plus'))
+            .fontSize(ADD_BUTTON_ICON_SIZE)
+            .fontColor([this.accentColor()])
+        }
+        .width(ADD_BUTTON_SIZE)
+        .height(ADD_BUTTON_SIZE)
+      }
     }
     .width(ADD_BUTTON_SIZE)
     .height(ADD_BUTTON_SIZE)
@@ -2440,17 +5613,14 @@ struct Index {
           this.addButtonDragging = false;
         }, 80);
       }))
-    .bindSheet(this.isAddMenuOpen, this.AddMethodSheet(), {
+    .bindSheet($$this.isAddMenuOpen, this.AddMethodSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       showClose: false,
       maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
-      backgroundColor: this.isDarkTheme() ? '#F2303030' : '#FAFFFFFF',
-      blurStyle: BlurStyle.COMPONENT_THIN,
-      radius: LengthMetrics.vp(32),
-      onDisappear: () => {
-        this.isAddMenuOpen = false;
-      }
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28)
     })
     .zIndex(20)
   }
@@ -2484,103 +5654,148 @@ struct Index {
 
   @Builder
   private AddMethodSheet() {
-    Row() {
-      this.AddMethodButton('录入', $r('app.media.ic_sheet_manual_input'), () => {
-        this.isAddMenuOpen = false;
-        this.openAddPage();
-      })
+    HdsNavigation() {
+      Scroll(this.addMethodSheetScroller) {
+        Column() {
+          Row() {
+            this.AddMethodButton('录入', $r('sys.symbol.square_and_pencil'), () => {
+              this.isAddMenuOpen = false;
+              this.openAddPage();
+            })
 
-      this.AddMethodButton('扫码', $r('app.media.ic_sheet_scan'), () => {
-        this.isAddMenuOpen = false;
-        this.scanTokenFromQrCode();
-      })
+            this.AddMethodButton('扫码', $r('sys.symbol.barcode_viewfinder'), () => {
+              this.isAddMenuOpen = false;
+              this.scanTokenFromQrCode();
+            })
 
-      this.AddMethodButton('导入', $r('app.media.ic_sheet_import'), () => {
-        this.isAddMenuOpen = false;
-        this.importTokenFile();
-      })
+            this.AddMethodButton('导入', $r('sys.symbol.square_and_arrow_down'), () => {
+              this.isAddMenuOpen = false;
+              this.importTokenFile();
+            })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.SpaceAround)
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: 20,
+            right: 20,
+            top: 18,
+            bottom: 18
+          })
+          .borderRadius(SHEET_ACTION_BAR_RADIUS)
+          .background(this.SheetActionMaterialBackground, { align: Alignment.Center })
+          .border({ width: this.shouldUseCardMaterial() ? 0 : 1, color: this.searchBorderColor() })
+          .shadow({
+            radius: 24,
+            color: this.sheetFloatingShadowColor(),
+            offsetX: 0,
+            offsetY: 10
+          })
+        }
+        .width('100%')
+        .padding({
+          left: SHEET_HORIZONTAL_PADDING,
+          right: SHEET_HORIZONTAL_PADDING,
+          top: SHEET_CONTENT_TOP_PADDING,
+          bottom: this.naviIndicatorHeight + 18
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .clip(false)
     }
-    .width('100%')
-    .justifyContent(FlexAlign.SpaceAround)
-    .alignItems(VerticalAlign.Center)
-    .padding({
-      left: 32,
-      right: 32,
-      top: 24,
-      bottom: this.naviIndicatorHeight + 16
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('新增令牌') },
+        menu: this.sheetCloseMenu(() => {
+          this.isAddMenuOpen = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
     })
+    .bindToScrollable([this.addMethodSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height(this.sheetShortHeight(SHEET_ADD_METHOD_HEIGHT))
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
   }
 
   @Builder
   private AddMethodButton(label: string, icon: Resource, onClick: () => void) {
     Column({ space: 12 }) {
       Stack({ alignContent: Alignment.Center }) {
-        this.SolidAccentCircle(icon, 50, 20, onClick)
+        ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+          buttonModify: new ActionButtonModifier(
+            ADD_BUTTON_SIZE, ADD_BUTTON_SIZE, this.primaryActionFillColor(), this.accentColor()),
+          click: onClick
+        }) {
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph(icon)
+              .fontSize(20)
+              .fontColor([this.accentColor()])
+          }
+          .width(50)
+          .height(50)
+        }
       }
-        .width(50)
-        .height(50)
-        .clip(false)
+      .width(50)
+      .height(50)
+      .clip(false)
 
       Text(this.t(label))
         .fontSize(14)
-        .fontColor(this.primaryTextColor())
+        .fontColor(this.accentColor())
         .fontWeight(FontWeight.Medium)
     }
     .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
-  private SolidAccentCircle(icon: Resource, size: number, iconSize: number, onClick: () => void) {
+  private AdaptiveAccentSymbolCircle(icon: Resource, size: number, iconSize: number, onClick: () => void) {
     Button({ type: ButtonType.Circle }) {
-      Image(icon)
-        .width(iconSize)
-        .height(iconSize)
-        .objectFit(ImageFit.Contain)
-        .fillColor('#FFFFFF')
+      SymbolGlyph(icon)
+        .fontSize(iconSize)
+        .fontColor([this.accentColor()])
+        .fontWeight(FontWeight.Medium)
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
     }
     .width(size)
     .height(size)
     .padding(0)
-    .backgroundColor(this.accentColor())
-    .border({ width: 0.5, color: '#FFFFFF' })
-    .stateEffect(true)
-    .onClick(onClick)
-  }
-
-  @Builder
-  private AdaptiveAccentCircle(icon: Resource, size: number, iconSize: number, onClick: () => void) {
-    Button({ type: ButtonType.Circle }) {
-      Image(icon)
-        .width(iconSize)
-        .height(iconSize)
-        .objectFit(ImageFit.Contain)
-        .fillColor('#FFFFFF')
-    }
-    .width(size)
-    .height(size)
-    .padding(0)
-    .backgroundColor(this.accentColor())
+    .backgroundColor(this.accentTintColor())
     .backgroundEffect({
       radius: 18,
-      saturation: 1.2,
-      brightness: 1.05,
-      color: this.accentColor(),
+      saturation: 1.08,
+      brightness: 1.02,
+      color: this.accentTintColor(),
       adaptiveColor: AdaptiveColor.DEFAULT
     }, { disableSystemAdaptation: false })
+    .shadow({
+      radius: ACCENT_GLOW_RADIUS,
+      color: this.accentGlowColor(),
+      offsetX: 0,
+      offsetY: 0
+    })
     .visualEffect(new hdsEffect.HdsEffectBuilder()
       .pressShadow(hdsEffect.PressShadowType.BLEND_WHITE)
       .pointLight({
         sourceType: hdsEffect.PointLightSourceType.SOFT,
         illuminatedType: hdsEffect.PointLightIlluminatedType.DEFAULT_FEATHERING_BORDER,
         options: {
-          color: '#FFFFFF',
-          intensity: 0.35,
-          height: 12,
-          bloom: 0.25
+          color: this.accentColor(),
+          intensity: 0.1,
+          height: 6,
+          bloom: 0.08
         }
       })
       .buildEffect())
-    .border({ width: 0.5, color: '#FFFFFF' })
+    .border({ width: 0.5, color: this.accentColor() })
     .stateEffect(true)
     .onClick(onClick)
   }
@@ -2589,13 +5804,15 @@ struct Index {
   private TokenListItem(token: TokenRecord) {
     Column() {
       Stack({ alignContent: Alignment.End }) {
-        Row() {
-          this.TokenSwipeActions(token)
+        if (this.shouldRenderTokenSwipeActions(token.id)) {
+          Row() {
+            this.TokenSwipeActions(token)
+          }
+          .width('100%')
+          .height(TOKEN_CARD_HEIGHT)
+          .justifyContent(FlexAlign.End)
+          .backgroundColor(Color.Transparent)
         }
-        .width('100%')
-        .height(TOKEN_CARD_HEIGHT)
-        .justifyContent(FlexAlign.End)
-        .backgroundColor(this.tokenListItemBackgroundColor())
 
         Row() {
           this.TokenCard(token)
@@ -2616,18 +5833,41 @@ struct Index {
       .height(TOKEN_CARD_HEIGHT)
       .borderRadius(TOKEN_CARD_RADIUS)
       .clip(true)
-      .backgroundColor(this.tokenListItemBackgroundColor())
+      .backgroundColor(Color.Transparent)
     }
     .width('100%')
     .height(TOKEN_CARD_HEIGHT)
     .borderRadius(TOKEN_CARD_RADIUS)
     .clip(true)
-    .opacity(this.draggingTokenId === token.id ? 0.92 : 1)
-    .animation({ duration: 120, curve: Curve.Smooth })
+    .opacity(this.tokenCardItemOpacity(token.id))
+    .scale({ x: this.tokenCardScale(token.id), y: this.tokenCardScale(token.id) })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleTokenTouch(token.id, event.type);
+    })
   }
 
-  private tokenListItemBackgroundColor(): string {
-    return this.pageBackgroundColor();
+  private shouldRenderTokenSwipeActions(tokenId: string): boolean {
+    return this.openSwipeTokenId === tokenId || this.activeSwipeTokenId === tokenId;
+  }
+
+  private tokenCardItemOpacity(tokenId: string): number {
+    if (this.draggingTokenId === tokenId) {
+      return 0.92;
+    }
+    return 1;
+  }
+
+  private tokenCardScale(tokenId: string): number {
+    return this.pressedTokenId === tokenId && this.draggingTokenId.length === 0 ? CARD_PRESSED_SCALE : 1;
+  }
+
+  private handleTokenTouch(tokenId: string, type: TouchType): void {
+    if (type === TouchType.Down && this.draggingTokenId.length === 0) {
+      this.pressedTokenId = tokenId;
+    } else if (type === TouchType.Up || type === TouchType.Cancel) {
+      this.pressedTokenId = '';
+    }
   }
 
   @Builder
@@ -2640,78 +5880,143 @@ struct Index {
   }
 
   @Builder
+  private TokenCodeView(token: TokenRecord, nextCode: boolean, fontSize: number, fontColor: ResourceColor,
+    fontWeight: FontWeight, layoutWeight: number) {
+    Row() {
+      this.TokenCodeCharacterAt(token, nextCode, 0, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 1, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 2, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 3, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 4, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 5, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 6, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 7, fontSize, fontColor, fontWeight)
+      this.TokenCodeCharacterAt(token, nextCode, 8, fontSize, fontColor, fontWeight)
+    }
+    .height(this.tokenDigitHeight(fontSize))
+    .alignItems(VerticalAlign.Center)
+    .layoutWeight(layoutWeight)
+  }
+
+  @Builder
+  private TokenCodeCharacterAt(token: TokenRecord, nextCode: boolean, index: number, fontSize: number,
+    fontColor: ResourceColor, fontWeight: FontWeight) {
+    if (this.tokenCodeCharacter(token, nextCode, index) === ' ') {
+      Column()
+        .width(this.tokenDigitSpaceWidth(fontSize))
+        .height(this.tokenDigitHeight(fontSize))
+    } else if (this.isTokenCodeDigit(this.tokenCodeCharacter(token, nextCode, index))) {
+      Text(this.tokenCodeCharacter(token, nextCode, index))
+        .fontSize(fontSize)
+        .fontWeight(fontWeight)
+        .fontColor(fontColor)
+        .height(this.tokenDigitHeight(fontSize))
+        .width(this.tokenCharacterWidth(token, fontSize))
+        .letterSpacing(0)
+        .textAlign(TextAlign.Center)
+        .maxLines(1)
+        .clip(true)
+        .contentTransition(new NumericTextTransition({
+          flipDirection: FlipDirection.UP,
+          enableBlur: false
+        }))
+        .animation({ duration: TOKEN_DIGIT_SCROLL_DURATION, curve: Curve.Smooth })
+    } else if (this.tokenCodeCharacter(token, nextCode, index).length > 0) {
+      Text(this.tokenCodeCharacter(token, nextCode, index))
+        .fontSize(fontSize)
+        .fontWeight(fontWeight)
+        .fontColor(fontColor)
+        .height(this.tokenDigitHeight(fontSize))
+        .width(this.tokenCharacterWidth(token, fontSize))
+        .letterSpacing(0)
+        .textAlign(TextAlign.Center)
+        .maxLines(1)
+    }
+  }
+
+  @Builder
   private TokenSingleColumnCard(token: TokenRecord) {
-    Column() {
-      Row({ space: 14 }) {
-        this.IssuerLogoView(this.tokenLogoUri(token), token.name, token.remark, TOKEN_LOGO_SIZE,
-          token.logoSource !== LOGO_SOURCE_MANUAL)
-
-        Column({ space: 4 }) {
-          Text(this.tokenDisplayName(token))
-            .fontSize(TOKEN_NAME_TEXT_SIZE)
-            .fontColor(this.primaryTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-          Row({ space: 8 }) {
-            Text(this.tokenCode(token))
-              .fontSize(TOKEN_CODE_TEXT_SIZE)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.tokenValueColor())
-              .letterSpacing(0)
-              .maxLines(1)
-              .contentTransition(new NumericTextTransition({
-                flipDirection: FlipDirection.UP,
-                enableBlur: true
-              }))
-              .animation({ duration: 400, curve: Curve.Smooth })
-
-            if (this.showNextToken) {
-              Text('←')
-                .fontSize(12)
-                .fontColor(this.nexttokenValueColor())
-                .fontWeight(FontWeight.Regular)
-                .opacity(0.65)
-
-              Text(this.nextTokenCode(token))
-                .fontSize(TOKEN_NEXT_CODE_TEXT_SIZE)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.nexttokenValueColor())
-                .letterSpacing(0)
-                .maxLines(1)
-                .contentTransition(new NumericTextTransition({
-                  flipDirection: FlipDirection.UP,
-                  enableBlur: true
-                }))
-                .animation({ duration: 400, curve: Curve.Smooth })
-            }
-          }
-          .alignItems(VerticalAlign.Center)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .justifyContent(FlexAlign.Center)
-        .layoutWeight(1)
-        .height('100%')
-
-        this.TokenCountdownRing(token)
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(TOKEN_CARD_HEIGHT, TOKEN_CARD_RADIUS)
       }
-      .width('100%')
-      .height(TOKEN_CARD_HEIGHT)
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .alignItems(VerticalAlign.Center)
-      .borderRadius(TOKEN_CARD_RADIUS)
-      .backgroundColor(this.cardBackgroundColor())
-      .onClick(() => {
-        this.handleTokenCardClick(token);
-      })
-
+      this.TokenSingleColumnCardContent(token)
     }
     .width('100%')
     .height(TOKEN_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onClick(() => {
+      this.handleTokenCardClick(token);
+    })
+  }
+
+  @Builder
+  private TokenSingleColumnCardContent(token: TokenRecord) {
+    Row({ space: 14 }) {
+      this.IssuerLogoView(this.tokenLogoUri(token), token.name, token.remark, TOKEN_LOGO_SIZE,
+        token.logoSource !== LOGO_SOURCE_MANUAL)
+
+      Column({ space: 4 }) {
+        Text(this.tokenDisplayName(token))
+          .fontSize(TOKEN_NAME_TEXT_SIZE)
+          .fontColor(this.primaryTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Row({ space: 8 }) {
+          this.TokenCodeView(token, false, TOKEN_CODE_TEXT_SIZE, this.tokenValueColor(), FontWeight.Medium, 0)
+
+          if (this.showNextToken) {
+            Text('←')
+              .fontSize(12)
+              .fontColor(this.nexttokenValueColor())
+              .fontWeight(FontWeight.Regular)
+              .opacity(0.65)
+
+            this.TokenCodeView(token, true, TOKEN_NEXT_CODE_TEXT_SIZE, this.nexttokenValueColor(),
+              FontWeight.Medium, 0)
+          }
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .justifyContent(FlexAlign.Center)
+      .layoutWeight(1)
+      .height('100%')
+
+      this.TokenCountdownRing(token)
+    }
+    .width('100%')
+    .height(TOKEN_CARD_HEIGHT)
+    .padding(TOKEN_CARD_PADDING)
+    .alignItems(VerticalAlign.Center)
+    .zIndex(2)
   }
 
   @Builder
   private TokenDoubleColumnCard(token: TokenRecord) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(TOKEN_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+      this.TokenDoubleColumnCardContent(token)
+    }
+    .width('100%')
+    .height(TOKEN_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onClick(() => {
+      this.handleTokenCardClick(token);
+    })
+  }
+
+  @Builder
+  private TokenDoubleColumnCardContent(token: TokenRecord) {
     Row({ space: 10 }) {
       this.IssuerLogoView(this.tokenLogoUri(token), token.name, token.remark, TOKEN_LOGO_SIZE,
         token.logoSource !== LOGO_SOURCE_MANUAL)
@@ -2723,17 +6028,7 @@ struct Index {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.tokenCode(token))
-          .fontSize(TOKEN_CODE_TEXT_SIZE)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.tokenValueColor())
-          .letterSpacing(0)
-          .maxLines(1)
-          .contentTransition(new NumericTextTransition({
-            flipDirection: FlipDirection.UP,
-            enableBlur: true
-          }))
-          .animation({ duration: 400, curve: Curve.Smooth })
+        this.TokenCodeView(token, false, TOKEN_CODE_TEXT_SIZE, this.tokenValueColor(), FontWeight.Medium, 0)
       }
       .alignItems(HorizontalAlign.Start)
       .justifyContent(FlexAlign.Center)
@@ -2742,13 +6037,9 @@ struct Index {
     }
     .width('100%')
     .height(TOKEN_CARD_HEIGHT)
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .padding(TOKEN_CARD_PADDING)
     .alignItems(VerticalAlign.Center)
-    .borderRadius(TOKEN_CARD_RADIUS)
-    .backgroundColor(this.cardBackgroundColor())
-    .onClick(() => {
-      this.handleTokenCardClick(token);
-    })
+    .zIndex(2)
   }
 
   private handleTokenCardClick(token: TokenRecord): void {
@@ -2809,49 +6100,59 @@ struct Index {
         Circle()
           .width(size)
           .height(size)
-          .fill(this.accentColor())
+          .fill(this.accentTintColor())
         Text(this.issuerLogoLetter(name, issuer))
           .fontSize(Math.max(16, Math.floor(size * 0.44)))
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
+          .fontColor(this.accentColor())
       }
       .width(size)
       .height(size)
+      .borderRadius(size / 2)
+      .border({ width: 0.5, color: this.accentColor() })
     }
   }
 
   @Builder
   private TokenSwipeActions(token: TokenRecord) {
     Row({ space: SWIPE_ACTION_GAP }) {
-      this.SwipeActionButton($r('app.media.ic_token_edit'), () => {
+      this.SwipeActionButton($r('sys.symbol.square_and_pencil'), false, () => {
         this.resetTokenSwipe();
         this.openEditPage(token);
       })
 
-      this.SwipeActionButton($r('app.media.ic_token_delete'), () => {
+      this.SwipeActionButton($r('sys.symbol.trash'), true, () => {
         this.resetTokenSwipe();
         this.confirmDeleteToken(token);
       })
     }
-    .width(SWIPE_ACTION_AREA_WIDTH)
+    .width(this.tokenSwipeActionAreaWidth(token))
     .height(TOKEN_CARD_HEIGHT)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.pageBackgroundColor())
+    .backgroundColor(Color.Transparent)
+  }
+
+  private tokenSwipeActionAreaWidth(token: TokenRecord): number {
+    const count = 2;
+    return SWIPE_ACTION_SIZE * count + SWIPE_ACTION_GAP * (count + 1);
   }
 
   @Builder
-  private SwipeActionButton(icon: Resource, onClick: () => void) {
+  private SwipeActionButton(icon: Resource, isDestructive: boolean, onClick: () => void) {
     Button({ type: ButtonType.Circle }) {
-      Image(icon)
-        .width(SWIPE_ACTION_SIZE)
-        .height(SWIPE_ACTION_SIZE)
-        .objectFit(ImageFit.Contain)
+      SymbolGlyph(icon)
+        .fontSize(SWIPE_ACTION_ICON_SIZE)
+        .fontColor([isDestructive ? ERROR_RED : this.accentColor()])
+        .fontWeight(FontWeight.Medium)
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
     }
     .width(SWIPE_ACTION_SIZE)
     .height(SWIPE_ACTION_SIZE)
-    .backgroundColor(Color.Transparent)
     .padding(0)
+    .backgroundColor(isDestructive ? ERROR_RED_TINT : this.accentTintColor())
+    .border({ width: 0.5, color: isDestructive ? ERROR_RED : this.accentColor() })
+    .stateEffect(true)
     .onClick(onClick)
   }
 
@@ -2888,21 +6189,30 @@ struct Index {
             .margin({ top: PAGE_CARD_GAP, left: 8 })
         }
 
-        Button() {
-          Text(this.isSaving ? this.t('保存中') : this.t('确认'))
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.canSaveToken() ? this.cardBackgroundColor() : this.disabledButtonTextColor())
+        Stack({ alignContent: Alignment.Center }) {
+          ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+            buttonModify: new ActionButtonModifier(
+              '100%',
+              46,
+              this.canSaveToken() ? this.primaryActionFillColor() : this.disabledColor(),
+              this.canSaveToken() ? this.accentColor() : '#00000000'
+            ),
+            click: (): void => {
+              if (this.canSaveToken()) {
+                this.saveToken();
+              }
+            }
+          }) {
+            Text(this.isSaving ? this.t('保存中') : this.t('确认'))
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.canSaveToken() ? this.accentColor() : this.disabledButtonTextColor())
+          }
         }
         .height(46)
         .width('100%')
-        .borderRadius(24)
-        .backgroundColor(this.canSaveToken() ? this.accentColor() : this.disabledColor())
         .margin({ top: PAGE_CARD_GAP })
-        .enabled(this.canSaveToken())
-        .onClick(() => {
-          this.saveToken();
-        })
       }
       .width('100%')
       .padding({
@@ -2934,10 +6244,10 @@ struct Index {
           .width(FORM_LOGO_SIZE)
           .height(FORM_LOGO_SIZE)
           .fill('#80000000')
-        Image($r('app.media.ic_sheet_manual_input'))
-          .width(36)
-          .height(36)
-          .objectFit(ImageFit.Contain)
+        SymbolGlyph($r('sys.symbol.square_and_pencil'))
+          .fontSize(36)
+          .fontColor(['#FFFFFFFF'])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
       }
       .width(FORM_LOGO_SIZE)
       .height(FORM_LOGO_SIZE)
@@ -2955,6 +6265,27 @@ struct Index {
 
   @Builder
   private AddTokenBasicCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(FORM_BASIC_CARD_HEIGHT, 15)
+      }
+      this.AddTokenBasicCardContent()
+    }
+    .width('100%')
+    .height(FORM_BASIC_CARD_HEIGHT)
+    .borderRadius(15)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('add-token-basic'), y: this.appCardScale('add-token-basic') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('add-token-basic', event.type);
+    })
+  }
+
+  @Builder
+  private AddTokenBasicCardContent() {
     Column() {
       this.InputRow('名称', this.nameInput, '请输入', (value: string) => {
         this.nameInput = value;
@@ -2978,12 +6309,32 @@ struct Index {
     .width('100%')
     .height(FORM_BASIC_CARD_HEIGHT)
     .padding({ left: 24, right: 20 })
-    .borderRadius(15)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
   private AddTokenDetailCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(FORM_DETAIL_CARD_HEIGHT, 15)
+      }
+      this.AddTokenDetailCardContent()
+    }
+    .width('100%')
+    .height(FORM_DETAIL_CARD_HEIGHT)
+    .borderRadius(15)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('add-token-detail'), y: this.appCardScale('add-token-detail') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('add-token-detail', event.type);
+    })
+  }
+
+  @Builder
+  private AddTokenDetailCardContent() {
     Column() {
       this.SelectRow('类型', this.formTokenType(), TYPE_OPTIONS, (value: string) => {
         this.typeInput = this.normalizeTokenType(value);
@@ -3001,8 +6352,7 @@ struct Index {
     .width('100%')
     .height(FORM_DETAIL_CARD_HEIGHT)
     .padding({ left: 24, right: 20 })
-    .borderRadius(15)
-    .backgroundColor(this.cardBackgroundColor())
+    .zIndex(2)
   }
 
   @Builder
@@ -3192,6 +6542,11 @@ struct Index {
     }
   }
 
+  private onSystemDarkChanged(): void {
+    this.logoRenderVersion += 1;
+    this.formLogoRenderVersion += 1;
+  }
+
   private refreshSystemLanguage(): void {
     try {
       this.systemLanguage = i18n.System.getSystemLanguage();
@@ -3266,12 +6621,45 @@ struct Index {
     return `#${a}${hex.substring(1)}`;
   }
 
+  private accentTintColor(): string {
+    return this.accentColorWithAlpha(ACCENT_TINT_ALPHA);
+  }
+
+  private primaryActionFillColor(): string {
+    return this.accentColorWithAlpha(PRIMARY_ACTION_FILL_ALPHA);
+  }
+
+  private accentGlowColor(): string {
+    return this.accentColorWithAlpha(ACCENT_GLOW_ALPHA);
+  }
+
   private pageBackgroundColor(): string {
     return this.isDarkTheme() ? '#000000' : '#F2F3F5';
   }
 
   private cardBackgroundColor(): string {
     return this.isDarkTheme() ? '#191919' : '#FFFFFF';
+  }
+
+  private onboardingPageSide(): number {
+    return this.pageWidth >= 600 ? ONBOARDING_PAGE_SIDE_WIDE : ONBOARDING_PAGE_SIDE;
+  }
+
+  private onboardingTopOverlayHeight(): number {
+    return this.statusBarHeight + ONBOARDING_TOP_BAR_HEIGHT + ONBOARDING_TOP_OVERLAY_VERTICAL_SPACE;
+  }
+
+  private onboardingBottomOverlayHeight(): number {
+    return this.naviIndicatorHeight + ONBOARDING_BOTTOM_SAFE_GAP + ONBOARDING_INDICATOR_HEIGHT +
+      ONBOARDING_BOTTOM_CONTROL_GAP + ONBOARDING_ACTION_HEIGHT;
+  }
+
+  private onboardingContentTopInset(): number {
+    return this.onboardingTopOverlayHeight() + ONBOARDING_CONTENT_CHROME_GAP;
+  }
+
+  private onboardingContentBottomInset(): number {
+    return this.onboardingBottomOverlayHeight() + ONBOARDING_CONTENT_CHROME_GAP;
   }
 
   private primaryTextColor(): string {
@@ -3353,6 +6741,27 @@ struct Index {
     if (name === 'cloudSpace') {
       return this.t('华为云空间');
     }
+    if (name === 'watchSync') {
+      return this.t('手表端数据同步');
+    }
+    if (name === 'moreApps') {
+      return this.t('更多作品');
+    }
+    if (name === 'donation') {
+      return this.t('打赏一杯咖啡');
+    }
+    if (name === 'about') {
+      return this.t('关于');
+    }
+    if (name === 'thirdParty') {
+      return this.t('开源三方库使用清单');
+    }
+    if (name === 'appearanceSettings') {
+      return this.t('外观与主题');
+    }
+    if (name === 'featureSecurity') {
+      return this.t('功能与安全');
+    }
     return this.t('设置');
   }
 
@@ -3363,7 +6772,364 @@ struct Index {
     if (name === 'cloudSpace') {
       return [this.cloudSpaceScroller];
     }
+    if (name === 'watchSync') {
+      return [this.watchSyncScroller];
+    }
+    if (name === 'moreApps') {
+      return [this.moreAppsScroller];
+    }
+    if (name === 'donation') {
+      return [this.donationScroller];
+    }
+    if (name === 'about') {
+      return [this.aboutScroller];
+    }
+    if (name === 'thirdParty') {
+      return [this.thirdPartyScroller];
+    }
+    if (name === 'appearanceSettings') {
+      return [this.appearanceSettingsScroller];
+    }
+    if (name === 'featureSecurity') {
+      return [this.featureSecurityScroller];
+    }
     return [this.settingsScroller];
+  }
+
+  private sheetCloseMenu(action: () => void): HdsNavigationMenuContentOptions {
+    return {
+      value: [
+        {
+          content: {
+            icon: $r('sys.symbol.xmark'),
+            label: this.t('取消'),
+            type: IconStyleMode.SMALL,
+            action: action
+          }
+        }
+      ],
+      maxCount: 1
+    };
+  }
+
+  private sheetTitleBarStyle(): TitleBarStyleOptions {
+    return {
+      scrollEffectOpts: {
+        enableScrollEffect: true,
+        scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+        blurEffectiveStartOffset: LengthMetrics.vp(0),
+        blurEffectiveEndOffset: LengthMetrics.vp(SHEET_TITLE_BLUR_HEIGHT)
+      },
+      blurStrategy: BlurStrategy.ADAPTIVE,
+      originalStyle: {
+        backgroundStyle: { backgroundColor: '#00ffffff' },
+        contentStyle: {
+          titleStyle: { mainTitleColor: this.primaryTextColor() },
+          menuStyle: {
+            backgroundColor: this.sheetControlBackgroundColor(),
+            iconColor: this.primaryTextColor()
+          },
+          backIconStyle: {
+            backgroundColor: this.sheetControlBackgroundColor(),
+            iconColor: this.primaryTextColor()
+          }
+        }
+      },
+      scrollEffectStyle: {
+        backgroundStyle: { backgroundColor: '#00ffffff' },
+        contentStyle: {
+          titleStyle: { mainTitleColor: this.primaryTextColor() },
+          menuStyle: {
+            backgroundColor: this.sheetControlBackgroundColor(),
+            iconColor: this.primaryTextColor()
+          },
+          backIconStyle: {
+            backgroundColor: this.sheetControlBackgroundColor(),
+            iconColor: this.primaryTextColor()
+          }
+        }
+      },
+      systemMaterialEffect: {
+        materialType: this.configuredMaterialType(),
+        materialLevel: this.configuredMaterialLevel()
+      }
+    };
+  }
+
+  private configuredMaterialType(): hdsMaterial.MaterialType {
+    if (this.materialTypeInput === '沉浸') {
+      return hdsMaterial.MaterialType.IMMERSIVE;
+    }
+    if (this.materialTypeInput === '无材质') {
+      return hdsMaterial.MaterialType.NONE;
+    }
+    return hdsMaterial.MaterialType.ADAPTIVE;
+  }
+
+  private configuredMaterialLevel(): hdsMaterial.MaterialLevel {
+    if (this.materialLevelInput === '精致') {
+      return hdsMaterial.MaterialLevel.EXQUISITE;
+    }
+    if (this.materialLevelInput === '柔和') {
+      return hdsMaterial.MaterialLevel.GENTLE;
+    }
+    if (this.materialLevelInput === '平滑') {
+      return hdsMaterial.MaterialLevel.SMOOTH;
+    }
+    return hdsMaterial.MaterialLevel.ADAPTIVE;
+  }
+
+  private configuredMaterialEffect(): SystemMaterialParams {
+    return {
+      materialType: this.configuredMaterialType(),
+      materialLevel: this.configuredMaterialLevel()
+    };
+  }
+
+  private onboardingMaterialEffect(): SystemMaterialParams {
+    return {
+      materialType: hdsMaterial.MaterialType.IMMERSIVE,
+      materialLevel: hdsMaterial.MaterialLevel.EXQUISITE
+    };
+  }
+
+  private shouldUseCardMaterial(): boolean {
+    return this.globalImmersionEnabled && this.configuredMaterialType() !== hdsMaterial.MaterialType.NONE;
+  }
+
+  private cardSurfaceBaseColor(fallbackColor: ResourceColor): ResourceColor {
+    return this.shouldUseCardMaterial() ? Color.Transparent : fallbackColor;
+  }
+
+  private cardSurfaceBorderWidth(): number {
+    return this.shouldUseCardMaterial() ? 0.5 : 0;
+  }
+
+  private appCardScale(cardId: string): number {
+    return this.pressedCardId === cardId ? CARD_PRESSED_SCALE : 1;
+  }
+
+  private handleAppCardTouch(cardId: string, type: TouchType): void {
+    if (type === TouchType.Down) {
+      this.pressedCardId = cardId;
+    } else if ((type === TouchType.Up || type === TouchType.Cancel) && this.pressedCardId === cardId) {
+      this.pressedCardId = '';
+    }
+  }
+
+  private configuredSheetBlurStyle(): BlurStyle {
+    if (this.materialLevelInput === '精致') {
+      return BlurStyle.COMPONENT_ULTRA_THIN;
+    }
+    if (this.materialLevelInput === '柔和') {
+      return BlurStyle.COMPONENT_THIN;
+    }
+    if (this.materialLevelInput === '平滑') {
+      return BlurStyle.COMPONENT_REGULAR;
+    }
+    return this.configuredMaterialType() === hdsMaterial.MaterialType.IMMERSIVE ?
+      BlurStyle.COMPONENT_REGULAR : BlurStyle.COMPONENT_THIN;
+  }
+
+  private sheetSurfaceBackgroundColor(): ResourceColor {
+    return this.shouldUseCardMaterial() ? Color.Transparent : this.cardBackgroundColor();
+  }
+
+  private sheetSurfaceBlurStyle(): BlurStyle {
+    return this.shouldUseCardMaterial() ? this.configuredSheetBlurStyle() : BlurStyle.COMPONENT_THIN;
+  }
+
+  private sheetFloatingBarColor(): string {
+    return this.isDarkTheme() ? '#E6303030' : '#EEFFFFFF';
+  }
+
+  private sheetControlBackgroundColor(): string {
+    return this.isDarkTheme() ? '#F23A3A3A' : '#F2F3F5';
+  }
+
+  private sheetFloatingShadowColor(): string {
+    return this.isDarkTheme() ? '#4D000000' : '#10000000';
+  }
+
+  private sheetActionBottomInset(): number {
+    return this.naviIndicatorHeight + SHEET_ACTION_BOTTOM_GAP;
+  }
+
+  private sheetListBottomPadding(): number {
+    return this.naviIndicatorHeight + SHEET_ACTION_SAFE_SPACE;
+  }
+
+  private sheetShortHeight(baseHeight: number): number {
+    const maxHeight = Math.max(280, this.pageHeight * 0.84);
+    return Math.min(maxHeight, baseHeight + this.naviIndicatorHeight);
+  }
+
+  private exportQRCodeSheetHeight(): number {
+    const selectedCount = this.exportSelectedTokens().length;
+    const baseHeight = selectedCount > 0 ? this.exportQRCodeSize() + SHEET_QR_BASE_HEIGHT : 240;
+    return this.sheetShortHeight(baseHeight);
+  }
+
+  private sheetButtonBackgroundColor(isPrimary: boolean, isEnabled: boolean): string {
+    if (!isEnabled) {
+      return this.disabledColor();
+    }
+    return isPrimary ? this.primaryActionFillColor() : '#00000000';
+  }
+
+  private sheetButtonBorderColor(isPrimary: boolean, isEnabled: boolean): string {
+    return isPrimary && isEnabled ? this.accentColor() : '#00000000';
+  }
+
+  private sheetButtonTextColor(isPrimary: boolean, isEnabled: boolean): string {
+    if (!isEnabled) {
+      return this.disabledButtonTextColor();
+    }
+    return isPrimary ? this.accentColor() : this.primaryTextColor();
+  }
+
+  @Builder
+  private SheetMetaRow(summary: string, value: string) {
+    Row() {
+      Text(summary)
+        .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+        .fontColor(this.secondaryTextColor())
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Text(value)
+        .fontSize(14)
+        .fontColor(this.secondaryTextColor())
+    }
+    .width('100%')
+    .height(40)
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private SheetMetaActionRow(summary: string, actionLabel: string, action: () => void) {
+    Row() {
+      Text(summary)
+        .fontSize(SHEET_SECONDARY_TEXT_SIZE)
+        .fontColor(this.secondaryTextColor())
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Stack({ alignContent: Alignment.Center }) {
+        ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+          buttonModify: {
+            applyNormalAttribute(instance: ButtonModifier): void {
+              instance.width(88).height(32)
+            }
+          },
+          click: action
+        }) {
+          Text(actionLabel)
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentColor())
+            .padding({ left: 14, right: 14 })
+        }
+      }
+      .height(32)
+      .clip(false)
+    }
+    .width('100%')
+    .height(46)
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private SheetActionButton(param: SheetActionButtonParam) {
+    Stack({ alignContent: Alignment.Center }) {
+      ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+        buttonModify: new ActionButtonModifier(
+          '100%',
+          SHEET_ACTION_BUTTON_HEIGHT,
+          this.sheetButtonBackgroundColor(param.isPrimary, param.isEnabled),
+          this.sheetButtonBorderColor(param.isPrimary, param.isEnabled)
+        ),
+        click: (): void => {
+          if (param.isEnabled && !param.isLoading) {
+            param.action();
+          }
+        }
+      }) {
+        Row({ space: 6 }) {
+          if (param.isLoading) {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .color(this.sheetButtonTextColor(param.isPrimary, param.isEnabled))
+          }
+
+          Text(param.label)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.sheetButtonTextColor(param.isPrimary, param.isEnabled))
+            .maxLines(1)
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .height(SHEET_ACTION_BUTTON_HEIGHT)
+      }
+    }
+    .layoutWeight(1)
+    .height(SHEET_ACTION_BUTTON_HEIGHT)
+    .opacity(param.isEnabled ? 1 : 0.55)
+    .clip(false)
+  }
+
+  @Builder
+  private SheetFloatingActions(param: SheetFloatingActionsParam) {
+    Row({ space: SHEET_ACTION_GAP }) {
+      this.SheetActionButton({
+        label: param.secondaryLabel,
+        isPrimary: param.secondaryIsPrimary === true,
+        isEnabled: !param.primaryLoading,
+        isLoading: false,
+        action: param.secondaryAction
+      })
+      this.SheetActionButton({
+        label: param.primaryLabel,
+        isPrimary: true,
+        isEnabled: param.primaryEnabled && !param.primaryLoading,
+        isLoading: param.primaryLoading,
+        action: param.primaryAction
+      })
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 520 })
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+    .align(Alignment.Bottom)
+    .margin({ bottom: this.sheetActionBottomInset() })
+    .zIndex(20)
+  }
+
+  @Builder
+  private SheetSingleFloatingAction(param: SheetSingleFloatingActionParam) {
+    Row() {
+      this.SheetActionButton({
+        label: param.label,
+        isPrimary: true,
+        isEnabled: true,
+        isLoading: false,
+        action: param.action
+      })
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 520 })
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+    .align(Alignment.Bottom)
+    .margin({ bottom: this.sheetActionBottomInset() })
+    .zIndex(20)
   }
 
   private tokenDisplayName(token: TokenRecord): string {
@@ -3393,17 +7159,18 @@ struct Index {
     if (token.logoSource === LOGO_SOURCE_MANUAL && type !== 'Steam') {
       return token.logoUri || '';
     }
-    if (this.issuerLogoColorMode === '品牌色') {
+    if (type !== 'Steam' && this.issuerLogoColorMode === '品牌色') {
       return token.logoUri || token.logoLightUri || token.logoDarkUri || '';
     }
     return this.isDarkTheme() ? (token.logoDarkUri || token.logoUri || '') : (token.logoLightUri || token.logoUri || '');
   }
 
   private formLogoUri(): string {
-    if (this.logoSourceInput === LOGO_SOURCE_MANUAL && this.formTokenType() !== 'Steam') {
+    const type = this.formTokenType();
+    if (this.logoSourceInput === LOGO_SOURCE_MANUAL && type !== 'Steam') {
       return this.logoUriInput;
     }
-    if (this.issuerLogoColorMode === '品牌色') {
+    if (type !== 'Steam' && this.issuerLogoColorMode === '品牌色') {
       return this.logoUriInput || this.logoLightUriInput || this.logoDarkUriInput;
     }
     return this.isDarkTheme() ? (this.logoDarkUriInput || this.logoUriInput) : (this.logoLightUriInput || this.logoUriInput);
@@ -3440,23 +7207,32 @@ struct Index {
       digits: token.digits,
       period: token.period,
       counter: token.counter,
-      createdAt: token.createdAt
+      steamData: token.steamData,
+      createdAt: token.createdAt,
+      modifiedTime: token.modifiedTime
     };
   }
 
   private tokenSwipeOffset(tokenId: string): number {
+    const width = this.tokenSwipeWidth(tokenId);
     if (this.activeSwipeTokenId === tokenId) {
       return this.activeSwipeOffset;
     }
-    return this.openSwipeTokenId === tokenId ? -SWIPE_ACTION_AREA_WIDTH : 0;
+    return this.openSwipeTokenId === tokenId ? -width : 0;
+  }
+
+  private tokenSwipeWidth(tokenId: string): number {
+    const token = this.tokens.find((item: TokenRecord) => item.id === tokenId);
+    return token ? this.tokenSwipeActionAreaWidth(token) : SWIPE_ACTION_AREA_WIDTH;
   }
 
   private handleTokenPanUpdate(tokenId: string, offsetX: number): void {
+    const width = this.tokenSwipeWidth(tokenId);
     this.activeSwipeTokenId = tokenId;
     if (this.openSwipeTokenId === tokenId) {
-      this.activeSwipeOffset = Math.max(-SWIPE_ACTION_AREA_WIDTH, Math.min(0, -SWIPE_ACTION_AREA_WIDTH + offsetX));
+      this.activeSwipeOffset = Math.max(-width, Math.min(0, -width + offsetX));
     } else {
-      this.activeSwipeOffset = Math.max(-SWIPE_ACTION_AREA_WIDTH, Math.min(0, offsetX));
+      this.activeSwipeOffset = Math.max(-width, Math.min(0, offsetX));
     }
   }
 
@@ -3477,6 +7253,7 @@ struct Index {
   }
 
   private handleTokenDragStart(index: number): void {
+    this.pressedTokenId = '';
     if (!this.canMoveTokenList()) {
       this.draggingTokenId = '';
       return;
@@ -3504,6 +7281,7 @@ struct Index {
   }
 
   private handleTokenDragDrop(): void {
+    this.pressedTokenId = '';
     this.draggingTokenId = '';
     if (!this.tokenDragReordered) {
       return;
@@ -3546,7 +7324,39 @@ struct Index {
   }
 
   private tokenCode(token: TokenRecord): string {
-    return this.generateTokenCode(token, this.currentTimeMs, this.tokenCounterForRecord(token));
+    return this.cachedTokenCode(token, this.currentTimeMs, this.tokenCounterForRecord(token));
+  }
+
+  private tokenCodeCharacter(token: TokenRecord, nextCode: boolean, index: number): string {
+    const code = nextCode ? this.nextTokenCode(token) : this.tokenCode(token);
+    return index < code.length ? code.charAt(index) : '';
+  }
+
+  private isTokenCodeDigit(character: string): boolean {
+    if (character.length !== 1) {
+      return false;
+    }
+    const codeUnit = character.charCodeAt(0);
+    return codeUnit >= 48 && codeUnit <= 57;
+  }
+
+  private tokenDigitHeight(fontSize: number): number {
+    return Math.ceil(fontSize * TOKEN_DIGIT_HEIGHT_FACTOR);
+  }
+
+  private tokenDigitWidth(fontSize: number): number {
+    return Math.ceil(fontSize * TOKEN_DIGIT_WIDTH_FACTOR);
+  }
+
+  private tokenCharacterWidth(token: TokenRecord, fontSize: number): number {
+    if (this.normalizeTokenType(token.type) === 'Steam') {
+      return Math.ceil(fontSize * TOKEN_STEAM_CHARACTER_WIDTH_FACTOR);
+    }
+    return this.tokenDigitWidth(fontSize);
+  }
+
+  private tokenDigitSpaceWidth(fontSize: number): number {
+    return Math.ceil(fontSize * TOKEN_DIGIT_SPACE_FACTOR);
   }
 
   private async copyTokenCode(token: TokenRecord): Promise<void> {
@@ -3563,10 +7373,36 @@ struct Index {
 
   private nextTokenCode(token: TokenRecord): string {
     if (this.normalizeTokenType(token.type) === 'HOTP') {
-      return this.generateTokenCode(token, this.currentTimeMs, this.tokenCounterForRecord(token) + 1);
+      return this.cachedTokenCode(token, this.currentTimeMs, this.tokenCounterForRecord(token) + 1);
     }
-    return this.generateTokenCode(token, this.currentTimeMs + this.tokenPeriodForRecord(token) * 1000,
+    return this.cachedTokenCode(token, this.currentTimeMs + this.tokenPeriodForRecord(token) * 1000,
       this.tokenCounterForRecord(token));
+  }
+
+  private cachedTokenCode(token: TokenRecord, timeMs: number, counter: number): string {
+    this.refreshTokenCodeCache();
+    const type = this.normalizeTokenType(token.type);
+    const period = this.tokenPeriodForRecord(token);
+    const digits = this.tokenDigitsForRecord(token);
+    const movingFactor = type === 'HOTP' ? counter : Math.floor(Math.floor(timeMs / 1000) / period);
+    const key = token.id + '|' + token.secret + '|' + (token.algorithm || 'SHA1') + '|' +
+      digits.toString() + '|' + period.toString() + '|' + type + '|' + movingFactor.toString();
+    const cachedCode = this.tokenCodeCache.get(key);
+    if (cachedCode !== undefined) {
+      return cachedCode;
+    }
+    const code = this.generateTokenCode(token, timeMs, counter);
+    this.tokenCodeCache.set(key, code);
+    return code;
+  }
+
+  private refreshTokenCodeCache(): void {
+    const version = Math.floor(this.currentTimeMs / (DEFAULT_TOKEN_PERIOD * 1000));
+    if (version === this.tokenCodeCacheVersion) {
+      return;
+    }
+    this.tokenCodeCache.clear();
+    this.tokenCodeCacheVersion = version;
   }
 
   private generateTokenCode(token: TokenRecord, timeMs: number, counter: number): string {
@@ -4073,7 +7909,8 @@ struct Index {
       }
       return false;
     }
-    const mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(localSnapshot, records);
+    const cloudRecords = await this.hydrateTokenLogos(records, true);
+    const mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(localSnapshot, cloudRecords);
     await TokenRepository.save(context, mergedRecords);
     this.tokens = mergedRecords;
     this.logoRenderVersion += 1;
@@ -4151,6 +7988,289 @@ struct Index {
     const date = new Date(this.cloudLastSyncTime);
     return `${date.getFullYear()}-${this.twoDigit(date.getMonth() + 1)}-${this.twoDigit(date.getDate())} ` +
       `${this.twoDigit(date.getHours())}:${this.twoDigit(date.getMinutes())}`;
+  }
+
+  private watchLastPushTimeText(): string {
+    if (this.watchLastPushTime <= 0) {
+      return this.t('暂无记录');
+    }
+    const date = new Date(this.watchLastPushTime);
+    return `${date.getFullYear()}-${this.twoDigit(date.getMonth() + 1)}-${this.twoDigit(date.getDate())} ` +
+      `${this.twoDigit(date.getHours())}:${this.twoDigit(date.getMinutes())}`;
+  }
+
+  private openWatchTokenPicker(): void {
+    this.pendingWatchTokenIds = this.validWatchSelectedTokenIds();
+    this.bumpSheetSelectionRevision();
+    this.showWatchTokenPicker = true;
+  }
+
+  private validWatchSelectedTokenIds(): string[] {
+    return this.watchSelectedTokenIds.filter((id: string) => {
+      return this.tokens.some((token: TokenRecord) => token.id === id);
+    });
+  }
+
+  private pendingWatchTokenIndex(tokenId: string): number {
+    return this.pendingWatchTokenIds.indexOf(tokenId);
+  }
+
+  private togglePendingWatchToken(tokenId: string): void {
+    const index = this.pendingWatchTokenIndex(tokenId);
+    if (index >= 0) {
+      this.pendingWatchTokenIds = this.pendingWatchTokenIds.filter((id: string) => id !== tokenId);
+    } else {
+      this.pendingWatchTokenIds = this.pendingWatchTokenIds.concat([tokenId]);
+    }
+    this.bumpSheetSelectionRevision();
+  }
+
+  private commitWatchTokenSelection(): void {
+    this.watchSelectedTokenIds = this.pendingWatchTokenIds;
+    this.pendingWatchTokenIds = [];
+    this.showWatchTokenPicker = false;
+    this.saveSettings();
+    this.showToast('已保存');
+  }
+
+  private watchSelectedTokens(): TokenRecord[] {
+    if (this.watchSelectedTokenIds.length === 0) {
+      return [];
+    }
+    const records: TokenRecord[] = [];
+    this.watchSelectedTokenIds.forEach((id: string) => {
+      const token = this.tokens.find((item: TokenRecord) => item.id === id);
+      if (token) {
+        records.push(token);
+      }
+    });
+    return records;
+  }
+
+  private watchVisibleTokens(): TokenRecord[] {
+    const selectedTokens = this.watchSelectedTokens();
+    return selectedTokens.length > 0 ? selectedTokens : this.tokens;
+  }
+
+  private watchTokenSelectionSummary(): string {
+    const selectedTokens = this.watchSelectedTokens();
+    if (selectedTokens.length === 0) {
+      return this.t('未选择令牌');
+    }
+    return selectedTokens.map((token: TokenRecord) => this.tokenDisplayName(token)).join('、');
+  }
+
+  private async pushTokensToWear(): Promise<void> {
+    if (this.watchPushing) {
+      return;
+    }
+    const selectedTokens = this.watchSelectedTokens();
+    if (selectedTokens.length === 0) {
+      this.showToast('请至少选择1个令牌');
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('推送失败');
+      return;
+    }
+    this.watchPushing = true;
+    this.watchPushStatus = '推送中';
+    this.saveSettings();
+    try {
+      const devices = await this.connectedWearDevices(context);
+      if (devices.length === 0) {
+        this.finishWatchPush(false, '未发现已连接手表');
+        return;
+      }
+      const appParam = await this.wearP2pAppParam();
+      const p2pClient = wearEngine.getP2pClient(context);
+      const payload: WatchSyncPayload = {
+        action: WATCH_SYNC_ACTION,
+        version: 1,
+        tokens: selectedTokens,
+        pushedAt: Date.now()
+      };
+      const message: wearEngine.P2pMessage = {
+        content: util.TextEncoder.create('utf-8').encodeInto(JSON.stringify(payload))
+      };
+      let successCount = 0;
+      let lastFailure = '';
+      for (let index = 0; index < devices.length; index++) {
+        const device = devices[index];
+        try {
+          await p2pClient.startRemoteApp(device.randomId, appParam.remoteApp.bundleName, false);
+        } catch (error) {
+        }
+        try {
+          const result = await p2pClient.sendMessage(device.randomId, appParam, message);
+          if (this.isWearP2pSuccess(result.code)) {
+            successCount += 1;
+          } else {
+            lastFailure = this.wearP2pResultText(result.code);
+          }
+        } catch (error) {
+          lastFailure = this.wearEngineErrorText(error);
+        }
+      }
+      if (successCount > 0) {
+        this.finishWatchPush(true, this.tf('推送成功（{0}台设备）', [`${successCount}`]));
+      } else {
+        this.finishWatchPush(false, lastFailure.length > 0 ? lastFailure : '推送失败');
+      }
+    } catch (error) {
+      this.finishWatchPush(false, this.wearEngineErrorText(error));
+    }
+  }
+
+  private finishWatchPush(success: boolean, status: string): void {
+    this.watchPushing = false;
+    this.watchPushStatus = status;
+    this.watchLastPushTime = Date.now();
+    this.saveSettings();
+    this.showToast(success ? '操作成功，同步中' : status);
+  }
+
+  private async connectedWearDevices(context: common.UIAbilityContext): Promise<wearEngine.Device[]> {
+    const deviceClient = wearEngine.getDeviceClient(context);
+    const devices = await deviceClient.getConnectedDevices();
+    return devices.filter((device: wearEngine.Device) => {
+      return device.category === wearEngine.DeviceCategory.WATCH ||
+        device.category === wearEngine.DeviceCategory.BAND ||
+        device.isSmartWatch === true;
+    });
+  }
+
+  private async wearP2pAppParam(): Promise<wearEngine.P2pAppParam> {
+    const bundleInfo = await bundleManager.getBundleInfoForSelf(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_SIGNATURE_INFO
+    );
+    return {
+      remoteApp: {
+        bundleName: bundleInfo.name,
+        fingerprint: bundleInfo.signatureInfo.fingerprint
+      },
+      transformLocalAppInfo: false
+    };
+  }
+
+  private isWearP2pSuccess(code?: number): boolean {
+    return code === wearEngine.P2pResultCode.COMMUNICATION_SUCCESS ||
+      code === wearEngine.P2pResultCode.REMOTE_APP_RUNNING;
+  }
+
+  private wearP2pResultText(code?: number): string {
+    if (code === wearEngine.P2pResultCode.REMOTE_APP_NOT_INSTALLED) {
+      return '手表端应用未安装';
+    }
+    if (code === wearEngine.P2pResultCode.REMOTE_APP_NOT_RUNNING) {
+      return '手表端应用未运行';
+    }
+    if (code === wearEngine.P2pResultCode.COMMUNICATION_FAILURE) {
+      return '手表通信失败';
+    }
+    return code === undefined ? '推送失败' : `推送失败（${code}）`;
+  }
+
+  private wearEngineErrorText(error: Object): string {
+    const code = this.getErrorCode(error);
+    if (code === 1008500002 || code === 1008500003 || code === 1008500010) {
+      return '未发现已连接手表';
+    }
+    if (code === 1008500004) {
+      return 'Wear Engine服务未开通';
+    }
+    if (code === 1008500006) {
+      return '用户未同意隐私协议';
+    }
+    if (code === 1008500008 || code === 1008500009) {
+      return '请先登录华为账号';
+    }
+    return code > 0 ? `推送失败（${code}）` : '推送失败';
+  }
+
+  private async registerWearSyncReceivers(): Promise<void> {
+    if (!this.isWatchLayout() || this.wearMessageReceivers.length > 0) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    try {
+      const devices = await this.connectedWearDevices(context);
+      if (devices.length === 0) {
+        return;
+      }
+      const p2pClient = wearEngine.getP2pClient(context);
+      const appParam = await this.wearP2pAppParam();
+      for (let index = 0; index < devices.length; index++) {
+        const device = devices[index];
+        const callback = (message: wearEngine.P2pMessage): void => {
+          this.receiveWearSyncMessage(message);
+        };
+        await p2pClient.registerMessageReceiver(device.randomId, appParam, callback);
+        this.wearMessageReceivers.push({
+          deviceId: device.randomId,
+          appParam: appParam,
+          callback: callback
+        });
+      }
+      this.watchReceiverStatus = '已连接';
+    } catch (error) {
+      this.watchReceiverStatus = this.wearEngineErrorText(error);
+      console.error(`Failed to register wear sync receiver: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private async unregisterWearSyncReceivers(): Promise<void> {
+    if (this.wearMessageReceivers.length === 0) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.wearMessageReceivers = [];
+      return;
+    }
+    const p2pClient = wearEngine.getP2pClient(context);
+    for (let index = 0; index < this.wearMessageReceivers.length; index++) {
+      const receiver = this.wearMessageReceivers[index];
+      try {
+        await p2pClient.unregisterMessageReceiver(receiver.deviceId, receiver.appParam, receiver.callback);
+      } catch (error) {
+      }
+    }
+    this.wearMessageReceivers = [];
+  }
+
+  private receiveWearSyncMessage(message: wearEngine.P2pMessage): void {
+    try {
+      const text = util.TextDecoder.create('utf-8').decodeToString(message.content);
+      const payload = JSON.parse(text) as WatchSyncPayload;
+      if (payload.action !== WATCH_SYNC_ACTION || !Array.isArray(payload.tokens)) {
+        return;
+      }
+      this.applyWearSyncPayload(payload.tokens);
+    } catch (error) {
+      this.watchReceiverStatus = '手表端接收失败';
+      console.error(`Failed to receive wear sync message: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private async applyWearSyncPayload(records: TokenRecord[]): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    const validRecords = this.uniqueTokenRecordsWithValidation(records, false);
+    if (await TokenRepository.save(context, validRecords)) {
+      this.tokens = validRecords;
+      this.watchSelectedTokenIds = validRecords.map((token: TokenRecord) => token.id);
+      this.watchPushStatus = '接收成功';
+      this.watchLastPushTime = Date.now();
+      this.saveSettings();
+      this.updateWidgetCards();
+    }
   }
 
   private twoDigit(value: number): string {
@@ -4235,6 +8355,53 @@ struct Index {
       indices.push(index);
     }
     await this.saveQRCodeImages(indices);
+  }
+
+  private async saveRawImageToGallery(rawFileName: string, title: string): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('保存图片失败');
+      return;
+    }
+    const path = context.filesDir + '/' + title + '_' + Date.now().toString() + '.png';
+    let completed = false;
+    try {
+      const rawData = await context.resourceManager.getRawFileContent(rawFileName);
+      const file = fileIo.openSync(path,
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(file.fd, rawData.buffer);
+      } finally {
+        fileIo.closeSync(file);
+      }
+      const sourceUris: string[] = [fileUri.getUriFromPath(path)];
+      const settings: photoAccessHelper.CreationSetting[] = [{
+        title: title,
+        fileNameExtension: 'png',
+        photoType: photoAccessHelper.PhotoType.IMAGE
+      }];
+      const savedUris = await photoAccessHelper.getPhotoAccessHelper(context).showAssetsCreationDialogEx(
+        sourceUris,
+        settings
+      );
+      if (savedUris.length === 0 || this.copyTemporaryImagesToGallery([path], savedUris) === 0) {
+        this.showToast('保存图片失败');
+        return;
+      }
+      completed = true;
+      this.showToast('图片已保存到图库');
+    } catch (error) {
+      console.error('Save bundled image failed: ' + JSON.stringify(error));
+      this.showToast('保存图片失败');
+    } finally {
+      if (completed) {
+        setTimeout(() => {
+          this.cleanupTemporaryFiles([path]);
+        }, 10000);
+      } else {
+        this.cleanupTemporaryFiles([path]);
+      }
+    }
   }
 
   private async saveQRCodeImages(indices: number[]): Promise<void> {
@@ -4412,6 +8579,18 @@ struct Index {
         'period': this.tokenPeriodForRecord(token),
         'counter': this.tokenCounterForRecord(token)
       };
+      if (this.normalizeTokenType(token.type) === 'Steam' && token.steamData && token.steamData.length > 0) {
+        const steam = parseSteamGuardData(token.steamData);
+        portableToken['steamData'] = token.steamData;
+        portableToken['shared_secret'] = steam.sharedSecret;
+        portableToken['identity_secret'] = steam.identitySecret;
+        portableToken['device_id'] = steam.deviceId;
+        portableToken['steamid'] = steam.steamId;
+        portableToken['access_token'] = steam.accessToken;
+        portableToken['refresh_token'] = steam.refreshToken;
+        portableToken['revocation_code'] = steam.revocationCode;
+        portableToken['serial_number'] = steam.serialNumber;
+      }
       return portableToken;
     });
     const exportData: Record<string, Object> = {
@@ -4691,6 +8870,43 @@ struct Index {
     this.homePathStack.pushPath({ name: 'addToken' }, true);
   }
 
+  private async pickCustomBackground(): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('无法打开图片选择器');
+      return;
+    }
+    try {
+      const options = new photoAccessHelper.PhotoSelectOptions();
+      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = 1;
+      options.isEditSupported = true;
+      const photoPicker = new photoAccessHelper.PhotoViewPicker();
+      const result = await photoPicker.select(options);
+      if (!result.photoUris || result.photoUris.length === 0) {
+        return;
+      }
+      const persistedUri = await this.persistPickedBackground(context, result.photoUris[0]);
+      this.customBackgroundUri = persistedUri;
+      this.backgroundSelection = 'custom';
+      this.saveSettings();
+    } catch (error) {
+      this.showToast('选择背景图失败');
+      console.error('Failed to pick background: ' + JSON.stringify(error));
+    }
+  }
+
+  private async persistPickedBackground(context: common.UIAbilityContext, uri: string): Promise<string> {
+    const targetPath = context.filesDir + '/background_' + Date.now().toString() + '.jpg';
+    try {
+      await fileIo.copyFile(uri, targetPath);
+      return fileUri.getUriFromPath(targetPath);
+    } catch (error) {
+      console.error('Failed to copy background, use original uri: ' + JSON.stringify(error));
+      return uri;
+    }
+  }
+
   private async pickIssuerLogo(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
@@ -4847,9 +9063,70 @@ struct Index {
   }
 
   private completeOnboarding(): void {
+    this.setOnboardingSystemBars(false);
     this.onboardingCompleted = true;
     this.showOnboarding = false;
     this.saveSettings();
+    this.scheduleUpdateNoticePresentation();
+  }
+
+  private async setOnboardingSystemBars(forceDark: boolean): Promise<void> {
+    AppStorage.setOrCreate<boolean>(FORCE_DARK_SYSTEM_BARS_KEY, forceDark);
+    AppStorage.set<boolean>(FORCE_DARK_SYSTEM_BARS_KEY, forceDark);
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    try {
+      const mainWindow = await window.getLastWindow(context);
+      const useDark = forceDark || this.isDarkTheme();
+      mainWindow.setWindowBackgroundColor(useDark ? '#FF000000' : '#FFF2F3F5');
+      await mainWindow.setWindowSystemBarProperties({
+        statusBarColor: '#00000000',
+        navigationBarColor: '#00000000',
+        isStatusBarLightIcon: useDark,
+        isNavigationBarLightIcon: useDark,
+        navigationBarContentColor: useDark ? '#FFEEEEEE' : '#FF1A1A1A',
+        statusBarContentColor: useDark ? '#FFEEEEEE' : '#FF1A1A1A'
+      });
+    } catch (error) {
+      console.error('Failed to update onboarding system bars: ' + JSON.stringify(error));
+    }
+  }
+
+  private scheduleUpdateNoticePresentation(): void {
+    if (!this.settingsLoaded || !this.phoneRootReady || !this.onboardingCompleted || this.showOnboarding ||
+      this.updateNoticePresentationTimer >= 0) {
+      return;
+    }
+    this.updateNoticePresentationTimer = setTimeout((): void => {
+      this.updateNoticePresentationTimer = -1;
+      this.presentUpdateNoticeIfNeeded();
+    }, 120);
+  }
+
+  private presentUpdateNoticeIfNeeded(): void {
+    if (!this.settingsLoaded || !this.phoneRootReady || this.isWatchLayout() ||
+      !this.onboardingCompleted || this.showOnboarding ||
+      (this.appLockEnabled && this.isLocked) ||
+      this.updateNoticeVersion === UPDATE_NOTICE_VERSION || this.showUpdateNotice) {
+      return;
+    }
+    this.showUpdateNotice = true;
+  }
+
+  private dismissUpdateNotice(): void {
+    this.updateNoticeVersion = UPDATE_NOTICE_VERSION;
+    this.showUpdateNotice = false;
+    this.saveSettings();
+  }
+
+  private onLockStateChanged(): void {
+    if (this.appLockEnabled && this.isLocked) {
+      this.showUpdateNotice = false;
+      return;
+    }
+    this.scheduleUpdateNoticePresentation();
   }
 
   private handleMeAction(group: number, index: number): void {
@@ -4857,29 +9134,64 @@ struct Index {
       if (index === 0) {
         this.homePathStack.pushPath({ name: 'cloudSpace' }, true);
       } else if (index === 1) {
+        this.homePathStack.pushPath({ name: 'watchSync' }, true);
+      } else if (index === 2) {
         this.exportSelectedIds = [];
+        this.bumpSheetSelectionRevision();
         this.showExportPicker = true;
-      } else {
-        this.homePathStack.pushPath({ name: 'settings' }, true);
       }
       return;
     }
     if (group === 1) {
       if (index === 0) {
-        this.showToast('订阅会员服务暂未开放');
+        this.homePathStack.pushPath({ name: 'appearanceSettings' }, true);
       } else {
-        this.showToast('敬请期待');
+        this.homePathStack.pushPath({ name: 'featureSecurity' }, true);
+      }
+      return;
+    }
+    if (group === 2) {
+      if (index === 0) {
+        this.homePathStack.pushPath({ name: 'donation' }, true);
+      } else {
+        this.homePathStack.pushPath({ name: 'moreApps' }, true);
       }
       return;
     }
     if (index === 0) {
-      this.openExternalUrl('https://gitcode.com/mroble/Tool_2FA');
+      this.openWebSheet('开源地址', 'https://gitcode.com/mroble/Tool_2FA');
     } else if (index === 1) {
-      this.openExternalUrl(USER_AGREEMENT_URL);
+      this.openUserAgreementSheet();
     } else if (index === 2) {
       this.openPrivacyLink(privacyManager.AppPrivacyLinkType.PRIVACY_STATEMENT_LINK, '隐私声明');
     } else {
-      this.showFeedbackDialog();
+      this.homePathStack.pushPath({ name: 'about' }, true);
+    }
+  }
+
+  private openUserAgreementSheet(): void {
+    this.showWebSheet = false;
+    this.showUserAgreementSheet = true;
+  }
+
+  private openWebSheet(title: string, url: string): void {
+    this.showUserAgreementSheet = false;
+    this.webSheetTitle = title;
+    this.webSheetUrl = url;
+    this.showWebSheet = true;
+    setTimeout(() => {
+      this.loadWebSheetUrl();
+    }, 120);
+  }
+
+  private loadWebSheetUrl(): void {
+    if (this.webSheetUrl.length === 0 || this.webSheetUrl === 'about:blank') {
+      return;
+    }
+    try {
+      this.webSheetController.loadUrl(this.webSheetUrl);
+    } catch (error) {
+      console.error('Failed to load sheet web page: ' + JSON.stringify(error));
     }
   }
 
@@ -4888,7 +9200,7 @@ struct Index {
       const info = privacyManager.getAppPrivacyMgmtInfo();
       for (const link of info.privacyInfo) {
         if (link.type === type && link.url.length > 0) {
-          this.openExternalUrl(link.url);
+          this.openWebSheet(label, link.url);
           return;
         }
       }
@@ -4910,6 +9222,39 @@ struct Index {
         }
       }
     });
+  }
+
+  private async showAppCommentDialog(): Promise<void> {
+    if (!canIUse('SystemCapability.AppGalleryService.Distribution.Comment')) {
+      this.showToast('当前设备不支持应用内评论');
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('暂时无法打开应用评论');
+      return;
+    }
+    this.showToast('正在打开应用评论');
+    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Requesting app comment dialog');
+    try {
+      await commentManager.showCommentDialog(context);
+      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'App comment dialog request succeeded');
+    } catch (error) {
+      const code = this.getErrorCode(error);
+      if (code === 1021500006) {
+        this.showToast('请先登录华为账号');
+      } else if (code === 1021500007) {
+        this.showToast('感谢支持，你已评价过当前版本');
+      } else if (code === 1021500008) {
+        this.showToast('本次评价次数已达上限');
+      } else if (code === 1021500009) {
+        this.showToast('感谢支持，暂时无需重复评价');
+      } else {
+        this.showToast(this.tf('暂时无法打开应用评论（错误码：{0}）', [code.toString()]));
+      }
+      hilog.error(APPLOCK_DOMAIN, APP_COMMENT_TAG,
+        'Failed to show app comment dialog, code=%{public}d, error=%{public}s', code, JSON.stringify(error));
+    }
   }
 
   private async openExternalUrl(uri: string): Promise<void> {
@@ -5024,6 +9369,239 @@ struct Index {
       }
     } finally {
       this.isScanning = false;
+    }
+  }
+
+  private steamService(): SteamService {
+    return new SteamService({
+      enhancedAccess: this.steamEnhancedAccess,
+      gatewayUrl: this.steamGatewayUrl,
+      gatewayToken: this.steamGatewayToken
+    });
+  }
+
+  private steamLoginTokens(): TokenRecord[] {
+    return this.tokens.filter((token: TokenRecord) => {
+      return this.normalizeTokenType(token.type) === 'Steam' &&
+        canUseSteamRemoteFeatures(parseSteamGuardData(token.steamData || ''));
+    });
+  }
+
+  private steamLoginAccountText(token: TokenRecord): string {
+    const data = parseSteamGuardData(token.steamData || '');
+    if (data.accountName.length > 0) {
+      return data.accountName;
+    }
+    return data.steamId.length > 0 ? 'Steam ID ' + data.steamId : this.t('已验证登录凭据');
+  }
+
+  private openSteamLoginPicker(): void {
+    const supportedTokens = this.steamLoginTokens();
+    this.pendingSteamLoginTokenId = supportedTokens.length === 1 ? supportedTokens[0].id : '';
+    this.bumpSheetSelectionRevision();
+    this.showSteamLoginPicker = true;
+  }
+
+  private selectSteamLoginToken(tokenId: string): void {
+    this.pendingSteamLoginTokenId = this.pendingSteamLoginTokenId === tokenId ? '' : tokenId;
+    this.bumpSheetSelectionRevision();
+  }
+
+  private startSelectedSteamLoginScan(): void {
+    const tokenId = this.pendingSteamLoginTokenId;
+    if (tokenId.length === 0 || this.steamLoading) {
+      return;
+    }
+    this.showSteamLoginPicker = false;
+    setTimeout(() => {
+      this.scanSteamLoginQr(tokenId);
+    }, 180);
+  }
+
+  private importSteamTokenFromLoginSheet(): void {
+    this.showSteamLoginPicker = false;
+    setTimeout(() => {
+      this.importTokenFile();
+    }, 180);
+  }
+
+  private async scanSteamLoginQr(tokenId: string): Promise<void> {
+    const token = this.tokens.find((current: TokenRecord) => current.id === tokenId);
+    if (!token) {
+      this.showToast('所选 Steam 令牌已不存在');
+      return;
+    }
+    const data = parseSteamGuardData(token.steamData || '');
+    if (!canUseSteamRemoteFeatures(data)) {
+      this.showToast('所选令牌缺少 Steam 登录凭据，请重新导入 maFile');
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context || this.steamLoading) {
+      return;
+    }
+    this.steamLoading = true;
+    try {
+      const result = await scanBarcode.startScanForResult(context, {
+        scanTypes: [scanCore.ScanType.QR_CODE],
+        enableMultiMode: false,
+        enableAlbum: true
+      });
+      await this.steamService().approveQrLogin(data, result.originalValue, true);
+      this.showToast('Steam 登录已确认');
+    } catch (error) {
+      const code = this.getErrorCode(error);
+      if (code !== scanCore.ScanErrorCode.SCAN_SERVICE_CANCELED) {
+        this.showToast('Steam 扫码登录失败：' + this.errorMessage(error));
+      }
+    } finally {
+      this.steamLoading = false;
+    }
+  }
+
+  private steamConfirmationTokens(): TokenRecord[] {
+    return this.steamLoginTokens().filter((token: TokenRecord) => {
+      const data = parseSteamGuardData(token.steamData || '');
+      return data.identitySecret.length > 0 && data.deviceId.length > 0;
+    });
+  }
+
+  private steamConfirmationHomeVisible(): boolean {
+    return !this.isWatchLayout() && this.selectedHomeTab === HomeTab.Token &&
+      this.pageMode === PageMode.Home && this.homePathStack.size() === 0 &&
+      !this.showOnboarding && !(this.appLockEnabled && this.isLocked);
+  }
+
+  private async checkSteamConfirmationsIfNeeded(): Promise<void> {
+    if (!this.steamConfirmationHomeVisible() || this.steamConfirmationChecking || this.steamLoading ||
+      this.steamConfirmationDialogVisible || this.showSteamLoginPicker) {
+      return;
+    }
+    if (this.pendingSteamConfirmations.length > 0) {
+      this.showNextSteamConfirmationDialog();
+      return;
+    }
+    const now = Date.now();
+    if (now - this.lastSteamConfirmationCheckMs < STEAM_CONFIRMATION_POLL_INTERVAL_MS) {
+      return;
+    }
+    const tokens = this.steamConfirmationTokens();
+    this.lastSteamConfirmationCheckMs = now;
+    if (tokens.length === 0) {
+      return;
+    }
+    this.steamConfirmationChecking = true;
+    const discovered: SteamPendingConfirmation[] = [];
+    try {
+      for (const token of tokens) {
+        try {
+          const confirmations = await this.steamService().confirmations(parseSteamGuardData(token.steamData || ''));
+          for (const confirmation of confirmations) {
+            discovered.push({
+              tokenId: token.id,
+              tokenName: this.tokenDisplayName(token),
+              confirmation: confirmation
+            });
+          }
+        } catch (error) {
+          console.error('Failed to check Steam confirmations for ' + token.id + ': ' + this.errorMessage(error));
+        }
+      }
+    } finally {
+      this.steamConfirmationChecking = false;
+    }
+    if (discovered.length > 0) {
+      this.pendingSteamConfirmations = discovered;
+      this.showNextSteamConfirmationDialog();
+    }
+  }
+
+  private showNextSteamConfirmationDialog(): void {
+    if (this.steamConfirmationDialogVisible || this.pendingSteamConfirmations.length === 0 ||
+      !this.steamConfirmationHomeVisible()) {
+      return;
+    }
+    const pending = this.pendingSteamConfirmations[0];
+    this.steamConfirmationDialogVisible = true;
+    this.getUIContext().showAlertDialog({
+      title: this.t('Steam 交易确认'),
+      message: this.steamConfirmationDialogMessage(pending),
+      autoCancel: false,
+      primaryButton: {
+        value: this.t('拒绝'),
+        fontColor: ERROR_RED,
+        action: () => {
+          this.handleSteamConfirmationDecision(pending, false);
+        }
+      },
+      secondaryButton: {
+        value: this.t('确认'),
+        action: () => {
+          this.handleSteamConfirmationDecision(pending, true);
+        }
+      }
+    });
+  }
+
+  private steamConfirmationDialogMessage(pending: SteamPendingConfirmation): string {
+    const item = pending.confirmation;
+    const details = item.summary.length > 0 ? item.summary.join('\n') : this.t('Steam 请求确认此操作');
+    return this.t('账号') + '：' + pending.tokenName + '\n' + this.t('类型') + '：' +
+      this.steamConfirmationType(item.type) + '\n\n' + details;
+  }
+
+  private handleSteamConfirmationDecision(pending: SteamPendingConfirmation, allow: boolean): void {
+    this.steamConfirmationDialogVisible = false;
+    this.respondSteamConfirmation(pending, allow);
+  }
+
+  private async respondSteamConfirmation(pending: SteamPendingConfirmation, allow: boolean): Promise<void> {
+    if (this.steamLoading) {
+      return;
+    }
+    this.steamLoading = true;
+    try {
+      const token = this.tokens.find((current: TokenRecord) => current.id === pending.tokenId);
+      if (!token) {
+        throw new Error('Steam 令牌已不存在');
+      }
+      await this.steamService().respond(
+        parseSteamGuardData(token.steamData || ''),
+        [pending.confirmation],
+        allow
+      );
+      this.showToast(allow ? '已确认' : '已拒绝');
+    } catch (error) {
+      this.showToast((allow ? '确认失败：' : '拒绝失败：') + this.errorMessage(error));
+    } finally {
+      this.steamLoading = false;
+      this.pendingSteamConfirmations = this.pendingSteamConfirmations.filter((current: SteamPendingConfirmation) => {
+        return current.tokenId !== pending.tokenId || current.confirmation.id !== pending.confirmation.id;
+      });
+      setTimeout(() => {
+        this.showNextSteamConfirmationDialog();
+      }, 180);
+    }
+  }
+
+  private steamConfirmationType(type: number): string {
+    if (type === 2) {
+      return this.t('Steam 交易');
+    }
+    if (type === 3) {
+      return this.t('Steam 市场出售');
+    }
+    if (type === 9) {
+      return this.t('Steam API 密钥');
+    }
+    return this.t('Steam 操作确认');
+  }
+
+  private errorMessage(error: Object): string {
+    try {
+      return error.toString();
+    } catch (ignored) {
+      return '未知错误';
     }
   }
 
@@ -5330,6 +9908,8 @@ struct Index {
 
     const info = this.objectValue(this.importedJsonValue(source, 'info'));
     const otp = this.objectValue(this.importedJsonValue(source, 'otp'));
+    const steamSession = this.objectValue(this.importedJsonValue(source, 'Session')) ||
+      this.objectValue(this.importedJsonValue(source, 'session'));
     const tokenSource = info || otp || source;
     const secret = this.firstString(source, ['secret', 'secretKey', 'secret_key', 'shared_secret', 'tokenSecret',
       'otpSecret', 'otp_secret', 'seed', 'key']) ||
@@ -5340,6 +9920,24 @@ struct Index {
         this.firstString(tokenSource, ['type', 'tokenType', 'otpType', 'otp_type']);
       if (jsonType.length === 0 && this.firstString(tokenSource, ['shared_secret']).length > 0) {
         jsonType = 'Steam';
+      }
+      let steamData = '';
+      if (this.normalizeTokenType(jsonType) === 'Steam') {
+        const normalizedSteamData: SteamGuardData = {
+          accountName: this.firstString(source, ['account_name', 'accountName', 'username', 'name']),
+          steamId: this.firstString(source, ['steamid', 'steamId', 'steamID']) ||
+            (steamSession ? this.firstString(steamSession, ['SteamID', 'steamId', 'steamid']) : ''),
+          sharedSecret: this.firstString(source, ['shared_secret', 'sharedSecret']) || secret,
+          identitySecret: this.firstString(source, ['identity_secret', 'identitySecret']),
+          deviceId: this.firstString(source, ['device_id', 'deviceId', 'deviceID']),
+          accessToken: this.firstString(source, ['access_token', 'accessToken']) ||
+            (steamSession ? this.firstString(steamSession, ['AccessToken', 'accessToken']) : ''),
+          refreshToken: this.firstString(source, ['refresh_token', 'refreshToken']) ||
+            (steamSession ? this.firstString(steamSession, ['RefreshToken', 'refreshToken']) : ''),
+          revocationCode: this.firstString(source, ['revocation_code', 'revocationCode']),
+          serialNumber: this.firstString(source, ['serial_number', 'serialNumber'])
+        };
+        steamData = JSON.stringify(normalizedSteamData);
       }
       records.push(this.createImportedTokenRecord(
         this.firstString(source, ['name', 'service', 'label', 'accountName', 'account_name', 'account', 'accountId',
@@ -5354,7 +9952,8 @@ struct Index {
         this.firstNumber(source, ['digits']) || this.firstNumber(tokenSource, ['digits']),
         this.firstNumber(source, ['period', 'interval', 'timeStep', 'time_step']) ||
           this.firstNumber(tokenSource, ['period', 'interval', 'timeStep', 'time_step']),
-        this.firstNumber(source, ['counter']) || this.firstNumber(tokenSource, ['counter'])
+        this.firstNumber(source, ['counter']) || this.firstNumber(tokenSource, ['counter']),
+        steamData
       ));
       return;
     }
@@ -5382,7 +9981,8 @@ struct Index {
     algorithm: string,
     digits: number,
     period: number,
-    counter: number
+    counter: number,
+    steamData: string = ''
   ): TokenRecord {
     const rawType = type.trim();
     const tokenType = this.normalizeTokenType(rawType || 'TOTP');
@@ -5405,6 +10005,7 @@ struct Index {
       digits: this.standardDigitsForType(tokenType, isNaN(digits) ? DEFAULT_TOKEN_DIGITS : digits),
       period: this.standardPeriodForType(tokenType, isNaN(period) ? DEFAULT_TOKEN_PERIOD : period),
       counter: this.normalizeTokenCounter(isNaN(counter) ? 0 : counter),
+      steamData: tokenType === 'Steam' ? steamData : '',
       createdAt: Date.now()
     };
   }
@@ -5750,7 +10351,7 @@ struct Index {
     }
   }
 
-  private async hydrateTokenLogos(records: TokenRecord[]): Promise<TokenRecord[]> {
+  private async hydrateTokenLogos(records: TokenRecord[], refreshResolved: boolean = false): Promise<TokenRecord[]> {
     const context = this.getAbilityContext();
     if (!context) {
       return records;
@@ -5758,7 +10359,7 @@ struct Index {
     const result: TokenRecord[] = [];
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
-      if (!this.needsLogoHydration(record)) {
+      if (!this.needsLogoHydration(record, refreshResolved)) {
         result.push(record);
         if (this.importProgressVisible) {
           this.updateImportProgress(index + 1, index + 1, this.importRejectedCount, '正在导入令牌');
@@ -5770,7 +10371,7 @@ struct Index {
         this.logoLookupIssuer(record.type, record.remark),
         this.logoLookupName(record.type, record.name)
       );
-      result.push(logo ? this.withResolvedLogo(record, logo) : record);
+      result.push(logo ? this.withResolvedLogo(record, logo) : this.withoutUnavailableResolvedLogo(record, refreshResolved));
       if (this.importProgressVisible) {
         this.updateImportProgress(index + 1, index + 1, this.importRejectedCount, '正在导入令牌');
       }
@@ -5793,11 +10394,25 @@ struct Index {
       digits: record.digits,
       period: record.period,
       counter: record.counter,
-      createdAt: record.createdAt
+      steamData: record.steamData,
+      createdAt: record.createdAt,
+      modifiedTime: record.modifiedTime
     };
   }
 
-  private needsLogoHydration(record: TokenRecord): boolean {
+  private withoutUnavailableResolvedLogo(record: TokenRecord, refreshResolved: boolean): TokenRecord {
+    if (!refreshResolved || record.logoSource === LOGO_SOURCE_MANUAL) {
+      return record;
+    }
+    const result = this.cloneTokenRecord(record);
+    result.logoUri = '';
+    result.logoLightUri = '';
+    result.logoDarkUri = '';
+    result.logoSource = '';
+    return result;
+  }
+
+  private needsLogoHydration(record: TokenRecord, refreshResolved: boolean = false): boolean {
     if (this.normalizeTokenType(record.type) === 'Steam' && record.logoSource !== 'simple-icons-v2:steam') {
       return true;
     }
@@ -5805,6 +10420,9 @@ struct Index {
       return false;
     }
     const source = record.logoSource || '';
+    if (refreshResolved) {
+      return true;
+    }
     if (source.indexOf('simple-icons:') === 0 || source.indexOf('simple-icons-brand:') === 0) {
       return true;
     }
@@ -5869,6 +10487,7 @@ struct Index {
   private async openCardTokenPicker(): Promise<void> {
     this.cardSelectedTokenIds = await FormManager.getCardTokenIds();
     this.pendingCardTokenIds = [...this.cardSelectedTokenIds];
+    this.bumpSheetSelectionRevision();
     this.showCardTokenPicker = true;
   }
 
@@ -5898,15 +10517,15 @@ struct Index {
   private togglePendingCardToken(tokenId: string): void {
     const index = this.pendingCardTokenIndex(tokenId);
     if (index >= 0) {
-      this.pendingCardTokenIds.splice(index, 1);
+      this.pendingCardTokenIds = this.pendingCardTokenIds.filter((_: string, i: number) => i !== index);
     } else {
       if (this.pendingCardTokenIds.length >= CARD_TOKEN_LIMIT) {
         this.showToast(this.tf('最多选择{0}个令牌', [`${CARD_TOKEN_LIMIT}`]));
         return;
       }
-      this.pendingCardTokenIds.push(tokenId);
+      this.pendingCardTokenIds = [...this.pendingCardTokenIds, tokenId];
     }
-    this.pendingCardTokenIds = [...this.pendingCardTokenIds];
+    this.bumpSheetSelectionRevision();
   }
 
   private async commitCardTokenSelection(): Promise<void> {
@@ -5979,6 +10598,7 @@ struct Index {
         digits: this.selectedTokenDigits(),
         period: this.selectedTokenPeriod(),
         counter: editingToken ? this.normalizeTokenCounter(editingToken.counter) : 0,
+        steamData: editingToken && type === 'Steam' ? editingToken.steamData : '',
         createdAt: editingToken ? editingToken.createdAt : Date.now()
       };
       const nextTokens = editingId.length > 0 ?

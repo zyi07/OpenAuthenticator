@@ -1,0 +1,13 @@
+export const WIDGET_CARD_PADDING: number = 16;
+export const WIDGET_CONTENT_GAP: number = 8;
+export const WIDGET_TEXT_GAP: number = 2;
+export const WIDGET_CARD_RADIUS: number = 32;
+export const WIDGET_BUTTON_SIZE: number = 32;
+export const WIDGET_BUTTON_RADIUS: number = 16;
+export const WIDGET_REFRESH_ICON_SIZE: number = 20;
+export const WIDGET_NAME_SIZE: number = 12;
+export const WIDGET_CODE_SIZE: number = 24;
+export const WIDGET_TITLE_SIZE: number = 12;
+export const WIDGET_TITLE_TRAILING_SPACE: number = 40;
+export const WIDGET_LOADING_SIZE: number = 40;
+export const WIDGET_REFRESH_DELAY: number = 500;

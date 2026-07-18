@@ -7,6 +7,7 @@ const DOMAIN = 0x0000;
 const TRANSPARENT_SYSTEM_BAR = '#00000000';
 const STATUS_BAR_HEIGHT_KEY = 'tool2fa_statusBarHeight';
 const NAVI_INDICATOR_HEIGHT_KEY = 'tool2fa_naviIndicatorHeight';
+const FORCE_DARK_SYSTEM_BARS_KEY = 'tool2fa_forceDarkSystemBars';
 
 export default class EntryAbility extends UIAbility {
   private hasSafeAreaListener: boolean = false;
@@ -96,7 +97,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   private publishColorMode(colorMode?: ConfigurationConstant.ColorMode): void {
-    AppStorage.setOrCreate<boolean>('tool2fa_systemDark', this.isDarkMode(colorMode));
+    const isDark = this.isDarkMode(colorMode);
+    AppStorage.setOrCreate<boolean>('tool2fa_systemDark', isDark);
+    AppStorage.set<boolean>('tool2fa_systemDark', isDark);
   }
 
   private isDarkMode(colorMode?: ConfigurationConstant.ColorMode): boolean {
@@ -105,14 +108,16 @@ export default class EntryAbility extends UIAbility {
 
   private async configureWindowAppearance(mainWindow: window.Window, isDark: boolean): Promise<void> {
     try {
-      mainWindow.setWindowBackgroundColor(isDark ? '#FF000000' : '#FFF2F3F5');
+      const forceDarkSystemBars = AppStorage.get<boolean>(FORCE_DARK_SYSTEM_BARS_KEY) === true;
+      const useDark = forceDarkSystemBars || isDark;
+      mainWindow.setWindowBackgroundColor(useDark ? '#FF000000' : '#FFF2F3F5');
       await mainWindow.setWindowSystemBarProperties({
         statusBarColor: TRANSPARENT_SYSTEM_BAR,
         navigationBarColor: TRANSPARENT_SYSTEM_BAR,
-        isStatusBarLightIcon: isDark,
-        isNavigationBarLightIcon: isDark,
-        navigationBarContentColor: isDark ? '#FFEEEEEE' : '#FF1A1A1A',
-        statusBarContentColor: isDark ? '#FFEEEEEE' : '#FF1A1A1A'
+        isStatusBarLightIcon: useDark,
+        isNavigationBarLightIcon: useDark,
+        navigationBarContentColor: useDark ? '#FFEEEEEE' : '#FF1A1A1A',
+        statusBarContentColor: useDark ? '#FFEEEEEE' : '#FF1A1A1A'
       });
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to update window colors. Cause: %{public}s', JSON.stringify(err));

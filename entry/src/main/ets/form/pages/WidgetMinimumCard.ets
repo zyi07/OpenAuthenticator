@@ -1,4 +1,13 @@
+import { WidgetLoadingOverlay } from './WidgetLoadingOverlay';
 import { WidgetTokenItem } from './WidgetTokenItem';
+import {
+  WIDGET_BUTTON_RADIUS,
+  WIDGET_BUTTON_SIZE,
+  WIDGET_CARD_PADDING,
+  WIDGET_CARD_RADIUS,
+  WIDGET_REFRESH_DELAY,
+  WIDGET_REFRESH_ICON_SIZE
+} from './WidgetMetrics';
 
 let N_STORAGE: LocalStorage = new LocalStorage();
 
@@ -8,64 +17,68 @@ struct WidgetMinimumCard {
   @LocalStorageProp('t1Name') t1Name: string = '暂无令牌';
   @LocalStorageProp('t1Remark') t1Remark: string = '';
   @LocalStorageProp('t1Code') t1Code: string = '';
+  @State private isRefreshing: boolean = false;
+  @State private loadingOpacity: number = 0;
+
+  private refresh(): void {
+    if (this.isRefreshing) {
+      return;
+    }
+    this.isRefreshing = true;
+    animateTo({
+      duration: WIDGET_REFRESH_DELAY,
+      curve: Curve.Linear,
+      onFinish: (): void => {
+        postCardAction(this, {
+          'action': 'message',
+          'params': {
+            'msgTest': 'refresh:' + Date.now().toString()
+          }
+        });
+        this.loadingOpacity = 0;
+        this.isRefreshing = false;
+      }
+    }, (): void => {
+      this.loadingOpacity = 1;
+    });
+  }
 
   @Builder
   RefreshButton() {
     Button({ type: ButtonType.Circle, stateEffect: true }) {
-      Image($r('app.media.ic_widget_refresh'))
-        .width(12)
-        .height(12)
-        .objectFit(ImageFit.Contain)
+      SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
+        .fontSize(WIDGET_REFRESH_ICON_SIZE)
+        .fontWeight(FontWeight.Regular)
+        .fontColor([$r('app.color.widget_refresh_icon')])
     }
-    .width(24)
-    .height(24)
+    .width(WIDGET_BUTTON_SIZE)
+    .height(WIDGET_BUTTON_SIZE)
     .backgroundColor($r('app.color.widget_refresh_background'))
-    .borderRadius(12)
+    .borderRadius(WIDGET_BUTTON_RADIUS)
     .padding(0)
-    .offset({ x: -8, y: 6 })
+    .offset({ x: -WIDGET_CARD_PADDING, y: 0 })
+    .enabled(!this.isRefreshing)
     .onClick(() => {
-      postCardAction(this, {
-        'action': 'message',
-        'params': {
-          'msgTest': `refresh:${Date.now()}`
-        }
-      });
+      this.refresh();
     })
   }
 
   build() {
-    Stack({ alignContent: Alignment.TopEnd }) {
-      Image($r('app.media.widget_pattern'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-        .opacity(0.46)
-
+    Stack({ alignContent: Alignment.End }) {
       Button({ type: ButtonType.Normal, stateEffect: true }) {
-        Row() {
-          WidgetTokenItem({
-            name: this.t1Name,
-            remark: this.t1Remark,
-            code: this.t1Code,
-            nameSize: 12,
-            codeSize: 24
-          })
-          .width('100%')
-          .height('100%')
-          .padding({ left: 10, right: 4, top: 6, bottom: 6 })
-
-          Blank()
-            .width(44)
-            .height('100%')
-        }
-        .height('100%')
+        WidgetTokenItem({
+          name: this.t1Name,
+          remark: this.t1Remark,
+          code: this.t1Code
+        })
         .width('100%')
       }
       .width('100%')
       .height('100%')
-      .padding(0)
-      .borderRadius(18)
+      .padding(WIDGET_CARD_PADDING)
+      .borderRadius(WIDGET_CARD_RADIUS)
       .backgroundColor('#00000000')
+      .enabled(!this.isRefreshing)
       .onClick(() => {
         postCardAction(this, {
           'action': 'router',
@@ -75,10 +88,14 @@ struct WidgetMinimumCard {
       })
 
       this.RefreshButton()
+
+      if (this.isRefreshing) {
+        WidgetLoadingOverlay({ overlayOpacity: this.loadingOpacity })
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.widget_card_background'))
-    .borderRadius(18)
+    .borderRadius(WIDGET_CARD_RADIUS)
   }
 }

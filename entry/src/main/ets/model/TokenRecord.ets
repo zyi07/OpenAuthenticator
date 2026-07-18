@@ -12,6 +12,7 @@ export interface TokenRecord {
   digits?: number;
   period?: number;
   counter?: number;
+  steamData?: string;
   createdAt: number;
   modifiedTime?: number;
 }
@@ -35,6 +36,7 @@ export function sanitizeTokenRecord(record: TokenRecord): TokenRecord {
     digits: normalizeDigits(type, record.digits),
     period: normalizePeriod(type, record.period),
     counter: normalizeCounter(record.counter),
+    steamData: record.steamData || '',
     createdAt: record.createdAt || Date.now(),
     modifiedTime: record.modifiedTime || record.createdAt || Date.now()
   };

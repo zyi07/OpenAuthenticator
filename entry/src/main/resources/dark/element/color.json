@@ -13,8 +13,28 @@
       "value": "#F2F2F2"
     },
     {
+      "name": "widget_text_secondary",
+      "value": "#7F7F84"
+    },
+    {
+      "name": "widget_code",
+      "value": "#F2F2F2"
+    },
+    {
+      "name": "widget_divider",
+      "value": "#3A3A3C"
+    },
+    {
       "name": "widget_refresh_background",
-      "value": "#33888888"
+      "value": "#2B2B2D"
+    },
+    {
+      "name": "widget_refresh_icon",
+      "value": "#F2F2F2"
+    },
+    {
+      "name": "widget_loading_overlay",
+      "value": "#E6000000"
     }
   ]
 }
