@@ -7,6 +7,7 @@
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
     <img alt="Version" src="https://img.shields.io/badge/Version-1.3.3-72A28B">
     <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Tablet%20%7C%202in1-6F98AE">
+    <img alt="License" src="https://img.shields.io/badge/License-MIT-4C8BF5">
   </p>
 </div>
 
@@ -204,3 +205,7 @@ build_project --build_mode release
 ## 贡献
 
 欢迎通过 GitCode Issue 提交问题与建议。提交问题时请移除真实账号、密钥、二维码、令牌值和敏感日志。
+
+## 开源协议
+
+本项目采用 [MIT License](LICENSE) 开源。你可以使用、复制、修改、合并、发布、分发、再许可或销售本软件，但须保留原始版权声明与许可声明。本软件按“原样”提供，不附带任何形式的担保。
