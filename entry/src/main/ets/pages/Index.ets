@@ -32,7 +32,7 @@ import {
   hdsEffect,
   hdsMaterial
 } from '@kit.UIDesignKit';
-import { CloudSyncState, TokenRepository } from '../data/TokenRepository';
+import { CloudStageResult, CloudSyncState, TokenRepository } from '../data/TokenRepository';
 import { TokenRecord } from '../model/TokenRecord';
 import { Totp } from '../utils/Totp';
 import { SettingsRepository } from '../data/SettingsRepository';
@@ -418,6 +418,7 @@ struct Index {
   @State private cloudLastSyncTime: number = 0;
   @State private cloudSyncing: boolean = false;
   @State private cloudSyncRefreshKey: number = 0;
+  private cloudMirrorMerging: boolean = false;
   @State private onboardingCompleted: boolean = false;
   @State private showOnboarding: boolean = false;
   @State private onboardingPage: number = 0;
@@ -427,8 +428,7 @@ struct Index {
 
   aboutToAppear(): void {
     this.refreshSystemLanguage();
-    this.loadTokens();
-    this.loadSettings();
+    this.initializeAppData();
     this.loadCardTokenIds();
     this.timerId = setInterval(() => {
       if (!this.isHomeListScrolling &&
@@ -548,6 +548,12 @@ struct Index {
   private tokenDragReordered: boolean = false;
   private wearMessageReceivers: WearMessageReceiver[] = [];
   private thirdPartyScroller: Scroller = new Scroller();
+
+  private async initializeAppData(): Promise<void> {
+    await this.loadTokens();
+    await this.loadSettings();
+  }
+
   private async loadSettings(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
@@ -584,8 +590,9 @@ struct Index {
     this.steamEnhancedAccess = settings.steamEnhancedAccess;
     this.steamGatewayUrl = settings.steamGatewayUrl;
     this.steamGatewayToken = settings.steamGatewayToken;
-    this.onboardingCompleted = settings.onboardingCompleted;
-    this.showOnboarding = !settings.onboardingCompleted;
+    const migratedExistingUser = !settings.onboardingCompleted && this.tokens.length > 0;
+    this.onboardingCompleted = settings.onboardingCompleted || migratedExistingUser;
+    this.showOnboarding = !this.onboardingCompleted;
     if (this.showOnboarding) {
       this.showUpdateNotice = false;
     }
@@ -607,6 +614,10 @@ struct Index {
       this.registerWearSyncReceivers();
     }
     this.settingsLoaded = true;
+    if (migratedExistingUser) {
+      await this.saveSettings();
+      console.info('Skipped onboarding for upgraded user with existing local tokens');
+    }
     this.scheduleUpdateNoticePresentation();
     hilog.info(APPLOCK_DOMAIN, APPLOCK_TAG, 'loadSettings: appLock=%{public}d, isLocked=%{public}d, huaweiLoggedIn=%{public}d', this.appLockEnabled ? 1 : 0, this.isLocked ? 1 : 0, this.isHuaweiLoggedIn ? 1 : 0);
   }
@@ -3756,15 +3767,15 @@ struct Index {
         this.ImmersionCardSurface(ME_ROW_HEIGHT * 3 + 2, ME_CARD_RADIUS)
       }
       Column() {
-        this.CloudSpaceActionRow('手动推送', () => {
+        this.CloudSpaceActionRow('手动推送', true, () => {
           this.pushTokensToCloud();
         })
         this.MeCardDivider()
-        this.CloudSpaceActionRow('手动获取', () => {
+        this.CloudSpaceActionRow('手动获取', true, () => {
           this.pullTokensFromCloud();
         })
         this.MeCardDivider()
-        this.CloudSpaceActionRow('云空间管理', () => {
+        this.CloudSpaceActionRow('云空间管理', false, () => {
           this.openCloudSpaceSettings();
         })
       }
@@ -3933,7 +3944,7 @@ struct Index {
         this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
       }
       Column() {
-        this.CloudSpaceActionRow('选择同步到手表端的令牌', () => {
+        this.CloudSpaceActionRow('选择同步到手表端的令牌', false, () => {
           this.openWatchTokenPicker();
         })
         this.MeCardDivider()
@@ -4787,12 +4798,13 @@ struct Index {
   }
 
   @Builder
-  private CloudSpaceActionRow(label: string, action: () => void) {
+  private CloudSpaceActionRow(label: string, requiresHuaweiLogin: boolean, action: () => void) {
     Row() {
       Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.primaryTextColor())
+        .fontColor(requiresHuaweiLogin && !this.isHuaweiLoggedIn ? this.secondaryTextColor() :
+          this.primaryTextColor())
         .layoutWeight(1)
 
       if (this.cloudSyncing && (label === '手动推送' || label === '手动获取')) {
@@ -4807,11 +4819,17 @@ struct Index {
     .width('100%')
     .height(ME_ROW_HEIGHT)
     .alignItems(VerticalAlign.Center)
-    .opacity(this.cloudSyncing && (label === '手动推送' || label === '手动获取') ? 0.6 : 1)
+    .opacity((this.cloudSyncing && (label === '手动推送' || label === '手动获取')) ||
+      (requiresHuaweiLogin && !this.isHuaweiLoggedIn) ? 0.45 : 1)
     .onClick(() => {
-      if (!this.cloudSyncing) {
-        action();
+      if (requiresHuaweiLogin && !this.isHuaweiLoggedIn) {
+        this.showToast('请先登录华为账号');
+        return;
       }
+      if (this.cloudSyncing) {
+        return;
+      }
+      action();
     })
   }
 
@@ -5268,11 +5286,11 @@ struct Index {
   @Builder
   private SettingsCardWidgetCardContent() {
     Column() {
-      this.CloudSpaceActionRow('选择卡片显示的令牌', () => {
+      this.CloudSpaceActionRow('选择卡片显示的令牌', false, () => {
         this.openCardTokenPicker();
       })
       this.MeCardDivider()
-      this.CloudSpaceActionRow('选择服务卡片', () => {
+      this.CloudSpaceActionRow('选择服务卡片', false, () => {
         this.openSystemFormManager();
       })
       this.MeCardDivider()
@@ -7759,12 +7777,17 @@ struct Index {
   }
 
   private async toggleCloudBackup(isOn: boolean): Promise<void> {
+    if (this.cloudSyncing) {
+      this.showToast('正在同步，请稍候');
+      return;
+    }
     if (!isOn) {
-      this.beginCloudSync('同步中');
-      await this.pullCloudTokensIntoLocal(false);
-      await this.startCloudPush(false, true);
-      await this.configureCloudAutoSync(false);
+      if (!await this.configureCloudAutoSync(false)) {
+        this.showToast('关闭自动同步失败，请稍后重试');
+        return;
+      }
       this.cloudBackupEnabled = false;
+      this.cloudSyncStatus = '云空间自动同步已关闭';
       this.saveSettings();
       this.showToast('云空间自动同步已关闭');
       return;
@@ -7789,6 +7812,26 @@ struct Index {
       return;
     }
 
+    if (!await this.configureCloudAutoSync(false)) {
+      this.cloudBackupEnabled = false;
+      this.cloudSyncStatus = '无法开启云同步';
+      this.saveSettings();
+      this.showToast('请确认已登录华为账号并开启云空间');
+      return;
+    }
+
+    if (!await this.startCloudPush(false)) {
+      this.cloudBackupEnabled = false;
+      this.saveSettings();
+      this.showCloudSyncFailure();
+      return;
+    }
+    if (!await this.pullCloudTokensIntoLocal(false)) {
+      this.cloudBackupEnabled = false;
+      this.saveSettings();
+      this.showCloudSyncFailure();
+      return;
+    }
     if (!await this.configureCloudAutoSync(true)) {
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '无法开启云同步';
@@ -7798,11 +7841,10 @@ struct Index {
     }
 
     this.cloudBackupEnabled = true;
+    this.cloudSyncStatus = '同步成功';
+    this.cloudLastSyncTime = Date.now();
     this.saveSettings();
     this.showToast('云空间自动同步已开启');
-    this.beginCloudSync('同步中');
-    await this.pullCloudTokensIntoLocal(false);
-    await this.startCloudPush(false, true);
   }
 
   private async configureCloudAutoSync(enabled: boolean): Promise<boolean> {
@@ -7812,43 +7854,46 @@ struct Index {
     }
     return await TokenRepository.configureCloudSync(context, enabled, (state: CloudSyncState): void => {
       this.updateCloudSyncState(state);
-      if (state.finished && state.success) {
-        this.loadTokens();
+      if (enabled && state.finished && state.success && state.status === '云端数据已更新') {
+        this.mergeCloudMirrorIntoLocal();
       }
     });
   }
 
   private async pushTokensToCloud(): Promise<void> {
+    if (!this.isHuaweiLoggedIn) {
+      this.showToast('请先登录华为账号');
+      return;
+    }
     this.showToast('同步中');
     await this.startCloudPush(true);
   }
 
-  private async startCloudPush(showOperationToast: boolean, keepCurrentSyncState: boolean = false): Promise<void> {
+  private async startCloudPush(showOperationToast: boolean): Promise<boolean> {
     console.info(`Cloud push requested: manual=${showOperationToast}, syncing=${this.cloudSyncing}, ` +
       `autoSync=${this.cloudBackupEnabled}, records=${this.tokens.length}`);
-    if (this.cloudSyncing && !keepCurrentSyncState) {
+    if (this.cloudSyncing) {
       if (showOperationToast) {
         this.showToast('正在同步，请稍候');
       }
-      return;
+      return false;
     }
     const context = this.getAbilityContext();
     if (!context) {
       if (showOperationToast) {
         this.showToast('无法访问云空间');
       }
-      return;
+      return false;
     }
-    if (!keepCurrentSyncState || !this.cloudSyncing) {
-      this.beginCloudSync('同步中');
-    }
+    this.beginCloudSync('正在推送');
     if (!await this.ensureDataSyncPermission()) {
       this.finishCloudSyncFailure('未授权云同步', showOperationToast);
-      return;
+      return false;
     }
-    if (!await TokenRepository.configureCloudSync(context, this.cloudBackupEnabled)) {
+    const restoreAutoSync = this.cloudBackupEnabled;
+    if (!await TokenRepository.configureCloudSync(context, false)) {
       this.finishCloudSyncFailure('云同步不可用', showOperationToast);
-      return;
+      return false;
     }
     const success = await TokenRepository.pushToCloud(
       context,
@@ -7857,18 +7902,31 @@ struct Index {
         this.updateCloudSyncState(state);
       }
     );
+    if (restoreAutoSync) {
+      await this.configureCloudAutoSync(true);
+    }
     if (!success) {
       if (this.cloudSyncing) {
         this.finishCloudSyncFailure('推送失败', showOperationToast);
       } else if (showOperationToast) {
         this.showCloudSyncFailure();
       }
-    } else if (this.cloudSyncing) {
-      this.updateCloudSyncState({ status: '同步成功', finished: true, success: true });
+      return false;
     }
+    if (this.cloudSyncing) {
+      this.updateCloudSyncState({ status: '推送成功', finished: true, success: true });
+    }
+    if (showOperationToast) {
+      this.showToast('推送成功');
+    }
+    return true;
   }
 
   private async pullTokensFromCloud(): Promise<void> {
+    if (!this.isHuaweiLoggedIn) {
+      this.showToast('请先登录华为账号');
+      return;
+    }
     console.info(`Manual cloud pull tapped: syncing=${this.cloudSyncing}, autoSync=${this.cloudBackupEnabled}`);
     if (this.cloudSyncing) {
       this.showToast('正在同步，请稍候');
@@ -7887,13 +7945,14 @@ struct Index {
       return false;
     }
     if (!this.cloudSyncing) {
-      this.beginCloudSync('同步中');
+      this.beginCloudSync('正在获取');
     }
     if (!await this.ensureDataSyncPermission()) {
       this.finishCloudSyncFailure('未授权云同步', showOperationToast);
       return false;
     }
-    if (!await TokenRepository.configureCloudSync(context, this.cloudBackupEnabled)) {
+    const restoreAutoSync = this.cloudBackupEnabled;
+    if (!await TokenRepository.configureCloudSync(context, false)) {
       this.finishCloudSyncFailure('云同步不可用', showOperationToast);
       return false;
     }
@@ -7901,6 +7960,9 @@ struct Index {
     const records = await TokenRepository.pullFromCloud(context, (state: CloudSyncState): void => {
       this.updateCloudSyncState(state);
     });
+    if (restoreAutoSync) {
+      await this.configureCloudAutoSync(true);
+    }
     if (!records) {
       if (this.cloudSyncing) {
         this.finishCloudSyncFailure('获取失败', showOperationToast);
@@ -7911,14 +7973,69 @@ struct Index {
     }
     const cloudRecords = await this.hydrateTokenLogos(records, true);
     const mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(localSnapshot, cloudRecords);
-    await TokenRepository.save(context, mergedRecords);
+    if (!await TokenRepository.save(context, mergedRecords)) {
+      this.finishCloudSyncFailure('本地更新失败', showOperationToast);
+      return false;
+    }
     this.tokens = mergedRecords;
     this.logoRenderVersion += 1;
     this.updateWidgetCards();
     if (this.cloudSyncing) {
-      this.updateCloudSyncState({ status: '同步成功', finished: true, success: true });
+      this.updateCloudSyncState({ status: '获取成功', finished: true, success: true });
+    }
+    if (showOperationToast) {
+      this.showToast('获取成功');
     }
     return true;
+  }
+
+  private async mergeCloudMirrorIntoLocal(): Promise<void> {
+    if (this.cloudMirrorMerging) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    this.cloudMirrorMerging = true;
+    try {
+      const cloudRecords = await TokenRepository.loadCloudRecords(context);
+      const hydratedRecords = await this.hydrateTokenLogos(cloudRecords, true);
+      const excludedIds = await TokenRepository.loadLocalCloudExclusions(context);
+      const visibleCloudRecords = hydratedRecords.filter((record: TokenRecord): boolean => {
+        return !excludedIds.includes(record.id);
+      });
+      const mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(this.tokens, visibleCloudRecords);
+      if (await TokenRepository.save(context, mergedRecords)) {
+        this.tokens = mergedRecords;
+        this.logoRenderVersion += 1;
+        this.updateWidgetCards();
+      }
+    } finally {
+      this.cloudMirrorMerging = false;
+    }
+  }
+
+  private async queueTokensForAutoCloudPush(): Promise<void> {
+    if (!this.cloudBackupEnabled) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    if (!this.cloudSyncing) {
+      this.beginCloudSync('正在推送');
+    }
+    const result: CloudStageResult = await TokenRepository.stageAutoPush(context, this.tokens);
+    if (!result.success) {
+      this.finishCloudSyncFailure('自动推送失败', false);
+      this.showToast('本地已保存，云端同步失败');
+      return;
+    }
+    if (!result.changed) {
+      this.updateCloudSyncState({ status: '同步成功', finished: true, success: true });
+    }
   }
 
   private beginCloudSync(status: string): void {
@@ -7965,7 +8082,7 @@ struct Index {
     const usedIds = new Set<string>();
     for (const localRecord of localRecords) {
       const cloudRecord = cloudMap.get(localRecord.id);
-      mergedRecords.push(cloudRecord || localRecord);
+      mergedRecords.push(cloudRecord ? this.mergeCloudToken(localRecord, cloudRecord) : localRecord);
       usedIds.add(localRecord.id);
     }
     for (const cloudRecord of cloudRecords) {
@@ -7974,6 +8091,27 @@ struct Index {
       }
     }
     return mergedRecords;
+  }
+
+  private mergeCloudToken(localRecord: TokenRecord, cloudRecord: TokenRecord): TokenRecord {
+    return {
+      id: cloudRecord.id,
+      name: cloudRecord.name,
+      remark: cloudRecord.remark,
+      type: cloudRecord.type,
+      algorithm: cloudRecord.algorithm,
+      secret: cloudRecord.secret,
+      logoUri: cloudRecord.logoUri,
+      logoLightUri: cloudRecord.logoLightUri,
+      logoDarkUri: cloudRecord.logoDarkUri,
+      logoSource: cloudRecord.logoSource,
+      digits: cloudRecord.digits,
+      period: cloudRecord.period,
+      counter: cloudRecord.counter,
+      steamData: localRecord.steamData,
+      createdAt: cloudRecord.createdAt,
+      modifiedTime: Date.now()
+    };
   }
 
   private shouldShowCloudDisabledHint(): boolean {
@@ -8258,18 +8396,12 @@ struct Index {
   }
 
   private async applyWearSyncPayload(records: TokenRecord[]): Promise<void> {
-    const context = this.getAbilityContext();
-    if (!context) {
-      return;
-    }
     const validRecords = this.uniqueTokenRecordsWithValidation(records, false);
-    if (await TokenRepository.save(context, validRecords)) {
-      this.tokens = validRecords;
+    if (await this.persistTokens(validRecords, '')) {
       this.watchSelectedTokenIds = validRecords.map((token: TokenRecord) => token.id);
       this.watchPushStatus = '接收成功';
       this.watchLastPushTime = Date.now();
       this.saveSettings();
-      this.updateWidgetCards();
     }
   }
 
@@ -8278,7 +8410,48 @@ struct Index {
   }
 
   private async ensureDataSyncPermission(): Promise<boolean> {
-    return await this.ensurePermission(DATA_SYNC_PERMISSION);
+    const context = this.getAbilityContext();
+    if (!context) {
+      return false;
+    }
+    try {
+      const manager = abilityAccessCtrl.createAtManager();
+      const status = manager.getSelfPermissionStatus(DATA_SYNC_PERMISSION);
+      if (status === abilityAccessCtrl.PermissionStatus.GRANTED) {
+        return true;
+      }
+      if (status === abilityAccessCtrl.PermissionStatus.DENIED) {
+        const settingResults = await manager.requestPermissionOnSetting(context, [DATA_SYNC_PERMISSION]);
+        return settingResults.length > 0 &&
+          settingResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      }
+      if (status !== abilityAccessCtrl.PermissionStatus.NOT_DETERMINED) {
+        console.error('Data sync permission is unavailable, status=' + status.toString());
+        return false;
+      }
+
+      await this.delay(80);
+      const result = await manager.requestPermissionsFromUser(context, [DATA_SYNC_PERMISSION]);
+      if (result.authResults.length > 0 &&
+        result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return true;
+      }
+
+      let dialogShown = false;
+      if (result.dialogShownResults && result.dialogShownResults.length > 0) {
+        dialogShown = result.dialogShownResults[0];
+      }
+      if (!dialogShown &&
+        manager.getSelfPermissionStatus(DATA_SYNC_PERMISSION) === abilityAccessCtrl.PermissionStatus.DENIED) {
+        const settingResults = await manager.requestPermissionOnSetting(context, [DATA_SYNC_PERMISSION]);
+        return settingResults.length > 0 &&
+          settingResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      }
+      return false;
+    } catch (error) {
+      console.error(`Failed to request data sync permission: ${JSON.stringify(error)}`);
+      return false;
+    }
   }
 
   private async ensurePermission(permission: Permissions): Promise<boolean> {
@@ -9067,6 +9240,7 @@ struct Index {
     this.onboardingCompleted = true;
     this.showOnboarding = false;
     this.saveSettings();
+    this.loadTokens();
     this.scheduleUpdateNoticePresentation();
   }
 
@@ -9307,6 +9481,35 @@ struct Index {
   }
 
   private confirmDeleteToken(token: TokenRecord): void {
+    if (this.cloudBackupEnabled) {
+      this.getUIContext().showAlertDialog({
+        title: this.t('删除令牌'),
+        message: this.tf('请选择“{0}”的删除范围。', [token.name]),
+        autoCancel: true,
+        buttons: [
+          {
+            value: this.t('删除本地及云端'),
+            fontColor: ERROR_RED,
+            action: () => {
+              this.deleteTokenFromLocalAndCloud(token);
+            }
+          },
+          {
+            value: this.t('仅从本设备删除'),
+            action: () => {
+              this.deleteTokenFromLocal(token.id);
+            }
+          },
+          {
+            value: this.t('取消'),
+            action: () => {
+            }
+          }
+        ],
+        buttonDirection: DialogButtonDirection.VERTICAL
+      });
+      return;
+    }
     this.getUIContext().showAlertDialog({
       title: this.t('删除令牌'),
       message: this.tf('确定删除“{0}”？删除后无法恢复。', [token.name]),
@@ -9320,18 +9523,78 @@ struct Index {
         value: this.t('删除'),
         fontColor: ERROR_RED,
         action: () => {
-          this.deleteToken(token.id);
+          this.deleteTokenFromLocal(token.id);
         }
       }
     });
   }
 
-  private async deleteToken(tokenId: string): Promise<void> {
+  private async deleteTokenFromLocal(tokenId: string): Promise<void> {
+    const previousTokens = this.tokens.slice();
     const nextTokens = this.tokens.filter((token: TokenRecord) => token.id !== tokenId);
     if (nextTokens.length === this.tokens.length) {
       return;
     }
-    await this.persistTokens(nextTokens, '已删除');
+    if (!this.cloudBackupEnabled) {
+      await this.persistTokens(nextTokens, '已删除', false);
+      return;
+    }
+    if (!await this.persistTokens(nextTokens, '', false)) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context || !await TokenRepository.excludeCloudTokenFromLocal(context, tokenId)) {
+      await this.persistTokens(previousTokens, '', false);
+      this.showToast('仅本机删除失败，已恢复令牌');
+      return;
+    }
+    this.showToast('已从本设备删除');
+  }
+
+  private async deleteTokenFromLocalAndCloud(token: TokenRecord): Promise<void> {
+    if (this.cloudSyncing) {
+      this.showToast('正在同步，请稍候');
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('无法访问云空间');
+      return;
+    }
+    const previousTokens = this.tokens.slice();
+    const nextTokens = this.tokens.filter((record: TokenRecord) => record.id !== token.id);
+    if (nextTokens.length === previousTokens.length) {
+      return;
+    }
+    if (!await this.persistTokens(nextTokens, '', false)) {
+      return;
+    }
+    const restoreAutoSync = this.cloudBackupEnabled;
+    this.beginCloudSync('正在删除');
+    if (!await TokenRepository.configureCloudSync(context, false)) {
+      await this.persistTokens(previousTokens, '', false);
+      this.finishCloudSyncFailure('云同步不可用', true);
+      return;
+    }
+    const success = await TokenRepository.deleteFromCloud(
+      context,
+      token,
+      (state: CloudSyncState): void => {
+        this.updateCloudSyncState(state);
+      }
+    );
+    if (restoreAutoSync) {
+      await this.configureCloudAutoSync(true);
+    }
+    if (!success) {
+      await this.persistTokens(previousTokens, '', false);
+      this.showToast('云端删除失败，已恢复本地令牌');
+      return;
+    }
+    this.cloudSyncStatus = '删除成功';
+    this.cloudLastSyncTime = Date.now();
+    this.saveSettings();
+    this.showToast('已删除本地及云端');
   }
 
   private async scanTokenFromQrCode(): Promise<void> {
@@ -10454,6 +10717,9 @@ struct Index {
     if (await TokenRepository.save(context, nextTokens)) {
       this.tokens = nextTokens;
       this.updateWidgetCards();
+      if (this.cloudBackupEnabled) {
+        this.queueTokensForAutoCloudPush();
+      }
     }
   }
 
@@ -10617,7 +10883,11 @@ struct Index {
     }
   }
 
-  private async persistTokens(nextTokens: TokenRecord[], successMessage: string): Promise<boolean> {
+  private async persistTokens(
+    nextTokens: TokenRecord[],
+    successMessage: string,
+    syncCloud: boolean = true
+  ): Promise<boolean> {
     const context = this.getAbilityContext();
     if (!context) {
       this.showToast('保存失败，请重试');
@@ -10633,9 +10903,11 @@ struct Index {
     this.tokens = nextTokens;
     this.logoRenderVersion += 1;
     this.updateWidgetCards();
-    this.showToast(successMessage);
-    if (this.cloudBackupEnabled) {
-      this.startCloudPush(false);
+    if (successMessage.length > 0) {
+      this.showToast(successMessage);
+    }
+    if (syncCloud && this.cloudBackupEnabled) {
+      this.queueTokensForAutoCloudPush();
     }
 
     return true;

@@ -5,7 +5,7 @@
   <p>
     <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.0(23)-111111">
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
-    <img alt="Version" src="https://img.shields.io/badge/Version-1.0-72A28B">
+    <img alt="Version" src="https://img.shields.io/badge/Version-1.3.3-72A28B">
     <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Tablet%20%7C%202in1-6F98AE">
   </p>
 </div>
@@ -15,6 +15,24 @@
 OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模型与 HarmonyOS 原生系统能力开发的 2FA 令牌管理应用。应用支持 TOTP、HOTP、Steam 令牌，兼容 Google Authenticator 迁移二维码，提供本地存储、华为云空间同步、备份导出、服务卡片、多语言、深浅色模式和多端响应式布局。
 
 密钥属于高敏感数据。应用默认将令牌保存在本机应用私有数据中；导出的 JSON 文件或二维码图片请由用户自行妥善保管。
+
+## 下载与侧载
+
+- 当前版本：`1.3.3`（`versionCode 1000037`）
+- 系统要求：HarmonyOS `6.1.0(23)` 或更高版本
+- 支持设备：手机、平板与 2in1
+- 安装包：[下载 OpenAuthenticator v1.3.3 签名 HAP](https://api.gitcode.com/api/v5/repos/mroble/Authenticator/releases/v1.3.3/attach_files/OpenAuthenticator-v1.3.3.hap/download)
+- 版本说明：[CHANGELOG.md](CHANGELOG.md)
+- SHA-256：`947c78a0afe8e4618e7aa3b40734f0a57619511641e41e6630a12ec1b5c5bbe1`
+
+安装前请在设备上开启开发者模式和 USB 调试，在电脑安装并连接 HDC 后执行：
+
+```bash
+hdc list targets
+hdc app install -r OpenAuthenticator-v1.3.3.hap
+```
+
+看到 `successfully` 后即可从桌面启动“开源验证器”。安装包使用 HarmonyOS release / AppGallery 分发证书签名；系统是否允许直接从文件管理器打开 HAP 安装取决于设备版本和安全策略，遇到限制时请使用 HDC。升级安装会保留应用数据，但仍建议先在应用内导出备份。请只从本仓库的 [Releases](https://gitcode.com/mroble/Authenticator/releases) 页面下载安装包，并核对 SHA-256。
 
 ## 应用介绍图
 
@@ -118,7 +136,7 @@ entry/src/main/ets/
 - HarmonyOS SDK `6.1.0(23)` release API
 - ArkTS Stage 模型
 - Bundle：`com.example.tool_2fa`
-- Version：`1.0`
+- Version：`1.3.3`（`versionCode 1000037`）
 - 设备类型：phone、tablet、2in1
 
 DevEco Studio 中可直接构建，也可使用项目约定命令：
@@ -140,6 +158,8 @@ build_project --build_mode release
 5. 重新登录设备华为账号或重新安装应用后，再验证手动推送/手动获取。
 
 云侧容器名为 `tool_2fa_tokens`，数据类型名为 `tokens`。字段建议如下，其中 `id` 勾选主键，`secret` 使用 `Encrypted String`：
+
+端侧使用 `local_tokens` 保存本机完整令牌，使用与云端结构一致的 `tokens` 作为云同步镜像。手动推送会将本机令牌增量写入云端镜像后执行 `NATIVE_FIRST`；手动获取会执行 `CLOUD_FIRST` 后将云端全量记录增量合并到本机。`steamData` 等设备私有数据只保存在 `local_tokens`，不会进入云端。
 
 | 字段 | 云侧类型 |
 | --- | --- |
