@@ -39,13 +39,23 @@ import { SettingsRepository } from '../data/SettingsRepository';
 import { FormManager } from '../form/FormManager';
 import { GoogleAuthenticatorMigration, GoogleOtpParameter } from '../utils/GoogleAuthenticatorMigration';
 import { LogoResolver, LogoResolveResult } from '../utils/LogoResolver';
-import { SteamService } from '../data/SteamService';
+import { SteamQrLoginInfo, SteamService } from '../data/SteamService';
+import {
+  SteamAuthenticatorDraft,
+  SteamEnrollmentService,
+  SteamLoginChallenge,
+  SteamLoginSession
+} from '../data/SteamEnrollmentService';
 import {
   canUseSteamRemoteFeatures,
+  createSdaMaFile,
+  parseSdaMaFile,
   parseSteamGuardData,
+  serializeSteamGuardData,
   SteamConfirmation,
   SteamGuardData
 } from '../model/SteamGuardData';
+import { SteamMaFile } from '../utils/SteamMaFile';
 import {
   LANGUAGE_EN_GB,
   LANGUAGE_EN_US,
@@ -126,6 +136,13 @@ const CAMLINK_URL: string =
 const QQ_GROUP_NUMBER: string = '1061983927';
 const APP_VERSION: string = 'V1.2.0';
 const UPDATE_NOTICE_VERSION: string = 'V1.2.0-appearance-steam-1';
+const STEAM_ENROLLMENT_RISK: string = 'risk';
+const STEAM_ENROLLMENT_CREDENTIALS: string = 'credentials';
+const STEAM_ENROLLMENT_GUARD: string = 'guard';
+const STEAM_ENROLLMENT_ACTIVATION: string = 'activation';
+const STEAM_ENROLLMENT_RECOVERY: string = 'recovery';
+const STEAM_CLOUD_SYNC_NOTICE: string =
+  '由于steam安全策略限制，完整的登录凭证、交易信息无法同步到云空间，仅支持同步通用的steam密钥到云端，其他设备无法使用扫码登录等功能，但可以查看验证码';
 const FORM_TEXT_SIZE: number = 16;
 const PAGE_CARD_GAP: number = 10;
 const FORM_ROW_HEIGHT: number = 60;
@@ -202,7 +219,7 @@ const WATCH_TOKEN_CODE_SIZE: number = 28;
 const WATCH_SYNC_ACTION: string = 'tool2fa.watch.tokens.replace';
 const SHEET_TITLE_BLUR_HEIGHT: number = 56;
 const SHEET_HORIZONTAL_PADDING: number = 20;
-const SHEET_CONTENT_TOP_PADDING: number = 12;
+const SHEET_CONTENT_TOP_PADDING: number = 10;
 const SHEET_ROW_HEIGHT: number = 58;
 const SHEET_PRIMARY_TEXT_SIZE: number = 15;
 const SHEET_SECONDARY_TEXT_SIZE: number = 12;
@@ -355,6 +372,12 @@ interface SteamPendingConfirmation {
   confirmation: SteamConfirmation;
 }
 
+interface ImportFileContent {
+  uri: string;
+  fileName: string;
+  content: string;
+}
+
 @Entry
 @Component
 struct Index {
@@ -410,6 +433,7 @@ struct Index {
   @State private backgroundSelection: string = 'none';
   @State private customBackgroundUri: string = '';
   @State private backgroundBlurPercent: number = 0;
+  @State private globalBackgroundEnabled: boolean = false;
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
   @State private languageInput: string = LANGUAGE_SYSTEM;
@@ -480,6 +504,8 @@ struct Index {
   private userAgreementSheetScroller: Scroller = new Scroller();
   private updateNoticeSheetScroller: Scroller = new Scroller();
   private steamLoginSheetScroller: Scroller = new Scroller();
+  private steamDecryptSheetScroller: Scroller = new Scroller();
+  private steamEnrollmentSheetScroller: Scroller = new Scroller();
   private homePathStack: NavPathStack = new NavPathStack();
   private addPageScroller: Scroller = new Scroller();
   private onboardingSwiperController: SwiperController = new SwiperController();
@@ -541,6 +567,30 @@ struct Index {
   @State private showSteamLoginPicker: boolean = false;
   @State private pendingSteamLoginTokenId: string = '';
   @State private steamLoading: boolean = false;
+  @State private showSteamEnrollmentSheet: boolean = false;
+  @State private steamEnrollmentStage: string = STEAM_ENROLLMENT_RISK;
+  @State private steamRiskAccepted: boolean = false;
+  @State private steamEnrollmentAccount: string = '';
+  @State private steamEnrollmentPassword: string = '';
+  @State private steamEnrollmentCode: string = '';
+  @State private steamEnrollmentGuardType: number = 0;
+  @State private steamEnrollmentGuardMessage: string = '';
+  @State private steamEnrollmentGuardSubmitted: boolean = false;
+  @State private steamEnrollmentLoading: boolean = false;
+  @State private steamEnrollmentError: string = '';
+  @State private steamRecoveryCode: string = '';
+  @State private steamRecoverySaved: boolean = false;
+  @State private steamEnrollmentTokenId: string = '';
+  @State private showSteamDecryptSheet: boolean = false;
+  @State private steamDecryptPassword: string = '';
+  @State private steamDecrypting: boolean = false;
+  private pendingSteamEncryptedContent: string = '';
+  private pendingSteamManifestContent: string = '';
+  private pendingSteamFileName: string = '';
+  private steamEnrollmentChallenge: SteamLoginChallenge | null = null;
+  private steamEnrollmentSession: SteamLoginSession | null = null;
+  private steamAuthenticatorDraft: SteamAuthenticatorDraft | null = null;
+  private importUpdatedCount: number = 0;
   private steamConfirmationChecking: boolean = false;
   private steamConfirmationDialogVisible: boolean = false;
   private lastSteamConfirmationCheckMs: number = 0;
@@ -579,6 +629,7 @@ struct Index {
     this.backgroundSelection = settings.backgroundSelection;
     this.customBackgroundUri = settings.customBackgroundUri;
     this.backgroundBlurPercent = this.clamp(settings.backgroundBlurPercent, 0, 100);
+    this.globalBackgroundEnabled = settings.globalBackgroundEnabled;
     this.updateNoticeVersion = settings.updateNoticeVersion;
     this.languageInput = normalizeSelectedLanguage(settings.language);
     this.refreshSystemLanguage();
@@ -647,6 +698,7 @@ struct Index {
       backgroundSelection: this.backgroundSelection,
       customBackgroundUri: this.customBackgroundUri,
       backgroundBlurPercent: this.backgroundBlurPercent,
+      globalBackgroundEnabled: this.globalBackgroundEnabled,
       updateNoticeVersion: this.updateNoticeVersion,
       language: normalizeSelectedLanguage(this.languageInput),
       cloudSyncStatus: this.cloudSyncStatus,
@@ -789,6 +841,8 @@ struct Index {
       .height('100%')
 
       this.SteamLoginSheetAnchor()
+      this.SteamDecryptSheetAnchor()
+      this.SteamEnrollmentSheetAnchor()
       if (this.shouldShowAddFloatingButton()) {
         this.AddFloatingButton()
       }
@@ -1886,69 +1940,78 @@ struct Index {
   @Builder
   private SettingsNavDestination(name: string, pageInfos: Object) {
     NavDestination() {
-      HdsNavigation() {
-        if (name === 'addToken') {
-          this.AddTokenContent()
-        } else if (name === 'cloudSpace') {
-          this.CloudSpacePageContent()
-        } else if (name === 'watchSync') {
-          this.WatchSyncPageContent()
-        } else if (name === 'moreApps') {
-          this.MoreAppsPageContent()
-        } else if (name === 'donation') {
-          this.DonationPageContent()
-        } else if (name === 'about') {
-          this.AboutPageContent()
-        } else if (name === 'thirdParty') {
-          this.ThirdPartyPageContent()
-        } else if (name === 'appearanceSettings') {
-          this.AppearanceSettingsPageContent()
-        } else if (name === 'featureSecurity') {
-          this.FeatureSecurityPageContent()
-        } else {
-          this.SettingsPageContent()
+      Stack() {
+        if (this.globalBackgroundEnabled) {
+          this.PageBackground()
         }
-      }
-      .mode(NavigationMode.Stack)
-      .titleBar({
-        content: {
-          title: {
-            mainTitle: this.navigationDestinationTitle(name)
-          },
-          backIcon: {
-            action: () => {
-              if (name === 'addToken') {
-                this.backHome();
-              } else {
-                this.homePathStack.pop(true);
+
+        HdsNavigation() {
+          if (name === 'addToken') {
+            this.AddTokenContent()
+          } else if (name === 'cloudSpace') {
+            this.CloudSpacePageContent()
+          } else if (name === 'watchSync') {
+            this.WatchSyncPageContent()
+          } else if (name === 'moreApps') {
+            this.MoreAppsPageContent()
+          } else if (name === 'donation') {
+            this.DonationPageContent()
+          } else if (name === 'about') {
+            this.AboutPageContent()
+          } else if (name === 'thirdParty') {
+            this.ThirdPartyPageContent()
+          } else if (name === 'appearanceSettings') {
+            this.AppearanceSettingsPageContent()
+          } else if (name === 'featureSecurity') {
+            this.FeatureSecurityPageContent()
+          } else {
+            this.SettingsPageContent()
+          }
+        }
+        .mode(NavigationMode.Stack)
+        .titleBar({
+          content: {
+            title: {
+              mainTitle: this.navigationDestinationTitle(name)
+            },
+            backIcon: {
+              action: () => {
+                if (name === 'addToken') {
+                  this.backHome();
+                } else {
+                  this.homePathStack.pop(true);
+                }
               }
             }
-          }
-        },
-        style: {
-          scrollEffectOpts: {
-            enableScrollEffect: true,
-            scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
-            blurEffectiveStartOffset: LengthMetrics.vp(0),
-            blurEffectiveEndOffset: LengthMetrics.vp(this.statusBarHeight + HOME_TITLE_HEIGHT)
           },
-          blurStrategy: BlurStrategy.ADAPTIVE,
-          originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
-          scrollEffectStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
-          systemMaterialEffect: {
-            materialType: this.configuredMaterialType(),
-            materialLevel: this.configuredMaterialLevel()
-          }
-        },
-        avoidLayoutSafeArea: true,
-        enableComponentSafeArea: false
-      })
-      .bindToScrollable(this.navigationDestinationScrollers(name))
-      .hideBackButton(false)
-      .titleMode(HdsNavigationTitleMode.MINI)
-      .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+          style: {
+            scrollEffectOpts: {
+              enableScrollEffect: true,
+              scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+              blurEffectiveStartOffset: LengthMetrics.vp(0),
+              blurEffectiveEndOffset: LengthMetrics.vp(this.statusBarHeight + HOME_TITLE_HEIGHT)
+            },
+            blurStrategy: BlurStrategy.ADAPTIVE,
+            originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
+            scrollEffectStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
+            systemMaterialEffect: {
+              materialType: this.configuredMaterialType(),
+              materialLevel: this.configuredMaterialLevel()
+            }
+          },
+          avoidLayoutSafeArea: true,
+          enableComponentSafeArea: false
+        })
+        .bindToScrollable(this.navigationDestinationScrollers(name))
+        .hideBackButton(false)
+        .titleMode(HdsNavigationTitleMode.MINI)
+        .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+        .width('100%')
+        .height('100%')
+      }
       .width('100%')
       .height('100%')
+      .backgroundColor(this.pageBackgroundColor())
     }
     .hideTitleBar(true)
     .mode(NavDestinationMode.STANDARD)
@@ -2318,6 +2381,55 @@ struct Index {
   }
 
   @Builder
+  private SteamDecryptSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showSteamDecryptSheet, this.SteamDecryptPasswordSheet(), {
+        height: SheetSize.MEDIUM,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28),
+        onDisappear: () => {
+          if (!this.steamDecrypting) {
+            this.steamDecryptPassword = '';
+            this.pendingSteamEncryptedContent = '';
+            this.pendingSteamManifestContent = '';
+            this.pendingSteamFileName = '';
+          }
+        }
+      })
+  }
+
+  @Builder
+  private SteamEnrollmentSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showSteamEnrollmentSheet, this.SteamEnrollmentSheet(), {
+        height: SheetSize.LARGE,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28),
+        onDisappear: () => {
+          if (!this.steamEnrollmentLoading) {
+            this.clearSteamEnrollmentSecrets();
+          }
+        }
+      })
+  }
+
+  @Builder
   private UpdateNoticeSheet() {
     HdsNavigation() {
       Stack({ alignContent: Alignment.Bottom }) {
@@ -2530,6 +2642,10 @@ struct Index {
               this.SteamLoginEmptyState()
             }
           } else {
+            ListItem() {
+              this.SteamAccountSourceActions()
+            }
+
             ForEach(this.steamLoginTokens(), (token: TokenRecord) => {
               ListItem() {
                 Row({ space: 12 }) {
@@ -2554,17 +2670,23 @@ struct Index {
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
 
-                  Checkbox({ name: 'steam-login-' + token.id + '-' + this.sheetSelectionRevision.toString() })
-                    .select(this.pendingSteamLoginTokenId === token.id)
-                    .selectedColor(this.accentColor())
-                    .hitTestBehavior(HitTestMode.None)
+                  if (parseSteamGuardData(token.steamData || '').fullyEnrolled) {
+                    Checkbox({ name: 'steam-login-' + token.id + '-' + this.sheetSelectionRevision.toString() })
+                      .select(this.pendingSteamLoginTokenId === token.id)
+                      .selectedColor(this.accentColor())
+                      .hitTestBehavior(HitTestMode.None)
+                  } else {
+                    Text(this.t('继续激活'))
+                      .fontSize(13)
+                      .fontColor(this.accentColor())
+                  }
                 }
                 .width('100%')
                 .height(SHEET_ROW_HEIGHT)
                 .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
                 .alignItems(VerticalAlign.Center)
                 .onClick(() => {
-                  this.selectSteamLoginToken(token.id);
+                  this.handleSteamLoginTokenSelection(token);
                 })
               }
             }, (token: TokenRecord) => token.id + '-steam-login-' + this.sheetSelectionRevision.toString())
@@ -2579,9 +2701,16 @@ struct Index {
         .clip(false)
 
         if (this.steamLoginTokens().length === 0) {
-          this.SheetSingleFloatingAction({
-            label: this.t('导入 Steam maFile'),
-            action: () => {
+          this.SheetFloatingActions({
+            secondaryLabel: this.t('登录 Steam 账号'),
+            secondaryIsPrimary: true,
+            secondaryAction: () => {
+              this.openSteamEnrollmentFromPicker();
+            },
+            primaryLabel: this.t('导入 Steam maFile'),
+            primaryEnabled: true,
+            primaryLoading: false,
+            primaryAction: () => {
               this.importSteamTokenFromLoginSheet();
             }
           })
@@ -2624,6 +2753,616 @@ struct Index {
   }
 
   @Builder
+  private SteamEnrollmentSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          Scroll(this.steamEnrollmentSheetScroller) {
+            Column({ space: 16 }) {
+              if (this.steamEnrollmentStage === STEAM_ENROLLMENT_RISK) {
+                this.SteamEnrollmentRiskContent()
+              } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_CREDENTIALS) {
+                this.SteamEnrollmentCredentialsContent()
+              } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_GUARD) {
+                this.SteamEnrollmentGuardContent()
+              } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_ACTIVATION) {
+                this.SteamEnrollmentActivationContent()
+              } else {
+                this.SteamEnrollmentRecoveryContent()
+              }
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding({
+              left: SHEET_HORIZONTAL_PADDING,
+              right: SHEET_HORIZONTAL_PADDING,
+              top: SHEET_CONTENT_TOP_PADDING,
+              bottom: this.sheetListBottomPadding()
+            })
+          }
+          .width('100%')
+          .height('100%')
+          .align(Alignment.Top)
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+          .clip(false)
+        }
+        .width('100%')
+        .height('100%')
+        .clip(false)
+
+        this.SteamEnrollmentFloatingActions()
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.steamEnrollmentTitle() },
+        menu: this.sheetCloseMenu(() => {
+          this.closeSteamEnrollmentSheet();
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.steamEnrollmentSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private SteamEnrollmentRiskContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-risk', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 10 }) {
+        Text(this.t('请优先使用 Steam 官方移动应用'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('这是非官方兼容功能。本应用、此登录功能与 Valve、Steam、Steam Desktop Authenticator 均无隶属、授权或担保关系。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+
+        Text(this.t('把验证器和 Steam 客户端放在同一设备会降低双重验证的隔离效果；设备或安装包一旦被恶意控制，账号和交易都可能受影响。请只从可信来源安装，并自行承担使用风险。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+
+        Text(this.t('登录请求由本机网络通过 HTTPS 直接发往 api.steampowered.com，不使用 Steam 增强访问网关，也不经过开发者服务器。账号、密码和验证码只在当前登录过程中使用，不会保存。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('生成的 maFile、会话令牌和交易确认密钥仅保存在本机；通用 Steam 验证码密钥可按云空间设置同步。请另外备份 maFile 和恢复码；丢失它们可能导致无法恢复账号访问。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .padding(16)
+      .alignItems(HorizontalAlign.Start)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-risk'), y: this.appCardScale('steam-enrollment-risk') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-risk', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-risk', newValue);
+    })
+
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-risk-accept', SHEET_OPTION_CARD_RADIUS)
+      Row({ space: 10 }) {
+        Checkbox({ name: 'steam-risk-accepted' })
+          .select(this.steamRiskAccepted)
+          .selectedColor(this.accentColor())
+          .onChange((value: boolean) => {
+            this.steamRiskAccepted = value;
+          })
+
+        Text(this.t('我已阅读并理解上述风险，自愿继续'))
+          .fontSize(14)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+          .onClick(() => {
+            this.steamRiskAccepted = !this.steamRiskAccepted;
+          })
+      }
+      .width('100%')
+      .padding(14)
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-risk-accept'), y: this.appCardScale('steam-enrollment-risk-accept') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-risk-accept', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-risk-accept', newValue);
+    })
+  }
+
+  @Builder
+  private SteamEnrollmentCredentialsContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-credentials', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 14 }) {
+        Text(this.t('设备直连 Steam'))
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('密码会先使用 Steam 返回的 RSA 公钥在本机加密，再发送给 Steam；成功发起登录后会立即从页面状态清除。'))
+          .fontSize(13)
+          .lineHeight(19)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+
+        TextInput({ text: this.steamEnrollmentAccount, placeholder: this.t('Steam 账号名称') })
+          .width('100%')
+          .height(50)
+          .fontSize(15)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.secondaryTextColor())
+          .backgroundColor(this.pageBackgroundColor())
+          .borderRadius(12)
+          .padding({ left: 14, right: 14 })
+          .maxLength(64)
+          .onChange((value: string) => {
+            this.steamEnrollmentAccount = value.trim();
+            this.steamEnrollmentError = '';
+          })
+
+        TextInput({ text: this.steamEnrollmentPassword, placeholder: this.t('Steam 密码') })
+          .type(InputType.Password)
+          .showPasswordIcon(true)
+          .width('100%')
+          .height(50)
+          .fontSize(15)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.secondaryTextColor())
+          .backgroundColor(this.pageBackgroundColor())
+          .borderRadius(12)
+          .padding({ left: 14, right: 14 })
+          .maxLength(128)
+          .onChange((value: string) => {
+            this.steamEnrollmentPassword = value;
+            this.steamEnrollmentError = '';
+          })
+      }
+      .width('100%')
+      .padding(16)
+      .alignItems(HorizontalAlign.Start)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-credentials'), y: this.appCardScale('steam-enrollment-credentials') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-credentials', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-credentials', newValue);
+    })
+  }
+
+  @Builder
+  private SteamEnrollmentGuardContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-guard', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 12 }) {
+        SymbolGlyph($r('sys.symbol.key_shield'))
+          .fontSize(36)
+          .fontColor([this.accentColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+        Text(this.steamEnrollmentGuardTitle())
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+
+        Text(this.steamEnrollmentGuardDescription())
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+
+        if (this.steamEnrollmentGuardRequiresInput()) {
+          TextInput({ text: this.steamEnrollmentCode, placeholder: this.t('输入 Steam 验证码') })
+            .width('100%')
+            .height(50)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.secondaryTextColor())
+            .backgroundColor(this.pageBackgroundColor())
+            .borderRadius(12)
+            .padding({ left: 14, right: 14 })
+            .maxLength(12)
+            .onChange((value: string) => {
+              this.steamEnrollmentCode = value.trim();
+              this.steamEnrollmentError = '';
+            })
+        }
+      }
+      .width('100%')
+      .padding(20)
+      .alignItems(HorizontalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-guard'), y: this.appCardScale('steam-enrollment-guard') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-guard', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-guard', newValue);
+    })
+  }
+
+  @Builder
+  private SteamEnrollmentActivationContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-activation', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 12 }) {
+        Text(this.t('maFile 已先保存在本机'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.steamActivationDescription())
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+
+        TextInput({ text: this.steamEnrollmentCode, placeholder: this.t('输入激活验证码') })
+          .width('100%')
+          .height(50)
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.secondaryTextColor())
+          .backgroundColor(this.pageBackgroundColor())
+          .borderRadius(12)
+          .padding({ left: 14, right: 14 })
+          .maxLength(12)
+          .onChange((value: string) => {
+            this.steamEnrollmentCode = value.trim();
+            this.steamEnrollmentError = '';
+          })
+
+        if (this.steamAuthenticatorDraft && this.steamAuthenticatorDraft.confirmType !== 3) {
+          Button(this.t('重新发送短信验证码'))
+            .height(34)
+            .fontSize(13)
+            .fontColor(this.accentContrastColor())
+            .backgroundColor(this.accentColor())
+            .borderRadius(17)
+            .padding({ left: 14, right: 14 })
+            .enabled(!this.steamEnrollmentLoading)
+            .onClick(() => {
+              this.resendSteamEnrollmentCode();
+            })
+        }
+
+        Text(this.t('在完成前不要删除刚生成的本地令牌；它包含避免账号锁定所需的密钥和恢复码。'))
+          .fontSize(12)
+          .lineHeight(18)
+          .fontColor(ERROR_RED)
+          .width('100%')
+      }
+      .width('100%')
+      .padding(18)
+      .alignItems(HorizontalAlign.Start)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-activation'), y: this.appCardScale('steam-enrollment-activation') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-activation', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-activation', newValue);
+    })
+  }
+
+  @Builder
+  private SteamEnrollmentRecoveryContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-recovery', SHEET_OPTION_CARD_RADIUS)
+      Column({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.checkmark_shield'))
+          .fontSize(36)
+          .fontColor([this.accentColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+        Text(this.t('Steam 验证器已添加'))
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+
+        Text(this.t('请立即保存恢复码。恢复码用于验证器丢失时恢复账号，关闭后仍可从导出的 maFile 中备份，但不建议只保留一份。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+
+        Text(this.steamRecoveryCode)
+          .fontSize(28)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .letterSpacing(2)
+          .copyOption(CopyOptions.LocalDevice)
+
+        Row() {
+          this.SheetActionButton({
+            label: this.t('复制恢复码'),
+            isPrimary: false,
+            isEnabled: true,
+            isLoading: false,
+            action: () => {
+              this.copySteamRecoveryCode();
+            }
+          })
+        }
+        .width('100%')
+        .height(SHEET_ACTION_BUTTON_HEIGHT)
+      }
+      .width('100%')
+      .padding(18)
+      .alignItems(HorizontalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-recovery'), y: this.appCardScale('steam-enrollment-recovery') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-recovery', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-recovery', newValue);
+    })
+
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-enrollment-recovery-saved', SHEET_OPTION_CARD_RADIUS)
+      Row({ space: 10 }) {
+        Checkbox({ name: 'steam-recovery-saved' })
+          .select(this.steamRecoverySaved)
+          .selectedColor(this.accentColor())
+          .onChange((value: boolean) => {
+            this.steamRecoverySaved = value;
+          })
+
+        Text(this.t('我已将恢复码保存到安全位置'))
+          .fontSize(14)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+          .onClick(() => {
+            this.steamRecoverySaved = !this.steamRecoverySaved;
+          })
+      }
+      .width('100%')
+      .padding(14)
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('steam-enrollment-recovery-saved'), y: this.appCardScale('steam-enrollment-recovery-saved') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-enrollment-recovery-saved', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-enrollment-recovery-saved', newValue);
+    })
+  }
+
+  @Builder
+  private SteamEnrollmentFloatingActions() {
+    if (this.steamEnrollmentStage === STEAM_ENROLLMENT_RISK) {
+      this.SheetFloatingActions({
+        secondaryLabel: this.t('取消'),
+        secondaryAction: () => {
+          this.closeSteamEnrollmentSheet();
+        },
+        primaryLabel: this.t('同意并继续'),
+        primaryEnabled: this.steamRiskAccepted,
+        primaryLoading: false,
+        primaryAction: () => {
+          this.steamEnrollmentStage = STEAM_ENROLLMENT_CREDENTIALS;
+        }
+      })
+    } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_CREDENTIALS) {
+      this.SheetFloatingActions({
+        secondaryLabel: this.t('返回风险告知'),
+        secondaryAction: () => {
+          this.steamEnrollmentStage = STEAM_ENROLLMENT_RISK;
+        },
+        primaryLabel: this.t('登录 Steam'),
+        primaryEnabled: this.steamEnrollmentAccount.length > 0 && this.steamEnrollmentPassword.length > 0,
+        primaryLoading: this.steamEnrollmentLoading,
+        primaryAction: () => {
+          this.beginSteamEnrollmentLogin();
+        }
+      })
+    } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_GUARD) {
+      this.SheetFloatingActions({
+        secondaryLabel: this.t('重新登录'),
+        secondaryAction: () => {
+          this.resetSteamEnrollmentLogin();
+        },
+        primaryLabel: this.steamEnrollmentGuardRequiresInput() ? this.t('验证并继续') : this.t('检查登录状态'),
+        primaryEnabled: !this.steamEnrollmentGuardRequiresInput() || this.steamEnrollmentCode.length > 0,
+        primaryLoading: this.steamEnrollmentLoading,
+        primaryAction: () => {
+          this.verifySteamEnrollmentLogin();
+        }
+      })
+    } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_ACTIVATION) {
+      this.SheetFloatingActions({
+        secondaryLabel: this.t('稍后处理'),
+        secondaryAction: () => {
+          this.closeSteamEnrollmentSheet();
+        },
+        primaryLabel: this.t('完成添加'),
+        primaryEnabled: this.steamEnrollmentCode.length > 0,
+        primaryLoading: this.steamEnrollmentLoading,
+        primaryAction: () => {
+          this.finalizeSteamEnrollment();
+        }
+      })
+    } else {
+      this.SheetSingleFloatingAction({
+        label: this.steamRecoverySaved ? this.t('完成') : this.t('请先确认已保存恢复码'),
+        action: () => {
+          if (this.steamRecoverySaved) {
+            this.closeSteamEnrollmentSheet();
+          }
+        }
+      })
+    }
+  }
+
+  @Builder
+  private SteamDecryptPasswordSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          Scroll(this.steamDecryptSheetScroller) {
+            Column({ space: 18 }) {
+              Column({ space: 8 }) {
+                Text(this.t('此 maFile 由 Steam Desktop Authenticator 加密。请输入 SDA 的加密密码，密码只用于本机解密，不会保存。'))
+                  .fontSize(14)
+                  .lineHeight(21)
+                  .fontColor(this.secondaryTextColor())
+
+                TextInput({ text: this.steamDecryptPassword, placeholder: this.t('SDA 加密密码') })
+                  .type(InputType.Password)
+                  .showPasswordIcon(true)
+                  .width('100%')
+                  .height(48)
+                  .padding({ left: 14, right: 14 })
+                  .fontSize(16)
+                  .fontColor(this.primaryTextColor())
+                  .placeholderColor(this.secondaryTextColor())
+                  .backgroundColor(this.sheetControlBackgroundColor())
+                  .borderRadius(14)
+                  .onChange((value: string) => {
+                    this.steamDecryptPassword = value;
+                  })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            .width('100%')
+            .padding({
+              left: SHEET_HORIZONTAL_PADDING,
+              right: SHEET_HORIZONTAL_PADDING,
+              top: SHEET_CONTENT_TOP_PADDING,
+              bottom: this.sheetListBottomPadding()
+            })
+          }
+          .width('100%')
+          .height('100%')
+          .align(Alignment.Top)
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+          .clip(false)
+        }
+        .width('100%')
+        .height('100%')
+        .clip(false)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('取消'),
+          secondaryAction: () => {
+            this.closeSteamDecryptSheet();
+          },
+          primaryLabel: this.t('解密并导入'),
+          primaryEnabled: this.steamDecryptPassword.length > 0,
+          primaryLoading: this.steamDecrypting,
+          primaryAction: () => {
+            this.confirmSteamMaFileDecryption();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('解密 Steam maFile') },
+        menu: this.sheetCloseMenu(() => {
+          this.closeSteamDecryptSheet();
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.steamDecryptSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
   private SteamLoginEmptyState() {
     Column({ space: 12 }) {
       SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
@@ -2637,7 +3376,7 @@ struct Index {
         .fontColor(this.primaryTextColor())
         .textAlign(TextAlign.Center)
 
-      Text(this.t('仅包含共享密钥的令牌只能生成验证码。扫码登录还需要 Steam ID，以及 access_token 或 refresh_token。应用会在导入后自动验证这些字段。'))
+      Text(this.t('可以登录一个尚未启用 Steam 移动验证器的账号并在本机生成 maFile，也可以导入已有的完整 maFile。'))
         .fontSize(13)
         .fontColor(this.secondaryTextColor())
         .lineHeight(19)
@@ -2655,9 +3394,9 @@ struct Index {
     Stack({ alignContent: Alignment.Center }) {
       this.MeasuredImmersionCardSurface('steam-empty-guide', SHEET_OPTION_CARD_RADIUS)
       Column({ space: 10 }) {
-        this.SteamLoginGuideStep('1', '从 Steam Desktop Authenticator 或其他兼容工具导出 maFile。')
-        this.SteamLoginGuideStep('2', '确认文件包含 steamid、shared_secret，以及 access_token 或 refresh_token。')
-        this.SteamLoginGuideStep('3', '点击下方导入；验证通过后重新打开此面板并勾选账号扫码。')
+        this.SteamLoginGuideStep('1', '没有启用移动验证器：点击左下方【登录 Steam 账号】，完成邮箱和手机验证码后自动生成 maFile。')
+        this.SteamLoginGuideStep('2', '已有 maFile：点击右下方【导入 Steam maFile】，应用会校验登录与交易确认所需字段。')
+        this.SteamLoginGuideStep('3', '已启用 Steam 移动验证器但没有 maFile：本功能不能复制原密钥，请导入原文件，或先在 Steam 官方应用移除旧验证器。')
       }
       .width('100%')
       .padding(14)
@@ -2699,6 +3438,33 @@ struct Index {
     }
     .width('100%')
     .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
+  private SteamAccountSourceActions() {
+    Row({ space: SHEET_ACTION_GAP }) {
+      this.SheetActionButton({
+        label: this.t('登录 Steam 账号'),
+        isPrimary: false,
+        isEnabled: true,
+        isLoading: false,
+        action: () => {
+          this.openSteamEnrollmentFromPicker();
+        }
+      })
+      this.SheetActionButton({
+        label: this.t('导入 Steam maFile'),
+        isPrimary: false,
+        isEnabled: true,
+        isLoading: false,
+        action: () => {
+          this.importSteamTokenFromLoginSheet();
+        }
+      })
+    }
+    .width('100%')
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -3711,6 +4477,15 @@ struct Index {
             .padding({ left: 20, top: 18, bottom: 8 })
 
           this.CloudRecordsCard()
+
+          Text(this.t('Steam 同步说明'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width('100%')
+            .padding({ left: 20, top: 18, bottom: 8 })
+
+          this.CloudSteamSyncNoticeCard()
         }
         .width('100%')
         .padding({
@@ -3873,6 +4648,39 @@ struct Index {
     .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
     .onTouch((event: TouchEvent) => {
       this.handleAppCardTouch('cloud-records', event.type);
+    })
+  }
+
+  @Builder
+  private CloudSteamSyncNoticeCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.MeasuredImmersionCardSurface('cloud-steam-notice', ME_CARD_RADIUS)
+      }
+      Row({ space: 12 }) {
+        SymbolGlyph($r('sys.symbol.key_shield'))
+          .fontSize(ME_ACTION_ICON_SIZE)
+          .fontColor([this.accentColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+        Text(this.t(STEAM_CLOUD_SYNC_NOTICE))
+          .fontSize(12)
+          .fontColor(this.secondaryTextColor())
+          .lineHeight(18)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+      .padding({ left: 20, right: 18, top: 14, bottom: 14 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('cloud-steam-notice', newValue);
     })
   }
 
@@ -4367,7 +5175,7 @@ struct Index {
     .bindToScrollable([this.exportFormatSheetScroller])
     .hideBackButton(true)
     .width('100%')
-    .height(this.sheetShortHeight(SHEET_EXPORT_FORMAT_HEIGHT))
+    .height(this.exportFormatSheetHeight())
     .backgroundColor(this.sheetSurfaceBackgroundColor())
     .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
   }
@@ -4376,7 +5184,7 @@ struct Index {
   private ExportFormatOptionsCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.shouldUseCardMaterial()) {
-        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, SHEET_OPTION_CARD_RADIUS)
+        this.ImmersionCardSurface(this.exportFormatOptionsHeight(), SHEET_OPTION_CARD_RADIUS)
       }
       Column() {
         this.ExportFormatOption(
@@ -4403,14 +5211,29 @@ struct Index {
             }, 180);
           }
         )
+
+        if (this.exportSelectedSteamTokens().length > 0) {
+          this.MeCardDivider()
+
+          this.ExportFormatOption(
+            this.t('Steam maFile 文件'),
+            this.t('为选中的 Steam 令牌分别导出完整 maFile'),
+            () => {
+              this.showExportFormat = false;
+              setTimeout(() => {
+                this.exportSteamMaFiles();
+              }, 180);
+            }
+          )
+        }
       }
       .width('100%')
-      .height(ME_ROW_HEIGHT * 2 + 1)
+      .height(this.exportFormatOptionsHeight())
       .padding({ left: 18, right: 18 })
       .zIndex(2)
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 2 + 1)
+    .height(this.exportFormatOptionsHeight())
     .borderRadius(SHEET_OPTION_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.sheetControlBackgroundColor()))
@@ -5022,14 +5845,14 @@ struct Index {
     Stack({ alignContent: Alignment.Top }) {
       if (this.shouldUseCardMaterial()) {
         this.ImmersionCardSurface(
-          ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2,
+          ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3,
           ME_CARD_RADIUS
         )
       }
       this.SettingsAppearanceBackgroundCardContent()
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2)
+    .height(ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3)
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -5052,9 +5875,14 @@ struct Index {
       this.SettingsBackgroundPickerRow()
       this.MeCardDivider()
       this.SettingsBackgroundBlurRow()
+      this.MeCardDivider()
+      this.SettingsSwitchRow('背景图是否全局显示', this.globalBackgroundEnabled, (isOn: boolean) => {
+        this.globalBackgroundEnabled = isOn;
+        this.saveSettings();
+      })
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 2)
+    .height(ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3)
     .padding({ left: 20, right: 18 })
     .zIndex(2)
   }
@@ -5675,7 +6503,7 @@ struct Index {
     HdsNavigation() {
       Scroll(this.addMethodSheetScroller) {
         Column() {
-          Row() {
+          Row({ space: 12 }) {
             this.AddMethodButton('录入', $r('sys.symbol.square_and_pencil'), () => {
               this.isAddMenuOpen = false;
               this.openAddPage();
@@ -5690,24 +6518,21 @@ struct Index {
               this.isAddMenuOpen = false;
               this.importTokenFile();
             })
+
+            this.AddMethodButton('登录 Steam 账号', $r('app.media.ic_steam'), () => {
+              this.isAddMenuOpen = false;
+              setTimeout(() => {
+                this.resetSteamEnrollment();
+                this.showSteamEnrollmentSheet = true;
+              }, 180);
+            }, true)
           }
           .width('100%')
-          .justifyContent(FlexAlign.SpaceAround)
+          .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: 20,
-            right: 20,
             top: 18,
             bottom: 18
-          })
-          .borderRadius(SHEET_ACTION_BAR_RADIUS)
-          .background(this.SheetActionMaterialBackground, { align: Alignment.Center })
-          .border({ width: this.shouldUseCardMaterial() ? 0 : 1, color: this.searchBorderColor() })
-          .shadow({
-            radius: 24,
-            color: this.sheetFloatingShadowColor(),
-            offsetX: 0,
-            offsetY: 10
           })
         }
         .width('100%')
@@ -5744,8 +6569,8 @@ struct Index {
   }
 
   @Builder
-  private AddMethodButton(label: string, icon: Resource, onClick: () => void) {
-    Column({ space: 12 }) {
+  private AddMethodButton(label: string, icon: Resource, onClick: () => void, isBrandIcon: boolean = false) {
+    Column({ space: 10 }) {
       Stack({ alignContent: Alignment.Center }) {
         ImmersionButton({
           systemMaterialEffect: this.configuredMaterialEffect(),
@@ -5754,9 +6579,18 @@ struct Index {
           click: onClick
         }) {
           Stack({ alignContent: Alignment.Center }) {
-            SymbolGlyph(icon)
-              .fontSize(20)
-              .fontColor([this.accentColor()])
+            if (isBrandIcon) {
+              Image(icon)
+                .width(22)
+                .height(22)
+                .objectFit(ImageFit.Contain)
+                .fillColor(this.accentColor())
+            } else {
+              SymbolGlyph(icon)
+                .fontSize(20)
+                .fontColor([this.accentColor()])
+                .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+            }
           }
           .width(50)
           .height(50)
@@ -5767,10 +6601,15 @@ struct Index {
       .clip(false)
 
       Text(this.t(label))
-        .fontSize(14)
+        .width('100%')
+        .height(36)
+        .fontSize(12)
         .fontColor(this.accentColor())
         .fontWeight(FontWeight.Medium)
+        .maxLines(2)
+        .textAlign(TextAlign.Center)
     }
+    .layoutWeight(1)
     .alignItems(HorizontalAlign.Center)
   }
 
@@ -8514,6 +9353,22 @@ struct Index {
     return this.tokens.filter((t: TokenRecord) => this.exportSelectedIds.includes(t.id));
   }
 
+  private exportSelectedSteamTokens(): TokenRecord[] {
+    return this.exportSelectedTokens().filter((token: TokenRecord) => {
+      return this.normalizeTokenType(token.type) === 'Steam';
+    });
+  }
+
+  private exportFormatOptionsHeight(): number {
+    const rowCount = this.exportSelectedSteamTokens().length > 0 ? 3 : 2;
+    return ME_ROW_HEIGHT * rowCount + rowCount - 1;
+  }
+
+  private exportFormatSheetHeight(): number {
+    const extraHeight = this.exportSelectedSteamTokens().length > 0 ? ME_ROW_HEIGHT : 0;
+    return this.sheetShortHeight(SHEET_EXPORT_FORMAT_HEIGHT + extraHeight);
+  }
+
   private exportQRCodeSize(): number {
     return Math.min(220, Math.max(160, this.pageWidth - 170));
   }
@@ -8761,8 +9616,16 @@ struct Index {
         portableToken['steamid'] = steam.steamId;
         portableToken['access_token'] = steam.accessToken;
         portableToken['refresh_token'] = steam.refreshToken;
+        portableToken['session_id'] = steam.sessionId;
         portableToken['revocation_code'] = steam.revocationCode;
         portableToken['serial_number'] = steam.serialNumber;
+        portableToken['steam_uri'] = steam.uri;
+        portableToken['server_time'] = steam.serverTime;
+        portableToken['token_gid'] = steam.tokenGid;
+        portableToken['secret_1'] = steam.secret1;
+        portableToken['status'] = steam.status;
+        portableToken['fully_enrolled'] = steam.fullyEnrolled;
+        portableToken['maFile'] = steam.maFile;
       }
       return portableToken;
     });
@@ -8791,6 +9654,72 @@ struct Index {
     } catch (error) {
       this.showToast('导出失败');
       console.error(`Export JSON failed: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private steamMaFileContent(token: TokenRecord): string {
+    const data = parseSteamGuardData(token.steamData || '');
+    if (data.sharedSecret.length === 0) {
+      data.sharedSecret = token.secret;
+    }
+    if (data.accountName.length === 0) {
+      data.accountName = token.remark.trim().length > 0 ? token.remark : token.name;
+    }
+    if (data.maFile.trim().length > 0 && parseSdaMaFile(data.maFile).sharedSecret.length > 0) {
+      return data.maFile.trim();
+    }
+    return createSdaMaFile(data);
+  }
+
+  private steamMaFileName(token: TokenRecord, index: number): string {
+    const data = parseSteamGuardData(token.steamData || '');
+    if (/^\d+$/.test(data.steamId)) {
+      return data.steamId + '.maFile';
+    }
+    const accountName = data.accountName.length > 0 ? data.accountName : token.name;
+    const safeName = accountName.replace(/[\\/:*?"<>|]/g, '_').trim();
+    return (safeName.length > 0 ? safeName : 'Steam_' + (index + 1).toString()) + '.maFile';
+  }
+
+  private async exportSteamMaFiles(): Promise<void> {
+    const steamTokens = this.exportSelectedSteamTokens();
+    if (steamTokens.length === 0) {
+      this.showToast('没有选中的 Steam 令牌');
+      return;
+    }
+    const contents: string[] = [];
+    const fileNames: string[] = [];
+    for (let index = 0; index < steamTokens.length; index++) {
+      const content = this.steamMaFileContent(steamTokens[index]);
+      if (parseSdaMaFile(content).sharedSecret.length === 0) {
+        this.showToast('Steam 令牌缺少可导出的验证器密钥');
+        return;
+      }
+      contents.push(content);
+      fileNames.push(this.steamMaFileName(steamTokens[index], index));
+    }
+    try {
+      const options = new picker.DocumentSaveOptions();
+      options.newFileNames = fileNames;
+      options.fileSuffixChoices = ['Steam maFile|.maFile'];
+      const documentPicker = new picker.DocumentViewPicker();
+      const result = await documentPicker.save(options);
+      const savedCount = Math.min(result.length, contents.length);
+      for (let index = 0; index < savedCount; index++) {
+        const file = fileIo.openSync(result[index], fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+        try {
+          fileIo.writeSync(file.fd, contents[index]);
+        } finally {
+          fileIo.closeSync(file);
+        }
+      }
+      if (savedCount > 0) {
+        this.showToast(savedCount === 1 ? 'Steam maFile 已导出' :
+          this.tf('已导出 {0} 个 Steam maFile', [savedCount.toString()]));
+      }
+    } catch (error) {
+      this.showToast('Steam maFile 导出失败');
+      console.error('Export Steam maFile failed: ' + JSON.stringify(error));
     }
   }
 
@@ -9652,6 +10581,9 @@ struct Index {
 
   private steamLoginAccountText(token: TokenRecord): string {
     const data = parseSteamGuardData(token.steamData || '');
+    if (!data.fullyEnrolled) {
+      return data.accountName.length > 0 ? data.accountName + ' · 等待完成激活' : this.t('等待完成激活');
+    }
     if (data.accountName.length > 0) {
       return data.accountName;
     }
@@ -9659,7 +10591,9 @@ struct Index {
   }
 
   private openSteamLoginPicker(): void {
-    const supportedTokens = this.steamLoginTokens();
+    const supportedTokens = this.steamLoginTokens().filter((token: TokenRecord): boolean => {
+      return parseSteamGuardData(token.steamData || '').fullyEnrolled;
+    });
     this.pendingSteamLoginTokenId = supportedTokens.length === 1 ? supportedTokens[0].id : '';
     this.bumpSheetSelectionRevision();
     this.showSteamLoginPicker = true;
@@ -9668,6 +10602,402 @@ struct Index {
   private selectSteamLoginToken(tokenId: string): void {
     this.pendingSteamLoginTokenId = this.pendingSteamLoginTokenId === tokenId ? '' : tokenId;
     this.bumpSheetSelectionRevision();
+  }
+
+  private handleSteamLoginTokenSelection(token: TokenRecord): void {
+    const data = parseSteamGuardData(token.steamData || '');
+    if (!data.fullyEnrolled) {
+      this.resumeSteamEnrollment(token, data);
+      return;
+    }
+    this.selectSteamLoginToken(token.id);
+  }
+
+  private openSteamEnrollmentFromPicker(): void {
+    this.showSteamLoginPicker = false;
+    setTimeout(() => {
+      this.resetSteamEnrollment();
+      this.showSteamEnrollmentSheet = true;
+    }, 180);
+  }
+
+  private resumeSteamEnrollment(token: TokenRecord, data: SteamGuardData): void {
+    this.showSteamLoginPicker = false;
+    setTimeout(() => {
+      this.resetSteamEnrollment();
+      this.steamEnrollmentTokenId = token.id;
+      this.steamRecoveryCode = data.revocationCode;
+      this.steamAuthenticatorDraft = {
+        data: data,
+        confirmType: 0,
+        phoneNumberHint: '',
+        serverTimeReceivedAt: Date.now()
+      };
+      this.steamEnrollmentStage = STEAM_ENROLLMENT_ACTIVATION;
+      this.showSteamEnrollmentSheet = true;
+    }, 180);
+  }
+
+  private resetSteamEnrollment(): void {
+    this.steamEnrollmentStage = STEAM_ENROLLMENT_RISK;
+    this.steamRiskAccepted = false;
+    this.steamEnrollmentAccount = '';
+    this.steamEnrollmentPassword = '';
+    this.steamEnrollmentCode = '';
+    this.steamEnrollmentGuardType = 0;
+    this.steamEnrollmentGuardMessage = '';
+    this.steamEnrollmentGuardSubmitted = false;
+    this.steamEnrollmentError = '';
+    this.steamRecoveryCode = '';
+    this.steamRecoverySaved = false;
+    this.steamEnrollmentTokenId = '';
+    this.steamEnrollmentChallenge = null;
+    this.steamEnrollmentSession = null;
+    this.steamAuthenticatorDraft = null;
+  }
+
+  private resetSteamEnrollmentLogin(): void {
+    if (this.steamEnrollmentLoading) {
+      return;
+    }
+    this.steamEnrollmentStage = STEAM_ENROLLMENT_CREDENTIALS;
+    this.steamEnrollmentPassword = '';
+    this.steamEnrollmentCode = '';
+    this.steamEnrollmentGuardType = 0;
+    this.steamEnrollmentGuardMessage = '';
+    this.steamEnrollmentGuardSubmitted = false;
+    this.steamEnrollmentError = '';
+    this.steamEnrollmentChallenge = null;
+    this.steamEnrollmentSession = null;
+  }
+
+  private closeSteamEnrollmentSheet(): void {
+    if (this.steamEnrollmentLoading) {
+      return;
+    }
+    this.showSteamEnrollmentSheet = false;
+    this.clearSteamEnrollmentSecrets();
+  }
+
+  private clearSteamEnrollmentSecrets(): void {
+    this.steamEnrollmentPassword = '';
+    this.steamEnrollmentCode = '';
+    this.steamEnrollmentChallenge = null;
+    this.steamEnrollmentSession = null;
+  }
+
+  private showSteamEnrollmentError(message: string): void {
+    this.steamEnrollmentError = '';
+    if (message.indexOf('已启用 Steam') >= 0 || message.indexOf('现有验证器') >= 0) {
+      this.showSteamEnrollmentRestriction();
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t('Steam 登录失败'),
+      message: this.t(message),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('我知道了'),
+        action: () => {
+        }
+      }
+    });
+  }
+
+  private showSteamEnrollmentRestriction(): void {
+    this.steamEnrollmentError = '';
+    this.getUIContext().showAlertDialog({
+      title: this.t('账号已启用 Steam 移动验证器'),
+      message: this.t('当前账号已存在验证器，请直接导入原maFile文；如果原文件已丢失，请先在Steam官方应用中移除旧验证器，再返回此处重新生成验证器。'),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('我知道了'),
+        action: () => {
+        }
+      }
+    });
+  }
+
+  private steamEnrollmentTitle(): string {
+    if (this.steamEnrollmentStage === STEAM_ENROLLMENT_RISK) {
+      return this.t('Steam 登录风险告知');
+    }
+    if (this.steamEnrollmentStage === STEAM_ENROLLMENT_CREDENTIALS) {
+      return this.t('登录 Steam 账号');
+    }
+    if (this.steamEnrollmentStage === STEAM_ENROLLMENT_GUARD) {
+      return this.t('验证 Steam 登录');
+    }
+    if (this.steamEnrollmentStage === STEAM_ENROLLMENT_ACTIVATION) {
+      return this.t('激活 Steam 验证器');
+    }
+    return this.t('保存恢复码');
+  }
+
+  private steamEnrollmentGuardNeedsCode(): boolean {
+    return this.steamEnrollmentGuardType === 2 || this.steamEnrollmentGuardType === 3;
+  }
+
+  private steamEnrollmentGuardRequiresInput(): boolean {
+    return this.steamEnrollmentGuardNeedsCode() && !this.steamEnrollmentGuardSubmitted;
+  }
+
+  private steamEnrollmentGuardTitle(): string {
+    if (this.steamEnrollmentGuardType === 2) {
+      return this.t('输入邮件验证码');
+    }
+    if (this.steamEnrollmentGuardType === 3) {
+      return this.t('输入当前 Steam Guard 代码');
+    }
+    if (this.steamEnrollmentGuardType === 5) {
+      return this.t('确认 Steam 邮件');
+    }
+    return this.t('在其他设备确认登录');
+  }
+
+  private steamEnrollmentGuardDescription(): string {
+    if (this.steamEnrollmentGuardSubmitted) {
+      return this.t('验证码已提交。如果 Steam 尚未签发登录令牌，请稍等片刻后再次检查。');
+    }
+    if (this.steamEnrollmentGuardMessage.length > 0) {
+      return this.steamEnrollmentGuardMessage;
+    }
+    if (this.steamEnrollmentGuardType === 2) {
+      return this.t('Steam 已向账号绑定邮箱发送验证码。');
+    }
+    if (this.steamEnrollmentGuardType === 3) {
+      return this.t('请输入现有 Steam 移动验证器显示的 5 位代码。');
+    }
+    if (this.steamEnrollmentGuardType === 5) {
+      return this.t('请打开 Steam 邮件并确认这次登录，然后返回继续。');
+    }
+    return this.t('请在已登录的 Steam 移动应用中批准这次登录，然后返回继续。');
+  }
+
+  private steamActivationDescription(): string {
+    const draft = this.steamAuthenticatorDraft;
+    if (draft && draft.confirmType === 3) {
+      return this.t('Steam 已向账号绑定邮箱发送激活验证码，请输入后完成添加。');
+    }
+    if (draft && draft.confirmType === 1 && draft.phoneNumberHint.length > 0) {
+      return this.t('Steam 已向尾号或提示为 ') + draft.phoneNumberHint + this.t(' 的手机号发送短信验证码。');
+    }
+    if (draft && draft.confirmType === 1) {
+      return this.t('Steam 已向账号绑定手机号发送短信验证码，请输入后完成添加。');
+    }
+    return this.t('请输入 Steam 发送的激活验证码以完成添加。');
+  }
+
+  private async beginSteamEnrollmentLogin(): Promise<void> {
+    if (this.steamEnrollmentLoading || this.steamEnrollmentAccount.length === 0 ||
+      this.steamEnrollmentPassword.length === 0) {
+      return;
+    }
+    this.steamEnrollmentLoading = true;
+    this.steamEnrollmentError = '';
+    const password = this.steamEnrollmentPassword;
+    try {
+      const service = new SteamEnrollmentService();
+      const challenge = await service.beginLogin(this.steamEnrollmentAccount, password);
+      this.steamEnrollmentChallenge = challenge;
+      this.steamEnrollmentPassword = '';
+      if (service.hasExistingMobileAuthenticator(challenge.confirmations)) {
+        this.showSteamEnrollmentRestriction();
+        return;
+      }
+      const confirmation = service.enrollmentConfirmation(challenge.confirmations);
+      if (confirmation.type === 0) {
+        throw new Error('Steam 未提供可用的登录验证方式');
+      }
+      this.steamEnrollmentGuardType = confirmation.type;
+      this.steamEnrollmentGuardMessage = confirmation.message;
+      this.steamEnrollmentGuardSubmitted = false;
+      this.steamEnrollmentCode = '';
+      if (confirmation.type === 1) {
+        await this.completeSteamEnrollmentLogin(service, challenge);
+      } else {
+        this.steamEnrollmentStage = STEAM_ENROLLMENT_GUARD;
+      }
+    } catch (error) {
+      this.showSteamEnrollmentError(this.errorMessage(error));
+    } finally {
+      this.steamEnrollmentPassword = '';
+      this.steamEnrollmentLoading = false;
+    }
+  }
+
+  private async verifySteamEnrollmentLogin(): Promise<void> {
+    const challenge = this.steamEnrollmentChallenge;
+    if (!challenge || this.steamEnrollmentLoading) {
+      return;
+    }
+    if (this.steamEnrollmentGuardRequiresInput() && this.steamEnrollmentCode.length === 0) {
+      return;
+    }
+    this.steamEnrollmentLoading = true;
+    this.steamEnrollmentError = '';
+    try {
+      if (this.steamAuthenticatorDraft) {
+        await this.persistSteamEnrollmentData(this.steamAuthenticatorDraft.data, false);
+        this.steamEnrollmentStage = STEAM_ENROLLMENT_ACTIVATION;
+        return;
+      }
+      const service = new SteamEnrollmentService();
+      if (this.steamEnrollmentGuardRequiresInput()) {
+        await service.submitGuardCode(
+          challenge,
+          this.steamEnrollmentGuardType,
+          this.steamEnrollmentCode
+        );
+        this.steamEnrollmentGuardSubmitted = true;
+        this.steamEnrollmentCode = '';
+      }
+      await this.completeSteamEnrollmentLogin(service, challenge);
+    } catch (error) {
+      this.showSteamEnrollmentError(this.errorMessage(error));
+    } finally {
+      this.steamEnrollmentLoading = false;
+    }
+  }
+
+  private async completeSteamEnrollmentLogin(
+    service: SteamEnrollmentService,
+    challenge: SteamLoginChallenge
+  ): Promise<void> {
+    let session: SteamLoginSession | null | undefined = this.steamEnrollmentSession;
+    if (!session) {
+      session = await service.pollLogin(challenge);
+    }
+    if (!session) {
+      throw new Error('Steam 尚未确认登录，请完成验证后再次点击继续');
+    }
+    this.steamEnrollmentSession = session;
+    const deviceId = 'android:' + util.generateRandomUUID().toLowerCase();
+    const draft = await service.addAuthenticator(session, deviceId);
+    draft.data.maFile = createSdaMaFile(draft.data);
+    this.steamAuthenticatorDraft = draft;
+    this.steamRecoveryCode = draft.data.revocationCode;
+    await this.persistSteamEnrollmentData(draft.data, false);
+    this.steamEnrollmentCode = '';
+    this.steamEnrollmentStage = STEAM_ENROLLMENT_ACTIVATION;
+  }
+
+  private async finalizeSteamEnrollment(): Promise<void> {
+    const draft = this.steamAuthenticatorDraft;
+    if (!draft || this.steamEnrollmentCode.length === 0 || this.steamEnrollmentLoading) {
+      return;
+    }
+    this.steamEnrollmentLoading = true;
+    this.steamEnrollmentError = '';
+    try {
+      const data = draft.data.fullyEnrolled ? draft.data :
+        await new SteamEnrollmentService().finalizeAuthenticator(draft, this.steamEnrollmentCode);
+      data.maFile = createSdaMaFile(data);
+      await this.persistSteamEnrollmentData(data, true);
+      this.steamEnrollmentCode = '';
+      this.steamRecoveryCode = data.revocationCode;
+      this.steamRecoverySaved = false;
+      this.steamEnrollmentStage = STEAM_ENROLLMENT_RECOVERY;
+    } catch (error) {
+      this.showSteamEnrollmentError(this.errorMessage(error));
+    } finally {
+      this.steamEnrollmentLoading = false;
+    }
+  }
+
+  private async resendSteamEnrollmentCode(): Promise<void> {
+    const draft = this.steamAuthenticatorDraft;
+    if (!draft || this.steamEnrollmentLoading) {
+      return;
+    }
+    this.steamEnrollmentLoading = true;
+    try {
+      await new SteamEnrollmentService().sendPhoneVerificationCode(draft.data.accessToken);
+      this.showToast('Steam 已重新发送短信验证码，请稍候查收');
+    } catch (error) {
+      this.showSteamEnrollmentError(this.errorMessage(error));
+    } finally {
+      this.steamEnrollmentLoading = false;
+    }
+  }
+
+  private async persistSteamEnrollmentData(data: SteamGuardData, completed: boolean): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      throw new Error('无法访问本地存储');
+    }
+    let existing = this.steamEnrollmentTokenId.length > 0 ?
+      this.tokens.find((token: TokenRecord): boolean => token.id === this.steamEnrollmentTokenId) : undefined;
+    if (!existing) {
+      existing = this.tokens.find((token: TokenRecord): boolean => {
+        const stored = parseSteamGuardData(token.steamData || '');
+        return stored.steamId.length > 0 && stored.steamId === data.steamId;
+      });
+    }
+    const tokenSecret = this.resolveSteamEnrollmentTokenSecret(data, existing);
+    if (tokenSecret.length === 0) {
+      throw new Error('Steam 未返回可用的通用令牌密钥，已停止保存，请重新登录');
+    }
+    data.sharedSecret = tokenSecret;
+    data.maFile = createSdaMaFile(data);
+    const now = Date.now();
+    const tokenId = existing ? existing.id : util.generateRandomUUID();
+    const record: TokenRecord = {
+      id: tokenId,
+      name: data.accountName.trim().length > 0 ? data.accountName.trim() : existing ? existing.name : 'Steam',
+      remark: 'Steam',
+      type: 'Steam',
+      algorithm: 'SHA1',
+      secret: tokenSecret,
+      logoUri: existing ? existing.logoUri : '',
+      logoLightUri: existing ? existing.logoLightUri : '',
+      logoDarkUri: existing ? existing.logoDarkUri : '',
+      logoSource: existing && existing.logoSource ? existing.logoSource : 'simple-icons-v2:steam',
+      digits: 5,
+      period: 30,
+      counter: 0,
+      steamData: serializeSteamGuardData(data),
+      createdAt: existing ? existing.createdAt : now,
+      modifiedTime: now
+    };
+    const hydratedRecords = await this.hydrateTokenLogos([record]);
+    const persistedRecord = hydratedRecords.length > 0 ? hydratedRecords[0] : record;
+    const nextTokens = existing ?
+      this.tokens.map((token: TokenRecord): TokenRecord => token.id === tokenId ? persistedRecord : token) :
+      [persistedRecord].concat(this.tokens);
+    if (!await this.persistTokens(nextTokens, '', completed)) {
+      throw new Error('Steam 验证器信息本地保存失败');
+    }
+    this.steamEnrollmentTokenId = tokenId;
+    if (completed) {
+      this.showToast('Steam 验证器已保存到本机');
+    }
+  }
+
+  private resolveSteamEnrollmentTokenSecret(data: SteamGuardData,
+    existing: TokenRecord | undefined): string {
+    let tokenSecret = Totp.normalizeSecret(data.sharedSecret, 'Steam');
+    if (tokenSecret.length === 0 && data.maFile.trim().length > 0) {
+      const maFileData = parseSdaMaFile(data.maFile);
+      tokenSecret = Totp.normalizeSecret(maFileData.sharedSecret, 'Steam');
+    }
+    if (tokenSecret.length === 0 && existing) {
+      tokenSecret = Totp.normalizeSecret(existing.secret, 'Steam');
+    }
+    return tokenSecret;
+  }
+
+  private async copySteamRecoveryCode(): Promise<void> {
+    if (this.steamRecoveryCode.length === 0) {
+      return;
+    }
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.steamRecoveryCode);
+      await pasteboard.getSystemPasteboard().setData(data);
+      this.showToast('恢复码已复制');
+    } catch (error) {
+      this.showToast('复制失败');
+    }
   }
 
   private startSelectedSteamLoginScan(): void {
@@ -9695,7 +11025,7 @@ struct Index {
       return;
     }
     const data = parseSteamGuardData(token.steamData || '');
-    if (!canUseSteamRemoteFeatures(data)) {
+    if (!canUseSteamRemoteFeatures(data) || !data.fullyEnrolled) {
       this.showToast('所选令牌缺少 Steam 登录凭据，请重新导入 maFile');
       return;
     }
@@ -9710,13 +11040,93 @@ struct Index {
         enableMultiMode: false,
         enableAlbum: true
       });
-      await this.steamService().approveQrLogin(data, result.originalValue, true);
-      this.showToast('Steam 登录已确认');
+      if (!/^https:\/\/s\.team\/q\/\d+\/\d+(?:\?|$)/.test(result.originalValue.trim())) {
+        throw new Error('无效的 Steam 登录二维码');
+      }
+      let detailsAvailable = true;
+      let info: SteamQrLoginInfo;
+      try {
+        info = await this.steamService().qrLoginInfo(data, result.originalValue);
+      } catch (error) {
+        detailsAvailable = false;
+        info = { ip: '', location: '', deviceName: '', persistent: true };
+        console.error('Steam QR login details unavailable: ' + this.errorMessage(error));
+      }
+      await this.persistSteamGuardData(token, data);
+      this.showSteamQrLoginDialog(token.id, result.originalValue, info, detailsAvailable);
     } catch (error) {
       const code = this.getErrorCode(error);
       if (code !== scanCore.ScanErrorCode.SCAN_SERVICE_CANCELED) {
         this.showToast('Steam 扫码登录失败：' + this.errorMessage(error));
+        console.error('Steam QR login scan failed: ' + this.errorMessage(error));
       }
+    } finally {
+      this.steamLoading = false;
+    }
+  }
+
+  private showSteamQrLoginDialog(
+    tokenId: string,
+    challengeUrl: string,
+    info: SteamQrLoginInfo,
+    detailsAvailable: boolean
+  ): void {
+    const details: string[] = [];
+    if (info.deviceName.length > 0) {
+      details.push(this.t('设备') + '：' + info.deviceName);
+    }
+    if (info.location.length > 0) {
+      details.push(this.t('位置') + '：' + info.location);
+    }
+    if (info.ip.length > 0) {
+      details.push('IP：' + info.ip);
+    }
+    if (!detailsAvailable) {
+      details.push(this.t('暂时无法读取设备详情，请保证验证器由当前设备生成且已更换支持的网络'));
+    }
+    details.push(info.persistent ? this.t('此设备请求保持登录') : this.t('此设备请求单次登录'));
+    this.getUIContext().showAlertDialog({
+      title: this.t('Steam 登录确认'),
+      message: details.join('\n'),
+      autoCancel: false,
+      primaryButton: {
+        value: this.t('拒绝'),
+        fontColor: ERROR_RED,
+        action: () => {
+          this.respondSteamQrLogin(tokenId, challengeUrl, info.persistent, false);
+        }
+      },
+      secondaryButton: {
+        value: this.t('确认登录'),
+        action: () => {
+          this.respondSteamQrLogin(tokenId, challengeUrl, info.persistent, true);
+        }
+      }
+    });
+  }
+
+  private async respondSteamQrLogin(
+    tokenId: string,
+    challengeUrl: string,
+    persistent: boolean,
+    confirm: boolean
+  ): Promise<void> {
+    if (this.steamLoading) {
+      return;
+    }
+    const token = this.tokens.find((current: TokenRecord) => current.id === tokenId);
+    if (!token) {
+      this.showToast('所选 Steam 令牌已不存在');
+      return;
+    }
+    const data = parseSteamGuardData(token.steamData || '');
+    this.steamLoading = true;
+    try {
+      await this.steamService().respondQrLogin(data, challengeUrl, persistent, confirm);
+      await this.persistSteamGuardData(token, data);
+      this.showToast(confirm ? 'Steam 登录已确认' : 'Steam 登录已拒绝');
+    } catch (error) {
+      this.showToast((confirm ? 'Steam 登录确认失败：' : 'Steam 登录拒绝失败：') + this.errorMessage(error));
     } finally {
       this.steamLoading = false;
     }
@@ -9725,7 +11135,7 @@ struct Index {
   private steamConfirmationTokens(): TokenRecord[] {
     return this.steamLoginTokens().filter((token: TokenRecord) => {
       const data = parseSteamGuardData(token.steamData || '');
-      return data.identitySecret.length > 0 && data.deviceId.length > 0;
+      return data.fullyEnrolled && data.identitySecret.length > 0 && data.deviceId.length > 0;
     });
   }
 
@@ -9758,7 +11168,9 @@ struct Index {
     try {
       for (const token of tokens) {
         try {
-          const confirmations = await this.steamService().confirmations(parseSteamGuardData(token.steamData || ''));
+          const data = parseSteamGuardData(token.steamData || '');
+          const confirmations = await this.steamService().confirmations(data);
+          await this.persistSteamGuardData(token, data);
           for (const confirmation of confirmations) {
             discovered.push({
               tokenId: token.id,
@@ -9828,11 +11240,9 @@ struct Index {
       if (!token) {
         throw new Error('Steam 令牌已不存在');
       }
-      await this.steamService().respond(
-        parseSteamGuardData(token.steamData || ''),
-        [pending.confirmation],
-        allow
-      );
+      const data = parseSteamGuardData(token.steamData || '');
+      await this.steamService().respond(data, [pending.confirmation], allow);
+      await this.persistSteamGuardData(token, data);
       this.showToast(allow ? '已确认' : '已拒绝');
     } catch (error) {
       this.showToast((allow ? '确认失败：' : '拒绝失败：') + this.errorMessage(error));
@@ -9844,6 +11254,39 @@ struct Index {
       setTimeout(() => {
         this.showNextSteamConfirmationDialog();
       }, 180);
+    }
+  }
+
+  private async persistSteamGuardData(token: TokenRecord, data: SteamGuardData): Promise<void> {
+    const serialized = serializeSteamGuardData(data);
+    if (serialized === (token.steamData || '')) {
+      return;
+    }
+    const nextTokens = this.tokens.map((current: TokenRecord) => {
+      if (current.id !== token.id) {
+        return current;
+      }
+      return {
+        id: current.id,
+        name: current.name,
+        remark: current.remark,
+        type: current.type,
+        algorithm: current.algorithm,
+        secret: current.secret,
+        logoUri: current.logoUri,
+        logoLightUri: current.logoLightUri,
+        logoDarkUri: current.logoDarkUri,
+        logoSource: current.logoSource,
+        digits: current.digits,
+        period: current.period,
+        counter: current.counter,
+        steamData: serialized,
+        createdAt: current.createdAt,
+        modifiedTime: Date.now()
+      };
+    });
+    if (!await this.persistTokens(nextTokens, '')) {
+      throw new Error('Steam 登录凭据保存失败');
     }
   }
 
@@ -9861,7 +11304,25 @@ struct Index {
   }
 
   private errorMessage(error: Object): string {
+    if (typeof error === 'string') {
+      return error;
+    }
     try {
+      const record = error as Record<string, Object>;
+      const message = record['message'];
+      const code = record['code'];
+      if (typeof message === 'string' && message.length > 0) {
+        return typeof code === 'number' || typeof code === 'string' ?
+          message + '（' + code.toString() + '）' : message;
+      }
+      const data = record['data'];
+      if (typeof data === 'string' && data.length > 0) {
+        return data;
+      }
+      const serialized = JSON.stringify(error);
+      if (serialized.length > 2) {
+        return serialized;
+      }
       return error.toString();
     } catch (ignored) {
       return '未知错误';
@@ -9917,45 +11378,166 @@ struct Index {
     try {
       const documentPicker = new picker.DocumentViewPicker(context);
       const uris = await documentPicker.select({
-        maxSelectNumber: 1,
+        maxSelectNumber: 2,
         fileSuffixFilters: ['2FA|.txt,.json,.csv,.tsv,.otpauth,.mafile,.2fas']
       });
       if (uris.length === 0) {
         return;
       }
-
-      const content = await this.readImportFile(uris[0]);
-      const records = this.parseImportedTokenContent(content);
-      if (records.length === 0) {
-        this.showToast(this.importRejectedCount > 0 ?
-          this.tf('文件中有{0}条无效令牌', [`${this.importRejectedCount}`]) : '未识别到可导入的令牌');
+      const selectedFiles: ImportFileContent[] = [];
+      for (const uri of uris) {
+        selectedFiles.push({
+          uri: uri,
+          fileName: this.importFileName(uri),
+          content: await this.readImportFile(uri)
+        });
+      }
+      const encryptedFile = selectedFiles.find((file: ImportFileContent) => {
+        return SteamMaFile.isEncryptedContent(file.content);
+      });
+      if (encryptedFile) {
+        let manifestFile = selectedFiles.find((file: ImportFileContent) => SteamMaFile.isManifest(file.content));
+        if (!manifestFile) {
+          manifestFile = await this.selectSteamManifestFile();
+        }
+        if (!manifestFile) {
+          this.showToast('加密 maFile 需要同时选择 SDA 的 manifest.json');
+          return;
+        }
+        SteamMaFile.encryptionParameters(manifestFile.content, encryptedFile.fileName);
+        this.pendingSteamEncryptedContent = encryptedFile.content;
+        this.pendingSteamManifestContent = manifestFile.content;
+        this.pendingSteamFileName = encryptedFile.fileName;
+        this.steamDecryptPassword = '';
+        this.showSteamDecryptSheet = true;
         return;
       }
-
-      this.beginImportProgress(records.length, '正在导入令牌');
-      const recordsWithLogos = await this.hydrateTokenLogos(records);
-      const nextTokens = this.mergeImportedTokens(recordsWithLogos, this.tokens);
-      const addedCount = nextTokens.length - this.tokens.length;
-      const skippedCount = this.importRejectedCount + Math.max(0, recordsWithLogos.length - addedCount);
-      if (addedCount === 0) {
-        this.finishImportProgress(0, skippedCount, '没有新增令牌');
-        this.showToast('所选令牌已存在');
+      const tokenFile = selectedFiles.find((file: ImportFileContent) => !SteamMaFile.isManifest(file.content));
+      if (!tokenFile) {
+        this.showToast('请选择 maFile，而不是只选择 manifest.json');
         return;
       }
-      const importMessage = this.importRejectedCount > 0 ?
-        this.tf('已导入{0}个，跳过{1}个无效令牌', [`${addedCount}`, `${this.importRejectedCount}`]) :
-        this.tf('已导入{0}个令牌', [`${addedCount}`]);
-      if (!await this.persistTokens(nextTokens, importMessage)) {
-        this.finishImportProgress(addedCount, skippedCount, '导入失败');
-        return;
-      }
-      this.finishImportProgress(addedCount, skippedCount, importMessage);
-      this.searchText = '';
-      this.pageMode = PageMode.Home;
+      await this.importTokenContent(tokenFile.content);
     } catch (error) {
-      this.showToast('导入失败，请选择有效文件');
+      this.showToast('导入失败：' + this.errorMessage(error));
       console.error(`Failed to import token file: ${JSON.stringify(error)}`);
     }
+  }
+
+  private async selectSteamManifestFile(): Promise<ImportFileContent | undefined> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      return undefined;
+    }
+    const documentPicker = new picker.DocumentViewPicker(context);
+    const uris = await documentPicker.select({
+      maxSelectNumber: 1,
+      fileSuffixFilters: ['SDA manifest|.json']
+    });
+    if (uris.length === 0) {
+      return undefined;
+    }
+    const content = await this.readImportFile(uris[0]);
+    if (!SteamMaFile.isManifest(content)) {
+      throw new Error('所选文件不是有效的 SDA manifest.json');
+    }
+    return {
+      uri: uris[0],
+      fileName: this.importFileName(uris[0]),
+      content: content
+    };
+  }
+
+  private importFileName(uri: string): string {
+    const queryIndex = uri.indexOf('?');
+    const normalized = queryIndex >= 0 ? uri.substring(0, queryIndex) : uri;
+    const slashIndex = normalized.lastIndexOf('/');
+    const name = slashIndex >= 0 ? normalized.substring(slashIndex + 1) : normalized;
+    try {
+      return decodeURIComponent(name);
+    } catch (error) {
+      return name;
+    }
+  }
+
+  private closeSteamDecryptSheet(): void {
+    if (this.steamDecrypting) {
+      return;
+    }
+    this.showSteamDecryptSheet = false;
+    this.steamDecryptPassword = '';
+    this.pendingSteamEncryptedContent = '';
+    this.pendingSteamManifestContent = '';
+    this.pendingSteamFileName = '';
+  }
+
+  private async confirmSteamMaFileDecryption(): Promise<void> {
+    if (this.steamDecrypting || this.steamDecryptPassword.length === 0) {
+      return;
+    }
+    this.steamDecrypting = true;
+    try {
+      await this.delay(30);
+      const parameters = SteamMaFile.encryptionParameters(
+        this.pendingSteamManifestContent,
+        this.pendingSteamFileName
+      );
+      const content = await SteamMaFile.decrypt(
+        this.pendingSteamEncryptedContent,
+        this.steamDecryptPassword,
+        parameters
+      );
+      if (await this.importTokenContent(content)) {
+        this.showSteamDecryptSheet = false;
+        this.steamDecryptPassword = '';
+        this.pendingSteamEncryptedContent = '';
+        this.pendingSteamManifestContent = '';
+        this.pendingSteamFileName = '';
+      }
+    } catch (error) {
+      this.showToast('解密失败，请检查 SDA 密码和 manifest.json');
+      console.error('Failed to decrypt Steam maFile: ' + this.errorMessage(error));
+    } finally {
+      this.steamDecrypting = false;
+    }
+  }
+
+  private async importTokenContent(content: string): Promise<boolean> {
+    const records = this.parseImportedTokenContent(content);
+    if (records.length === 0) {
+      this.showToast(this.importRejectedCount > 0 ?
+        this.tf('文件中有{0}条无效令牌', [`${this.importRejectedCount}`]) : '未识别到可导入的令牌');
+      return false;
+    }
+    this.beginImportProgress(records.length, '正在导入令牌');
+    const recordsWithLogos = await this.hydrateTokenLogos(records);
+    const nextTokens = this.mergeImportedTokens(recordsWithLogos, this.tokens);
+    const addedCount = nextTokens.length - this.tokens.length;
+    const changedCount = addedCount + this.importUpdatedCount;
+    const skippedCount = this.importRejectedCount +
+      Math.max(0, recordsWithLogos.length - addedCount - this.importUpdatedCount);
+    if (changedCount === 0) {
+      this.finishImportProgress(0, skippedCount, '没有新增令牌');
+      this.showToast('所选令牌已存在且凭据完整');
+      return true;
+    }
+    let importMessage = this.tf('已导入{0}个令牌', [`${addedCount}`]);
+    if (this.importUpdatedCount > 0 && addedCount > 0) {
+      importMessage = this.tf('已导入{0}个，更新{1}个', [`${addedCount}`, `${this.importUpdatedCount}`]);
+    } else if (this.importUpdatedCount > 0) {
+      importMessage = this.tf('已更新{0}个 Steam 令牌凭据', [`${this.importUpdatedCount}`]);
+    } else if (this.importRejectedCount > 0) {
+      importMessage = this.tf('已导入{0}个，跳过{1}个无效令牌',
+        [`${addedCount}`, `${this.importRejectedCount}`]);
+    }
+    if (!await this.persistTokens(nextTokens, importMessage)) {
+      this.finishImportProgress(changedCount, skippedCount, '导入失败');
+      return false;
+    }
+    this.finishImportProgress(changedCount, skippedCount, importMessage);
+    this.searchText = '';
+    this.pageMode = PageMode.Home;
+    return true;
   }
 
   private beginImportProgress(total: number, message: string): void {
@@ -10008,6 +11590,22 @@ struct Index {
     const trimmed = content.trim();
     if (trimmed.length === 0) {
       return records;
+    }
+
+    const sdaData = parseSdaMaFile(trimmed);
+    if (sdaData.sharedSecret.length > 0) {
+      records.push(this.createImportedTokenRecord(
+        sdaData.accountName || this.t('Steam 令牌'),
+        'Steam',
+        sdaData.sharedSecret,
+        'Steam',
+        'SHA1',
+        5,
+        30,
+        0,
+        serializeSteamGuardData(sdaData)
+      ));
+      return this.uniqueTokenRecordsWithValidation(records, true);
     }
 
     let parsedJson = false;
@@ -10158,7 +11756,8 @@ struct Index {
     }
 
     const uri = this.firstString(source, ['uri', 'url', 'totp', 'otpUri', 'otpAuthUri', 'otpauth', 'otpAuth']);
-    if (uri.length > 0) {
+    const embeddedSteamData = this.firstString(source, ['steamData']);
+    if (uri.length > 0 && embeddedSteamData.length === 0) {
       const uriRecords = this.createTokensFromScannedValue(uri);
       if (uriRecords.length === 0) {
         this.importRejectedCount++;
@@ -10186,21 +11785,39 @@ struct Index {
       }
       let steamData = '';
       if (this.normalizeTokenType(jsonType) === 'Steam') {
+        const storedSteamData = parseSteamGuardData(this.firstString(source, ['steamData']));
         const normalizedSteamData: SteamGuardData = {
-          accountName: this.firstString(source, ['account_name', 'accountName', 'username', 'name']),
+          accountName: this.firstString(source, ['account_name', 'accountName', 'username', 'name']) ||
+            storedSteamData.accountName,
           steamId: this.firstString(source, ['steamid', 'steamId', 'steamID']) ||
-            (steamSession ? this.firstString(steamSession, ['SteamID', 'steamId', 'steamid']) : ''),
-          sharedSecret: this.firstString(source, ['shared_secret', 'sharedSecret']) || secret,
-          identitySecret: this.firstString(source, ['identity_secret', 'identitySecret']),
-          deviceId: this.firstString(source, ['device_id', 'deviceId', 'deviceID']),
+            (steamSession ? this.firstString(steamSession, ['SteamID', 'steamId', 'steamid']) : '') ||
+            storedSteamData.steamId,
+          sharedSecret: this.firstString(source, ['shared_secret', 'sharedSecret']) || secret ||
+            storedSteamData.sharedSecret,
+          identitySecret: this.firstString(source, ['identity_secret', 'identitySecret']) ||
+            storedSteamData.identitySecret,
+          deviceId: this.firstString(source, ['device_id', 'deviceId', 'deviceID']) || storedSteamData.deviceId,
           accessToken: this.firstString(source, ['access_token', 'accessToken']) ||
-            (steamSession ? this.firstString(steamSession, ['AccessToken', 'accessToken']) : ''),
+            (steamSession ? this.firstString(steamSession, ['AccessToken', 'accessToken']) : '') ||
+            storedSteamData.accessToken,
           refreshToken: this.firstString(source, ['refresh_token', 'refreshToken']) ||
-            (steamSession ? this.firstString(steamSession, ['RefreshToken', 'refreshToken']) : ''),
-          revocationCode: this.firstString(source, ['revocation_code', 'revocationCode']),
-          serialNumber: this.firstString(source, ['serial_number', 'serialNumber'])
+            (steamSession ? this.firstString(steamSession, ['RefreshToken', 'refreshToken']) : '') ||
+            storedSteamData.refreshToken,
+          sessionId: this.firstString(source, ['session_id', 'sessionId']) ||
+            (steamSession ? this.firstString(steamSession, ['SessionID', 'sessionId']) : '') ||
+            storedSteamData.sessionId,
+          revocationCode: this.firstString(source, ['revocation_code', 'revocationCode']) ||
+            storedSteamData.revocationCode,
+          serialNumber: this.firstString(source, ['serial_number', 'serialNumber']) || storedSteamData.serialNumber,
+          uri: this.firstString(source, ['steam_uri']) || storedSteamData.uri,
+          serverTime: this.firstNumber(source, ['server_time', 'serverTime']) || storedSteamData.serverTime,
+          tokenGid: this.firstString(source, ['token_gid', 'tokenGid']) || storedSteamData.tokenGid,
+          secret1: this.firstString(source, ['secret_1', 'secret1']) || storedSteamData.secret1,
+          status: this.firstNumber(source, ['status']) || storedSteamData.status,
+          fullyEnrolled: this.importedJsonValue(source, 'fully_enrolled') === true || storedSteamData.fullyEnrolled,
+          maFile: this.firstString(source, ['maFile']) || storedSteamData.maFile
         };
-        steamData = JSON.stringify(normalizedSteamData);
+        steamData = serializeSteamGuardData(normalizedSteamData);
       }
       records.push(this.createImportedTokenRecord(
         this.firstString(source, ['name', 'service', 'label', 'accountName', 'account_name', 'account', 'accountId',
@@ -10411,12 +12028,49 @@ struct Index {
   }
 
   private mergeImportedTokens(records: TokenRecord[], currentTokens: TokenRecord[]): TokenRecord[] {
-    const filteredRecords = records.filter((record: TokenRecord) => {
-      return !currentTokens.some((token: TokenRecord) => {
-        return token.secret === record.secret && token.name === record.name && token.type === record.type;
+    this.importUpdatedCount = 0;
+    const mergedTokens = currentTokens.slice();
+    const addedTokens: TokenRecord[] = [];
+    records.forEach((record: TokenRecord) => {
+      const recordType = this.normalizeTokenType(record.type);
+      const existingIndex = mergedTokens.findIndex((token: TokenRecord) => {
+        if (token.secret !== record.secret || this.normalizeTokenType(token.type) !== recordType) {
+          return false;
+        }
+        return recordType === 'Steam' || token.name === record.name;
       });
+      if (existingIndex < 0) {
+        addedTokens.push(record);
+        return;
+      }
+      const current = mergedTokens[existingIndex];
+      if (recordType !== 'Steam' || !record.steamData || record.steamData.length === 0 ||
+        record.steamData === (current.steamData || '')) {
+        return;
+      }
+      mergedTokens[existingIndex] = {
+        id: current.id,
+        name: record.name || current.name,
+        remark: record.remark || current.remark,
+        type: 'Steam',
+        algorithm: 'SHA1',
+        secret: record.secret,
+        logoUri: current.logoSource === LOGO_SOURCE_MANUAL ? current.logoUri : record.logoUri || current.logoUri,
+        logoLightUri: current.logoSource === LOGO_SOURCE_MANUAL ?
+          current.logoLightUri : record.logoLightUri || current.logoLightUri,
+        logoDarkUri: current.logoSource === LOGO_SOURCE_MANUAL ?
+          current.logoDarkUri : record.logoDarkUri || current.logoDarkUri,
+        logoSource: current.logoSource === LOGO_SOURCE_MANUAL ? current.logoSource : record.logoSource || current.logoSource,
+        digits: 5,
+        period: 30,
+        counter: 0,
+        steamData: record.steamData,
+        createdAt: current.createdAt,
+        modifiedTime: Date.now()
+      };
+      this.importUpdatedCount++;
     });
-    return filteredRecords.concat(currentTokens);
+    return addedTokens.concat(mergedTokens);
   }
 
   private createTokenFromScannedValue(scannedValue: string): TokenRecord | undefined {

@@ -24,6 +24,7 @@ interface Settings {
   backgroundSelection: string;
   customBackgroundUri: string;
   backgroundBlurPercent: number;
+  globalBackgroundEnabled: boolean;
   updateNoticeVersion: string;
   language: string;
   cloudSyncStatus: string;
@@ -57,6 +58,7 @@ const DEFAULTS: Settings = {
   backgroundSelection: 'none',
   customBackgroundUri: '',
   backgroundBlurPercent: 0,
+  globalBackgroundEnabled: false,
   updateNoticeVersion: '',
   language: '跟随系统',
   cloudSyncStatus: '尚未同步',
@@ -91,6 +93,7 @@ export class SettingsRepository {
       const backgroundSettingsVersionValue = await store.get('backgroundSettingsVersion', 0);
       const customBackgroundUriValue = await store.get('customBackgroundUri', DEFAULTS.customBackgroundUri);
       const backgroundBlurValue = await store.get('backgroundBlurPercent', DEFAULTS.backgroundBlurPercent);
+      const globalBackgroundValue = await store.get('globalBackgroundEnabled', DEFAULTS.globalBackgroundEnabled);
       const updateNoticeVersionValue = await store.get('updateNoticeVersion', DEFAULTS.updateNoticeVersion);
       return {
         cloudBackup: parsed['cloudBackup'] as boolean ?? DEFAULTS.cloudBackup,
@@ -117,6 +120,8 @@ export class SettingsRepository {
           DEFAULTS.customBackgroundUri,
         backgroundBlurPercent: typeof backgroundBlurValue === 'number' ? backgroundBlurValue :
           DEFAULTS.backgroundBlurPercent,
+        globalBackgroundEnabled: typeof globalBackgroundValue === 'boolean' ? globalBackgroundValue :
+          DEFAULTS.globalBackgroundEnabled,
         updateNoticeVersion: typeof updateNoticeVersionValue === 'string' ? updateNoticeVersionValue :
           DEFAULTS.updateNoticeVersion,
         language: parsed['language'] as string ?? DEFAULTS.language,
@@ -144,6 +149,7 @@ export class SettingsRepository {
       await store.put('backgroundSettingsVersion', BACKGROUND_SETTINGS_VERSION);
       await store.put('customBackgroundUri', settings.customBackgroundUri);
       await store.put('backgroundBlurPercent', settings.backgroundBlurPercent);
+      await store.put('globalBackgroundEnabled', settings.globalBackgroundEnabled);
       await store.put('updateNoticeVersion', settings.updateNoticeVersion);
       await store.flush();
     } catch (error) {

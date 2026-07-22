@@ -1,3 +1,26 @@
+interface SdaSessionData {
+  SteamID?: number | string;
+  AccessToken?: string;
+  RefreshToken?: string;
+  SessionID?: string;
+}
+
+interface SdaMaFileData {
+  shared_secret?: string;
+  serial_number?: string;
+  revocation_code?: string;
+  uri?: string;
+  server_time?: number;
+  account_name?: string;
+  token_gid?: string;
+  identity_secret?: string;
+  secret_1?: string;
+  status?: number;
+  device_id?: string;
+  fully_enrolled?: boolean;
+  Session?: SdaSessionData;
+}
+
 export interface SteamGuardData {
   accountName: string;
   steamId: string;
@@ -6,8 +29,16 @@ export interface SteamGuardData {
   deviceId: string;
   accessToken: string;
   refreshToken: string;
+  sessionId: string;
   revocationCode: string;
   serialNumber: string;
+  uri: string;
+  serverTime: number;
+  tokenGid: string;
+  secret1: string;
+  status: number;
+  fullyEnrolled: boolean;
+  maFile: string;
 }
 
 export interface SteamConfirmation {
@@ -31,8 +62,16 @@ export function emptySteamGuardData(): SteamGuardData {
     deviceId: '',
     accessToken: '',
     refreshToken: '',
+    sessionId: '',
     revocationCode: '',
-    serialNumber: ''
+    serialNumber: '',
+    uri: '',
+    serverTime: 0,
+    tokenGid: '',
+    secret1: '',
+    status: 0,
+    fullyEnrolled: false,
+    maFile: ''
   };
 }
 
@@ -50,15 +89,103 @@ export function parseSteamGuardData(value: string): SteamGuardData {
       deviceId: parsed.deviceId || '',
       accessToken: parsed.accessToken || '',
       refreshToken: parsed.refreshToken || '',
+      sessionId: parsed.sessionId || '',
       revocationCode: parsed.revocationCode || '',
-      serialNumber: parsed.serialNumber || ''
+      serialNumber: parsed.serialNumber || '',
+      uri: parsed.uri || '',
+      serverTime: parsed.serverTime || 0,
+      tokenGid: parsed.tokenGid || '',
+      secret1: parsed.secret1 || '',
+      status: parsed.status || 0,
+      fullyEnrolled: parsed.fullyEnrolled || false,
+      maFile: parsed.maFile || ''
     };
   } catch (error) {
     return emptySteamGuardData();
   }
 }
 
+export function parseSdaMaFile(value: string): SteamGuardData {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || !trimmed.startsWith('{')) {
+    return emptySteamGuardData();
+  }
+  try {
+    const parsed: SdaMaFileData = JSON.parse(trimmed);
+    if (!parsed.shared_secret || parsed.shared_secret.length === 0) {
+      return emptySteamGuardData();
+    }
+    const session = parsed.Session;
+    const extractedSteamId = extractJsonInteger(trimmed, 'SteamID');
+    return {
+      accountName: parsed.account_name || '',
+      steamId: extractedSteamId || sessionSteamId(session),
+      sharedSecret: parsed.shared_secret,
+      identitySecret: parsed.identity_secret || '',
+      deviceId: parsed.device_id || '',
+      accessToken: session && session.AccessToken ? session.AccessToken : '',
+      refreshToken: session && session.RefreshToken ? session.RefreshToken : '',
+      sessionId: session && session.SessionID ? session.SessionID : '',
+      revocationCode: parsed.revocation_code || '',
+      serialNumber: parsed.serial_number || '',
+      uri: parsed.uri || '',
+      serverTime: parsed.server_time || 0,
+      tokenGid: parsed.token_gid || '',
+      secret1: parsed.secret_1 || '',
+      status: parsed.status || 0,
+      fullyEnrolled: parsed.fully_enrolled || false,
+      maFile: trimmed
+    };
+  } catch (error) {
+    return emptySteamGuardData();
+  }
+}
+
+export function serializeSteamGuardData(data: SteamGuardData): string {
+  return JSON.stringify(data);
+}
+
+export function createSdaMaFile(data: SteamGuardData): string {
+  const steamIdValue = /^\d+$/.test(data.steamId) ? data.steamId : jsonString(data.steamId);
+  return '{' +
+    '"shared_secret":' + jsonString(data.sharedSecret) + ',' +
+    '"serial_number":' + jsonString(data.serialNumber) + ',' +
+    '"revocation_code":' + jsonString(data.revocationCode) + ',' +
+    '"uri":' + jsonString(data.uri) + ',' +
+    '"server_time":' + Math.max(0, Math.floor(data.serverTime)).toString() + ',' +
+    '"account_name":' + jsonString(data.accountName) + ',' +
+    '"token_gid":' + jsonString(data.tokenGid) + ',' +
+    '"identity_secret":' + jsonString(data.identitySecret) + ',' +
+    '"secret_1":' + jsonString(data.secret1) + ',' +
+    '"status":' + Math.floor(data.status).toString() + ',' +
+    '"device_id":' + jsonString(data.deviceId) + ',' +
+    '"fully_enrolled":' + (data.fullyEnrolled ? 'true' : 'false') + ',' +
+    '"Session":{' +
+    '"SteamID":' + steamIdValue + ',' +
+    '"AccessToken":' + jsonString(data.accessToken) + ',' +
+    '"RefreshToken":' + jsonString(data.refreshToken) + ',' +
+    '"SessionID":' + jsonString(data.sessionId) +
+    '}}';
+}
+
 export function canUseSteamRemoteFeatures(data: SteamGuardData): boolean {
   return data.steamId.length > 0 && data.sharedSecret.length > 0 &&
     (data.accessToken.length > 0 || data.refreshToken.length > 0);
+}
+
+function sessionSteamId(session?: SdaSessionData): string {
+  if (!session || session.SteamID === undefined || session.SteamID === null) {
+    return '';
+  }
+  return session.SteamID.toString();
+}
+
+function extractJsonInteger(value: string, key: string): string {
+  const expression = new RegExp('"' + key + '"\\s*:\\s*"?(\\d+)"?', 'i');
+  const match = expression.exec(value);
+  return match && match.length > 1 ? match[1] : '';
+}
+
+function jsonString(value: string): string {
+  return JSON.stringify(value || '');
 }
