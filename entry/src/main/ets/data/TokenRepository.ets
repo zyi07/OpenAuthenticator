@@ -2,6 +2,10 @@ import { common } from '@kit.AbilityKit';
 import { cloudData, preferences, relationalStore } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { sanitizeTokenRecord, TokenRecord } from '../model/TokenRecord';
+import {
+  SQL_CREATE_STEAM_GUARD_CLOUD_TABLE,
+  SQL_NORMALIZE_STEAM_GUARD_CLOUD_STRINGS
+} from './SteamGuardCloudSchema';
 
 const STORE_NAME = 'tool_2fa_tokens.db';
 const LOCAL_TABLE_NAME = 'local_tokens';
@@ -104,6 +108,7 @@ let rdbStoreInitialization: Promise<relationalStore.RdbStore> | null = null;
 let autoSyncProgress: ((details: relationalStore.ProgressDetails) => void) | null = null;
 let cloudDataChange: ((accounts: Array<string>) => void) | null = null;
 let configuredAutoSync: boolean | null = null;
+let lastSyncNeedsMetadataRepair = false;
 
 export interface CloudSyncState {
   status: string;
@@ -185,6 +190,8 @@ async function ensureTableSchemas(context: common.Context, store: relationalStor
   } else if (!cloudColumns.includes(OLD_JSON_COLUMN)) {
     await addMissingColumns(store, CLOUD_TABLE_NAME, cloudColumns, CLOUD_REQUIRED_COLUMNS);
   }
+  await store.executeSql(SQL_CREATE_STEAM_GUARD_CLOUD_TABLE);
+  await store.executeSql(SQL_NORMALIZE_STEAM_GUARD_CLOUD_STRINGS);
   await store.executeSql(SQL_CREATE_LOCAL_EXCLUSIONS_TABLE);
 }
 
@@ -219,6 +226,8 @@ async function rebuildCloudSyncMetadata(
   const rebuiltStore = await relationalStore.getRdbStore(context, config);
   await rebuiltStore.executeSql(SQL_CREATE_LOCAL_TABLE);
   await rebuiltStore.executeSql(SQL_CREATE_CLOUD_TABLE);
+  await rebuiltStore.executeSql(SQL_CREATE_STEAM_GUARD_CLOUD_TABLE);
+  await rebuiltStore.executeSql(SQL_NORMALIZE_STEAM_GUARD_CLOUD_STRINGS);
   await rebuiltStore.executeSql(SQL_CREATE_LOCAL_EXCLUSIONS_TABLE);
   await replaceLocalRows(rebuiltStore, records);
   await restoreLocalExclusions(rebuiltStore, exclusions);
@@ -230,24 +239,22 @@ async function rebuildCloudSyncMetadata(
 
 async function resetCloudSyncMetadataAfterDelete(
   context: common.UIAbilityContext,
-  store: relationalStore.RdbStore
+  reason: string
 ): Promise<boolean> {
-  const config = createStoreConfig();
-  rdbStore = null;
-  rdbStoreInitialization = null;
-  configuredAutoSync = null;
-  autoSyncProgress = null;
-  cloudDataChange = null;
-  try {
-    console.info('Reset cloud sync metadata after physical cloud delete');
-    const rebuiltStore = await rebuildCloudSyncMetadata(context, config, store);
-    rdbStore = rebuiltStore;
-    console.info('Cloud sync metadata reset after delete completed');
-    return true;
-  } catch (error) {
-    console.error('Failed to reset cloud sync metadata after delete: ' + JSON.stringify(error));
+  return await TokenRepository.repairCloudSyncMetadata(context, reason);
+}
+
+function needsMetadataRepair(
+  mode: relationalStore.SyncMode,
+  details: relationalStore.ProgressDetails
+): boolean {
+  if (mode !== relationalStore.SyncMode.SYNC_MODE_NATIVE_FIRST ||
+    details.schedule !== relationalStore.Progress.SYNC_FINISH ||
+    details.code !== relationalStore.ProgressCode.UNKNOWN_ERROR) {
     return false;
   }
+  const tableDetails = details.details[CLOUD_TABLE_NAME];
+  return !!tableDetails && tableDetails.upload.failed > 0 && tableDetails.download.failed === 0;
 }
 
 async function addMissingColumns(
@@ -617,6 +624,33 @@ async function configureNetworkStrategy(): Promise<void> {
 }
 
 export class TokenRepository {
+  static async getSharedCloudStore(context: common.Context): Promise<relationalStore.RdbStore> {
+    return await getStore(context);
+  }
+
+  static async repairCloudSyncMetadata(
+    context: common.UIAbilityContext,
+    reason: string
+  ): Promise<boolean> {
+    try {
+      const store = await getStore(context);
+      console.info('Repair shared cloud sync metadata: reason=' + reason);
+      rdbStore = null;
+      rdbStoreInitialization = null;
+      configuredAutoSync = null;
+      autoSyncProgress = null;
+      cloudDataChange = null;
+      const rebuiltStore = await rebuildCloudSyncMetadata(context, createStoreConfig(), store);
+      rdbStore = rebuiltStore;
+      console.info('Shared cloud sync metadata repair completed: reason=' + reason);
+      return true;
+    } catch (error) {
+      console.error('Failed to repair shared cloud sync metadata: reason=' + reason +
+        ', error=' + JSON.stringify(error));
+      return false;
+    }
+  }
+
   static async load(context: common.Context): Promise<TokenRecord[]> {
     try {
       const store = await getStore(context);
@@ -703,7 +737,9 @@ export class TokenRepository {
         }
         if (enabled && listener) {
           autoSyncProgress = (details: relationalStore.ProgressDetails): void => {
-            listener(TokenRepository.cloudSyncState(details));
+            if (details.details[CLOUD_TABLE_NAME]) {
+              listener(TokenRepository.cloudSyncState(details));
+            }
           };
           store.on('autoSyncProgress', autoSyncProgress);
           cloudDataChange = (): void => {
@@ -742,6 +778,45 @@ export class TokenRepository {
       listener({ status: '推送准备失败', finished: true, success: false });
       return false;
     }
+    const initialSuccess = await TokenRepository.sync(
+      context,
+      relationalStore.SyncMode.SYNC_MODE_NATIVE_FIRST,
+      (state: CloudSyncState): void => {
+        if (state.finished && !state.success && lastSyncNeedsMetadataRepair) {
+          listener({ status: '正在修复云端同步状态', finished: false, success: false });
+        } else {
+          listener(state);
+        }
+      }
+    );
+    if (initialSuccess || !lastSyncNeedsMetadataRepair) {
+      return initialSuccess;
+    }
+    listener({ status: '正在修复云端同步状态', finished: false, success: false });
+    if (!await TokenRepository.repairCloudSyncMetadata(context, 'tokens native-first upload failed')) {
+      listener({ status: '云端同步状态修复失败', finished: true, success: false });
+      return false;
+    }
+    if (!await TokenRepository.configureCloudSync(context, false)) {
+      listener({ status: '云同步不可用', finished: true, success: false });
+      return false;
+    }
+    if (!await TokenRepository.refreshCloudVersionBaseline(context, listener)) {
+      return false;
+    }
+    try {
+      const repairedStore = await getStore(context);
+      if (!await cleanCloudDeletedData(repairedStore)) {
+        listener({ status: '云端删除状态清理失败', finished: true, success: false });
+        return false;
+      }
+      await upsertCloudRows(repairedStore, records);
+    } catch (error) {
+      console.error('Failed to restage cloud records after metadata repair: ' + JSON.stringify(error));
+      listener({ status: '推送重试准备失败', finished: true, success: false });
+      return false;
+    }
+    console.info('Retry token cloud push after metadata repair');
     return await TokenRepository.sync(context, relationalStore.SyncMode.SYNC_MODE_NATIVE_FIRST, listener);
   }
 
@@ -795,9 +870,16 @@ export class TokenRepository {
         return false;
       }
       if (!await hasCloudRecord(store, token.id)) {
-        await resetCloudSyncMetadataAfterDelete(context, store);
-        listener({ status: '删除成功', finished: true, success: true });
-        return true;
+        const resetSuccess = await resetCloudSyncMetadataAfterDelete(
+          context,
+          'tokens delete target is already absent: ' + token.id
+        );
+        listener({
+          status: resetSuccess ? '删除成功' : '云端删除状态清理失败',
+          finished: true,
+          success: resetSuccess
+        });
+        return resetSuccess;
       }
       await store.delete(new relationalStore.RdbPredicates(CLOUD_TABLE_NAME).equalTo('id', token.id));
       const success = await TokenRepository.sync(
@@ -806,7 +888,7 @@ export class TokenRepository {
         listener
       );
       if (success) {
-        await resetCloudSyncMetadataAfterDelete(context, store);
+        await store.cleanDirtyData(CLOUD_TABLE_NAME);
         return true;
       }
       listener({ status: '正在确认云端删除结果', finished: false, success: false });
@@ -821,12 +903,19 @@ export class TokenRepository {
       );
       if (verified && await cleanCloudDeletedData(store)) {
         if (!await hasCloudRecord(store, token.id)) {
-          await resetCloudSyncMetadataAfterDelete(context, store);
-          listener({ status: '删除成功', finished: true, success: true });
-          return true;
+          const resetSuccess = await resetCloudSyncMetadataAfterDelete(
+            context,
+            'tokens delete verified absent after failed upload: ' + token.id
+          );
+          listener({
+            status: resetSuccess ? '删除成功' : '云端删除状态清理失败',
+            finished: true,
+            success: resetSuccess
+          });
+          return resetSuccess;
         }
       }
-      await resetCloudSyncMetadataAfterDelete(context, store);
+      await resetCloudSyncMetadataAfterDelete(context, 'tokens delete failed: ' + token.id);
       listener({ status: '云端删除失败', finished: true, success: false });
       return false;
     } catch (error) {
@@ -859,6 +948,7 @@ export class TokenRepository {
     mode: relationalStore.SyncMode,
     listener: (state: CloudSyncState) => void
   ): Promise<boolean> {
+    lastSyncNeedsMetadataRepair = false;
     try {
       const store = await getStore(context);
       console.info(`Request cloud sync: table=${CLOUD_TABLE_NAME}, mode=${mode}`);
@@ -885,6 +975,7 @@ export class TokenRepository {
           mode,
           [CLOUD_TABLE_NAME],
           (details: relationalStore.ProgressDetails): void => {
+            lastSyncNeedsMetadataRepair = needsMetadataRepair(mode, details);
             const state = TokenRepository.cloudSyncState(details);
             console.info(`Cloud sync progress, schedule=${details.schedule}, code=${details.code}`);
             const tableDetails = details.details[CLOUD_TABLE_NAME];

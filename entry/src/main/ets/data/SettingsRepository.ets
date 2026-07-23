@@ -28,6 +28,7 @@ interface Settings {
   updateNoticeVersion: string;
   language: string;
   cloudSyncStatus: string;
+  steamCloudSyncStatus: string;
   cloudLastSyncTime: number;
   onboardingCompleted: boolean;
   watchSelectedTokenIds: string[];
@@ -58,10 +59,11 @@ const DEFAULTS: Settings = {
   backgroundSelection: 'none',
   customBackgroundUri: '',
   backgroundBlurPercent: 0,
-  globalBackgroundEnabled: false,
+  globalBackgroundEnabled: true,
   updateNoticeVersion: '',
   language: '跟随系统',
   cloudSyncStatus: '尚未同步',
+  steamCloudSyncStatus: '尚未同步',
   cloudLastSyncTime: 0,
   onboardingCompleted: false,
   watchSelectedTokenIds: [],
@@ -126,6 +128,7 @@ export class SettingsRepository {
           DEFAULTS.updateNoticeVersion,
         language: parsed['language'] as string ?? DEFAULTS.language,
         cloudSyncStatus: parsed['cloudSyncStatus'] as string ?? DEFAULTS.cloudSyncStatus,
+        steamCloudSyncStatus: parsed['steamCloudSyncStatus'] as string ?? DEFAULTS.steamCloudSyncStatus,
         cloudLastSyncTime: parsed['cloudLastSyncTime'] as number ?? DEFAULTS.cloudLastSyncTime,
         onboardingCompleted: parsed['onboardingCompleted'] as boolean ?? DEFAULTS.onboardingCompleted,
         watchSelectedTokenIds: (parsed['watchSelectedTokenIds'] as string[]) ?? DEFAULTS.watchSelectedTokenIds,

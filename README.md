@@ -5,7 +5,7 @@
   <p>
     <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.0(23)-111111">
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
-    <img alt="Version" src="https://img.shields.io/badge/Version-1.3.3-72A28B">
+    <img alt="Version" src="https://img.shields.io/badge/Version-1.4.0-72A28B">
     <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Tablet%20%7C%202in1-6F98AE">
     <img alt="License" src="https://img.shields.io/badge/License-MIT-4C8BF5">
   </p>
@@ -13,24 +13,23 @@
 
 ## 项目简介
 
-OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模型与 HarmonyOS 原生系统能力开发的 2FA 令牌管理应用。应用支持 TOTP、HOTP、Steam 令牌，兼容 Google Authenticator 迁移二维码，提供本地存储、华为云空间同步、备份导出、服务卡片、多语言、深浅色模式和多端响应式布局。
+OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模型与 HarmonyOS 原生系统能力开发的 2FA 令牌管理应用。应用支持 TOTP、HOTP、完整 Steam Guard、Google Authenticator 迁移二维码，提供本地存储、华为云空间同步、备份导出、服务卡片、多语言、主题背景和多端响应式布局。
 
 密钥属于高敏感数据。应用默认将令牌保存在本机应用私有数据中；导出的 JSON 文件或二维码图片请由用户自行妥善保管。
 
 ## 下载与侧载
 
-- 当前版本：`1.3.3`（`versionCode 1000037`）
+- 当前版本：`1.4.0`（`versionCode 1000040`）
 - 系统要求：HarmonyOS `6.1.0(23)` 或更高版本
 - 支持设备：手机、平板与 2in1
-- 安装包：[下载 OpenAuthenticator v1.3.3 签名 HAP](https://api.gitcode.com/api/v5/repos/mroble/Authenticator/releases/v1.3.3/attach_files/OpenAuthenticator-v1.3.3.hap/download)
+- 安装包：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取 `OpenAuthenticator-v1.4.0.hap`
 - 版本说明：[CHANGELOG.md](CHANGELOG.md)
-- SHA-256：`947c78a0afe8e4618e7aa3b40734f0a57619511641e41e6630a12ec1b5c5bbe1`
 
 安装前请在设备上开启开发者模式和 USB 调试，在电脑安装并连接 HDC 后执行：
 
 ```bash
 hdc list targets
-hdc app install -r OpenAuthenticator-v1.3.3.hap
+hdc app install -r OpenAuthenticator-v1.4.0.hap
 ```
 
 看到 `successfully` 后即可从桌面启动“开源验证器”。安装包使用 HarmonyOS release / AppGallery 分发证书签名；系统是否允许直接从文件管理器打开 HAP 安装取决于设备版本和安全策略，遇到限制时请使用 HDC。升级安装会保留应用数据，但仍建议先在应用内导出备份。请只从本仓库的 [Releases](https://gitcode.com/mroble/Authenticator/releases) 页面下载安装包，并核对 SHA-256。
@@ -80,10 +79,13 @@ hdc app install -r OpenAuthenticator-v1.3.3.hap
 - **清晰令牌卡片**：展示当前令牌、下一组令牌、圆形倒计时；支持搜索、置顶、编辑、删除与左滑操作。
 - **本地优先备份**：支持选择令牌导出为 JSON 或二维码图片，也支持从主流备份格式导入并进行基础密钥校验。
 - **华为云空间同步**：基于 ArkData 同应用端云数据同步，支持自动同步、手动推送、手动获取与同步状态展示。
+- **完整 Steam Guard**：支持未加密/加密 maFile 导入、账号登录生成验证器、恢复码保存、扫码登录、交易确认和 maFile 导出。
+- **Steam 凭证云同步**：使用独立加密云表同步结构化 Steam 登录凭证与交易确认信息，不改变通用令牌同步逻辑。
 - **桌面服务卡片**：提供 1x2、2x2、2x4、4x4 四种尺寸，每种尺寸包含浅色和深色版本。
 - **多端自适应**：令牌列表、我的页、设置页和新增页支持手机、平板、折叠屏与 2in1 设备响应式多列布局。
 - **原生系统体验**：使用 ArkUI 原生组件、HdsNavigation、HdsTabs、标准 Sheet、系统文件选择器、扫码能力与服务卡片管理器。
 - **个性化与多语言**：支持跟随系统/深色/浅色模式、六套主题色、简体中文、繁体中文、English(US)、English(UK)。
+- **主题背景**：支持七张预设图、图库自选、模糊程度调节及全局二级页面背景。
 - **隐私与安全**：支持应用锁定，预留智感握姿、防窥保护入口；不支持的系统能力保持上架版稳定提示。
 - **首次引导**：四页功能介绍，帮助新用户快速理解录入迁移、服务卡片、备份与隐私能力。
 
@@ -122,6 +124,11 @@ entry/src/main/ets/
 ├── pages/Index.ets                       # 主界面、设置、导入导出、响应式布局
 ├── model/TokenRecord.ets                 # 令牌数据模型与兼容清洗
 ├── data/TokenRepository.ets              # ArkData RDB、本地存储、云同步
+├── data/SteamGuardCloudRepository.ets    # Steam Guard 独立加密云表同步
+├── data/SteamGuardCloudSchema.ets        # Steam Guard 云表结构
+├── data/SteamEnrollmentService.ets       # Steam 登录及验证器激活
+├── data/SteamService.ets                 # Steam 扫码登录与交易确认
+├── model/SteamGuardData.ets              # 完整 Steam Guard 数据模型
 ├── data/SettingsRepository.ets           # 用户设置、语言、主题、引导状态
 ├── utils/Totp.ets                        # TOTP/HOTP/Steam 生成逻辑
 ├── utils/GoogleAuthenticatorMigration.ets
@@ -137,7 +144,7 @@ entry/src/main/ets/
 - HarmonyOS SDK `6.1.0(23)` release API
 - ArkTS Stage 模型
 - Bundle：`com.example.tool_2fa`
-- Version：`1.3.3`（`versionCode 1000037`）
+- Version：`1.4.0`（`versionCode 1000040`）
 - 设备类型：phone、tablet、2in1
 
 DevEco Studio 中可直接构建，也可使用项目约定命令：
@@ -153,14 +160,21 @@ build_project --build_mode release
 华为云空间同步依赖 AppGallery Connect 与 ArkData 同应用端云数据同步配置。真机调试前请确认：
 
 1. Bundle、签名证书、指纹和 AGC 项目一致。
-2. 已启用云数据库/云同步能力，并配置与本地 `tokens` 表匹配的云端对象。
+2. 已启用云数据库/云同步能力，并配置与本地 `tokens`、`steamGuardData` 表匹配的云端对象。
 3. 测试华为账号已加入测试范围，并在系统云空间中开启应用同步。
 4. 应用包含 `ohos.permission.DISTRIBUTED_DATASYNC` 权限。
 5. 重新登录设备华为账号或重新安装应用后，再验证手动推送/手动获取。
 
-云侧容器名为 `tool_2fa_tokens`，数据类型名为 `tokens`。字段建议如下，其中 `id` 勾选主键，`secret` 使用 `Encrypted String`：
+云侧容器名为 `tool_2fa_tokens`。通用令牌和完整 Steam Guard 数据使用两个相互独立的数据类型：
 
-端侧使用 `local_tokens` 保存本机完整令牌，使用与云端结构一致的 `tokens` 作为云同步镜像。手动推送会将本机令牌增量写入云端镜像后执行 `NATIVE_FIRST`；手动获取会执行 `CLOUD_FIRST` 后将云端全量记录增量合并到本机。`steamData` 等设备私有数据只保存在 `local_tokens`，不会进入云端。
+- `tokens`：保持现有通用令牌同步逻辑，Steam 令牌也会通过 `secret` 同步通用验证码密钥。
+- `steamGuardData`：同步结构化的 Steam 登录凭证、交易确认信息和恢复字段，用于在新设备恢复扫码登录、交易确认并重新生成 maFile。
+
+端侧使用 `local_tokens` 保存完整令牌，使用与云端结构一致的镜像表执行 `NATIVE_FIRST` 推送和 `CLOUD_FIRST` 获取。两个数据类型分别同步、分别统计状态，互不覆盖。原始 maFile、SDA `manifest.json` 和 SDA 本地加密信息不会直接上传云端。
+
+### 通用令牌数据类型 `tokens`
+
+其中 `id` 勾选主键，`secret` 使用 `Encrypted String`：
 
 | 字段 | 云侧类型 |
 | --- | --- |
@@ -179,6 +193,40 @@ build_project --build_mode release
 | counter | Integer |
 | createdAt | Integer |
 | sortIndex | Integer |
+
+### Steam Guard 数据类型 `steamGuardData`
+
+`id` 勾选主键。所有凭证类字符串均使用 `Encrypted String`；访问令牌和刷新令牌按约 700 字节拆分为最多三段，避免超过单字段长度限制。
+
+| 字段 | 云侧类型 |
+| --- | --- |
+| id | String |
+| dataVersion | Integer |
+| accountName | Encrypted String |
+| steamId | Encrypted String |
+| sharedSecret | Encrypted String |
+| identitySecret | Encrypted String |
+| deviceId | Encrypted String |
+| accessTokenPartCount | Integer |
+| accessTokenPart1 | Encrypted String |
+| accessTokenPart2 | Encrypted String |
+| accessTokenPart3 | Encrypted String |
+| refreshTokenPartCount | Integer |
+| refreshTokenPart1 | Encrypted String |
+| refreshTokenPart2 | Encrypted String |
+| refreshTokenPart3 | Encrypted String |
+| sessionId | Encrypted String |
+| revocationCode | Encrypted String |
+| serialNumber | Encrypted String |
+| uri | Encrypted String |
+| serverTime | Double |
+| tokenGid | Encrypted String |
+| secret1 | Encrypted String |
+| status | Integer |
+| fullyEnrolled | Integer |
+| updatedAt | Double |
+
+华为云空间的数据类型和字段只能新增，不能修改或删除。字段名称、大小写和类型必须与上表完全一致；生产环境和开发环境需要分别创建。旧版本仅识别 `tokens`，因此新增 `steamGuardData` 不影响既有用户的通用令牌数据。
 
 ## 数据兼容
 

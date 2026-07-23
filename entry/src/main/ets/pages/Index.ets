@@ -1,6 +1,6 @@
 import { abilityAccessCtrl, bundleManager, common, ConfigurationConstant, Permissions, Want } from '@kit.AbilityKit';
 import { authentication } from '@kit.AccountKit';
-import { commentManager, privacyManager } from '@kit.AppGalleryKit';
+import { privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
 import { ButtonModifier, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -33,6 +33,10 @@ import {
   hdsMaterial
 } from '@kit.UIDesignKit';
 import { CloudStageResult, CloudSyncState, TokenRepository } from '../data/TokenRepository';
+import {
+  SteamGuardCloudRecord,
+  SteamGuardCloudRepository
+} from '../data/SteamGuardCloudRepository';
 import { TokenRecord } from '../model/TokenRecord';
 import { Totp } from '../utils/Totp';
 import { SettingsRepository } from '../data/SettingsRepository';
@@ -66,6 +70,13 @@ import {
   systemLanguageTag,
   translate
 } from '../utils/LocaleText';
+
+interface UpdateLogEntry {
+  version: string;
+  date: string;
+  summary: string;
+  items: string[];
+}
 
 const APPLOCK_DOMAIN = 0x0001;
 const APPLOCK_TAG = 'AppLock';
@@ -134,15 +145,93 @@ const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
 const CAMLINK_URL: string =
   'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
 const QQ_GROUP_NUMBER: string = '1061983927';
-const APP_VERSION: string = 'V1.2.0';
-const UPDATE_NOTICE_VERSION: string = 'V1.2.0-appearance-steam-1';
+const APP_VERSION: string = 'V1.4.0';
+const APP_VERSION_CODE: string = '1000040';
+const UPDATE_NOTICE_VERSION: string = 'V1.4.0';
+const UPDATE_LOGS: UpdateLogEntry[] = [
+  {
+    version: '1.4.0',
+    date: '2026.07.23',
+    summary: 'Steam Guard、云同步与应用体验全面升级',
+    items: [
+      '完整支持 Steam maFile 导入、扫码登录、交易确认及 maFile 备份导出。',
+      '支持登录尚未启用移动验证器的 Steam 账号，自动生成 maFile 并保存恢复码。',
+      'Steam 完整登录凭证与交易信息通过独立加密云表同步，通用令牌同步逻辑保持不变。',
+      '通用令牌与 Steam 完整数据分别显示上传、下载数量及同步状态。',
+      '新增全局背景显示、背景模糊调节和主题图片，二级页面可统一显示所选背景。',
+      '新增历史更新日志、AppGallery 评价入口及 SDA 开源项目说明。'
+    ]
+  },
+  {
+    version: '1.3.4',
+    date: '2026.07.22',
+    summary: '完善 Steam 验证器工作流与主题体验',
+    items: [
+      '补齐 Steam 登录验证、验证器激活、恢复码保存和本地 maFile 生成流程。',
+      '支持 Steam 二维码登录和交易确认，并优化风险告知与异常提示。',
+      '新增自定义背景、预设主题图及全局沉浸光感设置。'
+    ]
+  },
+  {
+    version: '1.3.3',
+    date: '2026.07.19',
+    summary: '重构云同步并增强数据安全',
+    items: [
+      '本机完整令牌与通用令牌云同步镜像分离。',
+      '优化手动推送、手动获取和自动同步，增加超时、状态反馈与失败恢复。',
+      '删除令牌时支持“删除本地及云端”或“仅从本设备删除”。',
+      '升级用户存在本地令牌时自动跳过首次引导。'
+    ]
+  },
+  {
+    version: '1.3.2',
+    date: '2026.07.18',
+    summary: '新增 Steam Guard 并扩展验证器体验',
+    items: [
+      '新增 Steam Guard 数据模型、令牌展示及基础远程操作能力。',
+      '加入多套背景图片、更多作品、赞助、手表同步等功能入口。',
+      '优化服务卡片、深浅色主题和多语言界面。'
+    ]
+  },
+  {
+    version: '1.1.0',
+    date: '2026.07.08',
+    summary: '优化令牌导入与服务卡片',
+    items: [
+      '增强令牌文件导入兼容性与异常提示。',
+      '重构多尺寸服务卡片布局、刷新状态和深浅色视觉。',
+      '完善服务卡片配置与系统能力声明。'
+    ]
+  },
+  {
+    version: '1.0.3',
+    date: '2026.06.28',
+    summary: '完善界面、图标与导入流程',
+    items: [
+      '新增发行方 Logo 自动匹配及浅色、深色资源。',
+      '优化首页搜索、单双列布局、编辑参数和导入交互。',
+      '补充应用商店展示素材与多语言资源。'
+    ]
+  },
+  {
+    version: '1.0.0',
+    date: '2026.06.20',
+    summary: '首个完整可用版本',
+    items: [
+      '支持 TOTP、HOTP、Steam 动态令牌及多种 HMAC 算法。',
+      '支持手动录入、扫码、文件导入和 Google Authenticator 批量迁移。',
+      '提供本地存储、备份导出、华为云空间同步、应用锁与服务卡片。',
+      '适配手机、平板、折叠屏与 2in1 设备。'
+    ]
+  }
+];
 const STEAM_ENROLLMENT_RISK: string = 'risk';
 const STEAM_ENROLLMENT_CREDENTIALS: string = 'credentials';
 const STEAM_ENROLLMENT_GUARD: string = 'guard';
 const STEAM_ENROLLMENT_ACTIVATION: string = 'activation';
 const STEAM_ENROLLMENT_RECOVERY: string = 'recovery';
 const STEAM_CLOUD_SYNC_NOTICE: string =
-  '由于steam安全策略限制，完整的登录凭证、交易信息无法同步到云空间，仅支持同步通用的steam密钥到云端，其他设备无法使用扫码登录等功能，但可以查看验证码';
+  'Steam 验证码密钥仍通过通用令牌同步；完整登录凭证和交易确认信息通过独立加密云表同步。新设备获取完成后可恢复扫码登录、交易确认并重新生成 maFile；原始 maFile 和 SDA 加密信息仍仅保留在本地。';
 const FORM_TEXT_SIZE: number = 16;
 const PAGE_CARD_GAP: number = 10;
 const FORM_ROW_HEIGHT: number = 60;
@@ -191,6 +280,7 @@ const ACCENT_GLOW_RADIUS: number = 5;
 const ME_CARD_RADIUS: number = 15;
 const ME_LOGIN_CARD_HEIGHT: number = 75;
 const ME_ROW_HEIGHT: number = 60;
+const CLOUD_STATUS_ROW_HEIGHT: number = 76;
 const ME_AVATAR_SIZE: number = 48;
 const ME_TEXT_SIZE: number = 18;
 const ME_ACTION_TEXT_SIZE: number = 15;
@@ -271,7 +361,9 @@ const ONBOARDING_BUTTON_TINT_COLOR: string = '#4D000000';
 const FORCE_DARK_SYSTEM_BARS_KEY: string = 'tool2fa_forceDarkSystemBars';
 const STEAM_BEIAN_URL: string = 'https://beian.miit.gov.cn/';
 const STEAM_REFERENCE_URL: string = 'https://github.com/kdada/Authenticator';
+const SDA_REFERENCE_URL: string = 'https://github.com/Jessecar96/SteamDesktopAuthenticator';
 const TANGS_COMPONENTS_URL: string = 'https://ohpm.openharmony.cn/#/cn/detail/@tangs%2Fcomponents';
+const APP_BUNDLE_NAME: string = 'com.example.tool_2fa';
 
 class HomeSearchModifier implements AttributeModifier<SearchAttribute> {
   private textColor: ResourceColor;
@@ -433,16 +525,22 @@ struct Index {
   @State private backgroundSelection: string = 'none';
   @State private customBackgroundUri: string = '';
   @State private backgroundBlurPercent: number = 0;
-  @State private globalBackgroundEnabled: boolean = false;
+  @State private globalBackgroundEnabled: boolean = true;
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
+  @State private showUpdateLogSheet: boolean = false;
+  @State private expandedUpdateLogVersion: string = '1.4.0';
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
+  @State private steamCloudSyncStatus: string = '尚未同步';
   @State private cloudLastSyncTime: number = 0;
   @State private cloudSyncing: boolean = false;
+  @State private tokenCloudSyncing: boolean = false;
+  @State private steamCloudSyncing: boolean = false;
   @State private cloudSyncRefreshKey: number = 0;
   private cloudMirrorMerging: boolean = false;
+  private steamCloudMirrorMerging: boolean = false;
   @State private onboardingCompleted: boolean = false;
   @State private showOnboarding: boolean = false;
   @State private onboardingPage: number = 0;
@@ -503,6 +601,7 @@ struct Index {
   private addMethodSheetScroller: Scroller = new Scroller();
   private userAgreementSheetScroller: Scroller = new Scroller();
   private updateNoticeSheetScroller: Scroller = new Scroller();
+  private updateLogSheetScroller: Scroller = new Scroller();
   private steamLoginSheetScroller: Scroller = new Scroller();
   private steamDecryptSheetScroller: Scroller = new Scroller();
   private steamEnrollmentSheetScroller: Scroller = new Scroller();
@@ -634,6 +733,11 @@ struct Index {
     this.languageInput = normalizeSelectedLanguage(settings.language);
     this.refreshSystemLanguage();
     this.cloudSyncStatus = settings.cloudSyncStatus;
+    this.steamCloudSyncStatus = settings.steamCloudSyncStatus;
+    if (this.steamCloudSyncStatus === '尚未同步' && this.cloudSyncStatus.indexOf('Steam') >= 0) {
+      this.steamCloudSyncStatus = this.cloudSyncStatus;
+      this.cloudSyncStatus = '尚未同步';
+    }
     this.cloudLastSyncTime = settings.cloudLastSyncTime;
     this.watchSelectedTokenIds = settings.watchSelectedTokenIds;
     this.watchPushStatus = settings.watchPushStatus;
@@ -702,6 +806,7 @@ struct Index {
       updateNoticeVersion: this.updateNoticeVersion,
       language: normalizeSelectedLanguage(this.languageInput),
       cloudSyncStatus: this.cloudSyncStatus,
+      steamCloudSyncStatus: this.steamCloudSyncStatus,
       cloudLastSyncTime: this.cloudLastSyncTime,
       watchSelectedTokenIds: this.watchSelectedTokenIds,
       watchPushStatus: this.watchPushStatus,
@@ -2436,21 +2541,21 @@ struct Index {
         Scroll(this.updateNoticeSheetScroller) {
           Column({ space: 12 }) {
             this.UpdateNoticeHero()
-            this.UpdateNoticeItem('1', '全局沉浸光感',
-              '令牌页和我的页卡片支持透明沉浸材质。',
-              '我的 → 外观与主题 → 全局沉浸光感')
-            this.UpdateNoticeItem('2', '自定义背景',
-              '可关闭背景图、选择 7 张预制图，或从图库选择。',
-              '我的 → 外观与主题 → 背景图选择')
-            this.UpdateNoticeItem('3', '模糊程度调节',
-              '使用滑杆将背景图模糊程度调整为 0–100%。',
-              '我的 → 外观与主题 → 背景图模糊程度')
-            this.UpdateNoticeItem('4', 'Steam 扫码登录',
-              '导入包含完整登录凭据的 maFile，即可扫描 Steam 登录二维码并确认登录。',
-              '令牌页 → 顶部扫码按钮 → 选择 Steam 账号 → 扫码登录')
-            this.UpdateNoticeItem('5', 'Steam 交易确认',
-              '自动检查待确认请求，可直接确认或拒绝交易、市场出售等操作。',
-              '导入含 identity_secret 的 maFile → 返回令牌页 → 处理确认弹窗')
+            this.UpdateNoticeItem('1', '完整 Steam Guard',
+              '支持 maFile 导入、账号登录生成验证器、扫码登录、交易确认和 maFile 导出。',
+              '令牌页 → 新增 → 登录 Steam 账号 / 导入 Steam maFile')
+            this.UpdateNoticeItem('2', 'Steam 完整数据云同步',
+              '登录凭证和交易确认信息通过独立加密云表同步，通用令牌同步逻辑保持不变。',
+              '我的 → 华为云空间 → 手动推送 / 手动获取')
+            this.UpdateNoticeItem('3', '同步状态更清晰',
+              '通用令牌与 Steam 完整数据分开显示状态，并展示实际上传、下载数量。',
+              '我的 → 华为云空间 → 同步记录')
+            this.UpdateNoticeItem('4', '全局主题背景',
+              '背景图默认可显示在全部二级页面，并支持预设图、图库图片和模糊程度调节。',
+              '我的 → 外观与主题 → 背景图是否全局显示')
+            this.UpdateNoticeItem('5', '关于页功能完善',
+              '新增历史更新日志、AppGallery 评价入口及 Steam Desktop Authenticator 项目链接。',
+              '我的 → 关于 → 更新日志')
           }
           .width('100%')
           .padding({
@@ -2531,12 +2636,12 @@ struct Index {
         .objectFit(ImageFit.Cover)
 
       Column({ space: 4 }) {
-        Text(this.t('界面焕新'))
+        Text(this.t('Steam Guard 全面升级'))
           .fontSize(19)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
 
-        Text(this.t('背景与卡片外观，现在由你定义。'))
+        Text(this.t('V1.4.0：完整凭证同步、登录与交易确认一步到位。'))
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
@@ -2845,7 +2950,7 @@ struct Index {
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text(this.t('生成的 maFile、会话令牌和交易确认密钥仅保存在本机；通用 Steam 验证码密钥可按云空间设置同步。请另外备份 maFile 和恢复码；丢失它们可能导致无法恢复账号访问。'))
+        Text(this.t('生成的原始 maFile 仅保存在本机；开启华为云同步后，恢复扫码登录和交易确认所需的结构化凭证会写入独立加密云表，通用 Steam 验证码密钥仍按现有令牌逻辑同步。请另外备份 maFile 和恢复码。'))
           .fontSize(14)
           .lineHeight(21)
           .fontColor(this.primaryTextColor())
@@ -3935,6 +4040,18 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28)
     })
+    .bindSheet($$this.showUpdateLogSheet, this.UpdateLogSheet(), {
+      height: SheetSize.LARGE,
+      dragBar: true,
+      showClose: false,
+      maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+      backgroundColor: this.sheetSurfaceBackgroundColor(),
+      blurStyle: this.sheetSurfaceBlurStyle(),
+      radius: LengthMetrics.vp(28),
+      onDisappear: () => {
+        this.expandedUpdateLogVersion = '1.4.0';
+      }
+    })
   }
 
   @Builder
@@ -4033,7 +4150,7 @@ struct Index {
   private AboutActionsCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.shouldUseCardMaterial()) {
-        this.ImmersionCardSurface(ME_ROW_HEIGHT * 4 + 3, ME_CARD_RADIUS)
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 5 + 4, ME_CARD_RADIUS)
       }
       Column() {
           this.AboutActionRow('加入QQ群', QQ_GROUP_NUMBER, () => {
@@ -4048,16 +4165,21 @@ struct Index {
             this.openExternalUrl(STEAM_BEIAN_URL);
           })
           this.MeCardDivider()
+          this.AboutActionRow('更新日志', '', () => {
+            this.expandedUpdateLogVersion = '1.4.0';
+            this.showUpdateLogSheet = true;
+          })
+          this.MeCardDivider()
           this.AboutActionRow('应用版本', APP_VERSION, () => {
           })
         }
         .width('100%')
-        .height(ME_ROW_HEIGHT * 4 + 3)
+        .height(ME_ROW_HEIGHT * 5 + 4)
         .padding({ left: 20, right: 18 })
         .zIndex(2)
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 4 + 3)
+    .height(ME_ROW_HEIGHT * 5 + 4)
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -4089,6 +4211,170 @@ struct Index {
   }
 
   @Builder
+  private UpdateLogSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Scroll(this.updateLogSheetScroller) {
+          Column({ space: PAGE_CARD_GAP }) {
+            this.UpdateLogCurrentVersionCard()
+            ForEach(UPDATE_LOGS, (entry: UpdateLogEntry) => {
+              this.UpdateLogVersionCard(entry)
+            }, (entry: UpdateLogEntry) => entry.version)
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: 620 })
+          .padding({
+            left: SHEET_HORIZONTAL_PADDING,
+            right: SHEET_HORIZONTAL_PADDING,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('更新日志') },
+        menu: this.sheetCloseMenu(() => {
+          this.showUpdateLogSheet = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.updateLogSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private UpdateLogCurrentVersionCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('update-log-current', ME_CARD_RADIUS)
+      Row({ space: 14 }) {
+        Image($r('app.media.app_icon_black'))
+          .width(58)
+          .height(58)
+          .borderRadius(15)
+          .objectFit(ImageFit.Cover)
+
+        Column({ space: 5 }) {
+          Text(this.t('当前版本'))
+            .fontSize(13)
+            .fontColor(this.secondaryTextColor())
+
+          Text(APP_VERSION + ' (' + APP_VERSION_CODE + ')')
+            .fontSize(19)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .padding({ left: 20, right: 20, top: 18, bottom: 18 })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.accentTintColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+  }
+
+  @Builder
+  private UpdateLogVersionCard(entry: UpdateLogEntry) {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('update-log-' + entry.version, ME_CARD_RADIUS)
+      Column({ space: 10 }) {
+        Row({ space: 10 }) {
+          Column({ space: 3 }) {
+            Text(entry.version + '  ' + entry.date)
+              .fontSize(17)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+              .maxLines(1)
+
+            Text(entry.summary)
+              .fontSize(13)
+              .fontColor(this.secondaryTextColor())
+              .maxLines(2)
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+
+          this.UpdateLogDisclosure(this.expandedUpdateLogVersion === entry.version)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        if (this.expandedUpdateLogVersion === entry.version) {
+          Divider()
+            .strokeWidth(0.5)
+            .color(this.dividerColor())
+
+          Column({ space: 8 }) {
+            ForEach(entry.items, (item: string, index: number) => {
+              Row({ space: 9 }) {
+                Text('•')
+                  .fontSize(14)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.accentColor())
+
+                Text(item)
+                  .fontSize(14)
+                  .lineHeight(21)
+                  .fontColor(this.secondaryTextColor())
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+            }, (item: string, index: number) => entry.version + '-' + index.toString())
+          }
+          .width('100%')
+        }
+      }
+      .width('100%')
+      .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onClick(() => {
+      this.expandedUpdateLogVersion =
+        this.expandedUpdateLogVersion === entry.version ? '' : entry.version;
+    })
+  }
+
+  @Builder
+  private UpdateLogDisclosure(expanded: boolean) {
+    SymbolGlyph($r('sys.symbol.chevron_right'))
+      .fontSize(ME_ACTION_ICON_SIZE)
+      .fontColor([this.secondaryTextColor()])
+      .fontWeight(FontWeight.Medium)
+      .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      .rotate({ angle: expanded ? 90 : 0 })
+      .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+  }
+
+  @Builder
   private ThirdPartyPageContent() {
     Scroll(this.thirdPartyScroller) {
       Column({ space: PAGE_CARD_GAP }) {
@@ -4102,6 +4388,8 @@ struct Index {
           this.t('提供 ImmersionButton 与 ImmersionSearch 沉浸光感组件'), TANGS_COMPONENTS_URL)
         this.ThirdPartyLibraryCard('kdada/Authenticator', 'MIT',
           this.t('Steam Authenticator 功能实现参考'), STEAM_REFERENCE_URL)
+        this.ThirdPartyLibraryCard('Jessecar96/SteamDesktopAuthenticator', 'MIT',
+          this.t('Steam Desktop Authenticator（SDA）功能实现参考'), SDA_REFERENCE_URL)
       }
       .width('100%')
       .constraintSize({ maxWidth: 620 })
@@ -4576,18 +4864,19 @@ struct Index {
   private CloudRecordsCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.shouldUseCardMaterial()) {
-        this.ImmersionCardSurface(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 :
-          ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+        this.ImmersionCardSurface(this.shouldShowCloudDisabledHint() ?
+          CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 58 :
+          CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 2, ME_CARD_RADIUS)
       }
       Column() {
         Row() {
-          Text(this.t('同步状态'))
+          Text(this.t('通用令牌同步'))
             .fontSize(ME_ACTION_TEXT_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
+            .width(126)
 
-          if (this.cloudSyncing) {
+          if (this.tokenCloudSyncing) {
             LoadingProgress()
               .width(18)
               .height(18)
@@ -4595,14 +4884,47 @@ struct Index {
               .margin({ right: 6 })
           }
 
-          Text(this.cloudSyncing ? this.t('同步中') : this.t(this.cloudSyncStatus))
+          Text(this.t(this.cloudSyncStatus))
             .fontSize(ME_ACTION_TEXT_SIZE)
             .fontColor(this.secondaryTextColor())
-            .maxLines(1)
+            .layoutWeight(1)
+            .lineHeight(21)
+            .maxLines(3)
+            .textAlign(TextAlign.End)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .width('100%')
-        .height(ME_ROW_HEIGHT)
+        .height(CLOUD_STATUS_ROW_HEIGHT)
+        .alignItems(VerticalAlign.Center)
+
+        this.MeCardDivider()
+
+        Row() {
+          Text(this.t('Steam 完整数据'))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width(126)
+
+          if (this.steamCloudSyncing) {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color(this.accentColor())
+              .margin({ right: 6 })
+          }
+
+          Text(this.t(this.steamCloudSyncStatus))
+            .fontSize(ME_ACTION_TEXT_SIZE)
+            .fontColor(this.secondaryTextColor())
+            .layoutWeight(1)
+            .lineHeight(21)
+            .maxLines(3)
+            .textAlign(TextAlign.End)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .height(CLOUD_STATUS_ROW_HEIGHT)
         .alignItems(VerticalAlign.Center)
 
         this.MeCardDivider()
@@ -4634,12 +4956,14 @@ struct Index {
         }
       }
       .width('100%')
-      .height(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 : ME_ROW_HEIGHT * 2 + 1)
+      .height(this.shouldShowCloudDisabledHint() ? CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 58 :
+        CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 2)
       .padding({ left: 20, right: 18 })
       .zIndex(2)
     }
     .width('100%')
-    .height(this.shouldShowCloudDisabledHint() ? ME_ROW_HEIGHT * 2 + 57 : ME_ROW_HEIGHT * 2 + 1)
+    .height(this.shouldShowCloudDisabledHint() ? CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 58 :
+      CLOUD_STATUS_ROW_HEIGHT * 2 + ME_ROW_HEIGHT + 2)
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -8627,17 +8951,20 @@ struct Index {
       }
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '云空间自动同步已关闭';
+      this.steamCloudSyncStatus = '云空间自动同步已关闭';
       this.saveSettings();
       this.showToast('云空间自动同步已关闭');
       return;
     }
 
     this.cloudSyncStatus = '正在准备';
+    this.steamCloudSyncStatus = '正在准备';
     this.saveSettings();
 
     if (!this.isHuaweiLoggedIn) {
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '请先登录华为账号';
+      this.steamCloudSyncStatus = '请先登录华为账号';
       this.saveSettings();
       this.showToast('请先登录华为账号');
       return;
@@ -8646,6 +8973,7 @@ struct Index {
     if (!await this.ensureDataSyncPermission()) {
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '未授权云同步';
+      this.steamCloudSyncStatus = '未授权云同步';
       this.saveSettings();
       this.showToast('需要授权跨设备数据同步');
       return;
@@ -8654,6 +8982,7 @@ struct Index {
     if (!await this.configureCloudAutoSync(false)) {
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '无法开启云同步';
+      this.steamCloudSyncStatus = '无法开启云同步';
       this.saveSettings();
       this.showToast('请确认已登录华为账号并开启云空间');
       return;
@@ -8674,13 +9003,13 @@ struct Index {
     if (!await this.configureCloudAutoSync(true)) {
       this.cloudBackupEnabled = false;
       this.cloudSyncStatus = '无法开启云同步';
+      this.steamCloudSyncStatus = '无法开启云同步';
       this.saveSettings();
       this.showToast('请确认已登录华为账号并开启云空间');
       return;
     }
 
     this.cloudBackupEnabled = true;
-    this.cloudSyncStatus = '同步成功';
     this.cloudLastSyncTime = Date.now();
     this.saveSettings();
     this.showToast('云空间自动同步已开启');
@@ -8691,12 +9020,38 @@ struct Index {
     if (!context) {
       return false;
     }
-    return await TokenRepository.configureCloudSync(context, enabled, (state: CloudSyncState): void => {
-      this.updateCloudSyncState(state);
+    const steamPaused = await SteamGuardCloudRepository.configureCloudSync(context, false);
+    if (!steamPaused) {
+      console.error('Steam Guard cloud sync could not be paused before generic token configuration');
+    }
+    const tokenConfigured = await TokenRepository.configureCloudSync(context, enabled, (state: CloudSyncState): void => {
       if (enabled && state.finished && state.success && state.status === '云端数据已更新') {
         this.mergeCloudMirrorIntoLocal();
+        return;
       }
+      this.updateCloudSyncState(state);
     });
+    if (!tokenConfigured) {
+      return false;
+    }
+    if (!enabled) {
+      return true;
+    }
+    const steamConfigured = await SteamGuardCloudRepository.configureCloudSync(
+      context,
+      true,
+      (state: CloudSyncState): void => {
+        if (state.finished && state.success && state.status === 'Steam 云端数据已更新') {
+          this.mergeSteamGuardCloudMirrorIntoLocal();
+          return;
+        }
+        this.updateSteamCloudSyncState(state);
+      }
+    );
+    if (!steamConfigured) {
+      console.error('Steam Guard cloud table is unavailable; generic token auto sync remains enabled');
+    }
+    return true;
   }
 
   private async pushTokensToCloud(): Promise<void> {
@@ -8730,7 +9085,7 @@ struct Index {
       return false;
     }
     const restoreAutoSync = this.cloudBackupEnabled;
-    if (!await TokenRepository.configureCloudSync(context, false)) {
+    if (!await this.configureCloudAutoSync(false)) {
       this.finishCloudSyncFailure('云同步不可用', showOperationToast);
       return false;
     }
@@ -8741,10 +9096,10 @@ struct Index {
         this.updateCloudSyncState(state);
       }
     );
-    if (restoreAutoSync) {
-      await this.configureCloudAutoSync(true);
-    }
     if (!success) {
+      if (restoreAutoSync) {
+        await this.configureCloudAutoSync(true);
+      }
       if (this.cloudSyncing) {
         this.finishCloudSyncFailure('推送失败', showOperationToast);
       } else if (showOperationToast) {
@@ -8752,8 +9107,50 @@ struct Index {
       }
       return false;
     }
-    if (this.cloudSyncing) {
-      this.updateCloudSyncState({ status: '推送成功', finished: true, success: true });
+
+    let steamSuccess = !this.hasCompleteSteamGuardData(this.tokens);
+    let steamFailureStatus = '';
+    const steamConfigured = steamSuccess || await SteamGuardCloudRepository.configureCloudSync(context, false);
+    if (!steamSuccess && steamConfigured) {
+      this.beginSteamCloudSync('正在推送 Steam 完整数据');
+      steamSuccess = await SteamGuardCloudRepository.pushToCloud(
+        context,
+        this.tokens,
+        (state: CloudSyncState): void => {
+          if (state.finished && !state.success) {
+            steamFailureStatus = state.message || state.status;
+          }
+          this.updateSteamCloudSyncState(state);
+        }
+      );
+    } else if (!steamSuccess) {
+      steamFailureStatus = SteamGuardCloudRepository.getLastFailureStatus();
+    } else {
+      this.updateSteamCloudSyncState({
+        status: '同步成功（上传0条，下载0条）',
+        finished: true,
+        success: true,
+        uploadTotal: 0,
+        uploadSuccess: 0,
+        uploadFailed: 0,
+        downloadTotal: 0,
+        downloadSuccess: 0,
+        downloadFailed: 0
+      });
+    }
+    if (restoreAutoSync) {
+      await this.configureCloudAutoSync(true);
+    }
+    if (!steamSuccess) {
+      const detail = steamFailureStatus.length > 0 ? steamFailureStatus : 'Steam 完整数据同步失败';
+      this.finishSteamSupplementalWarning(detail, false);
+      if (showOperationToast) {
+        this.showToast('通用令牌推送成功，Steam 完整数据未同步');
+      }
+      return true;
+    }
+    if (this.steamCloudSyncing) {
+      this.updateSteamCloudSyncState({ status: 'Steam 完整数据推送成功', finished: true, success: true });
     }
     if (showOperationToast) {
       this.showToast('推送成功');
@@ -8791,7 +9188,7 @@ struct Index {
       return false;
     }
     const restoreAutoSync = this.cloudBackupEnabled;
-    if (!await TokenRepository.configureCloudSync(context, false)) {
+    if (!await this.configureCloudAutoSync(false)) {
       this.finishCloudSyncFailure('云同步不可用', showOperationToast);
       return false;
     }
@@ -8799,10 +9196,10 @@ struct Index {
     const records = await TokenRepository.pullFromCloud(context, (state: CloudSyncState): void => {
       this.updateCloudSyncState(state);
     });
-    if (restoreAutoSync) {
-      await this.configureCloudAutoSync(true);
-    }
     if (!records) {
+      if (restoreAutoSync) {
+        await this.configureCloudAutoSync(true);
+      }
       if (this.cloudSyncing) {
         this.finishCloudSyncFailure('获取失败', showOperationToast);
       } else if (showOperationToast) {
@@ -8811,16 +9208,59 @@ struct Index {
       return false;
     }
     const cloudRecords = await this.hydrateTokenLogos(records, true);
-    const mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(localSnapshot, cloudRecords);
+    let mergedRecords = this.mergeCloudTokensWithoutDeletingLocal(localSnapshot, cloudRecords);
     if (!await TokenRepository.save(context, mergedRecords)) {
+      if (restoreAutoSync) {
+        await this.configureCloudAutoSync(true);
+      }
       this.finishCloudSyncFailure('本地更新失败', showOperationToast);
       return false;
+    }
+
+    let steamSuccess = !this.hasSteamTokens(mergedRecords);
+    if (!steamSuccess && await SteamGuardCloudRepository.configureCloudSync(context, false)) {
+      this.beginSteamCloudSync('正在获取 Steam 完整数据');
+      const steamRecords = await SteamGuardCloudRepository.pullFromCloud(
+        context,
+        (state: CloudSyncState): void => {
+          this.updateSteamCloudSyncState(state);
+        }
+      );
+      if (steamRecords) {
+        const steamMergedRecords = SteamGuardCloudRepository.mergeIntoTokens(mergedRecords, steamRecords);
+        if (await TokenRepository.save(context, steamMergedRecords)) {
+          mergedRecords = steamMergedRecords;
+          steamSuccess = true;
+        }
+      }
+    } else if (steamSuccess) {
+      this.updateSteamCloudSyncState({
+        status: '同步成功（上传0条，下载0条）',
+        finished: true,
+        success: true,
+        uploadTotal: 0,
+        uploadSuccess: 0,
+        uploadFailed: 0,
+        downloadTotal: 0,
+        downloadSuccess: 0,
+        downloadFailed: 0
+      });
+    }
+    if (restoreAutoSync) {
+      await this.configureCloudAutoSync(true);
     }
     this.tokens = mergedRecords;
     this.logoRenderVersion += 1;
     this.updateWidgetCards();
-    if (this.cloudSyncing) {
-      this.updateCloudSyncState({ status: '获取成功', finished: true, success: true });
+    if (!steamSuccess) {
+      this.finishSteamSupplementalWarning('Steam 完整数据同步失败', false);
+      if (showOperationToast) {
+        this.showToast('通用令牌获取成功，Steam 完整数据未同步');
+      }
+      return true;
+    }
+    if (this.steamCloudSyncing) {
+      this.updateSteamCloudSyncState({ status: 'Steam 完整数据获取成功', finished: true, success: true });
     }
     if (showOperationToast) {
       this.showToast('获取成功');
@@ -8849,9 +9289,33 @@ struct Index {
         this.tokens = mergedRecords;
         this.logoRenderVersion += 1;
         this.updateWidgetCards();
+        this.mergeSteamGuardCloudMirrorIntoLocal();
       }
     } finally {
       this.cloudMirrorMerging = false;
+    }
+  }
+
+  private async mergeSteamGuardCloudMirrorIntoLocal(): Promise<void> {
+    if (this.steamCloudMirrorMerging) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    this.steamCloudMirrorMerging = true;
+    try {
+      const cloudRecords: SteamGuardCloudRecord[] =
+        await SteamGuardCloudRepository.loadCloudRecords(context);
+      const mergedRecords = SteamGuardCloudRepository.mergeIntoTokens(this.tokens, cloudRecords);
+      if (await TokenRepository.save(context, mergedRecords)) {
+        this.tokens = mergedRecords;
+        this.logoRenderVersion += 1;
+        this.updateWidgetCards();
+      }
+    } finally {
+      this.steamCloudMirrorMerging = false;
     }
   }
 
@@ -8872,13 +9336,49 @@ struct Index {
       this.showToast('本地已保存，云端同步失败');
       return;
     }
+    let steamResult: CloudStageResult = { success: true, changed: false };
+    if (this.hasCompleteSteamGuardData(this.tokens)) {
+      this.beginSteamCloudSync('等待同步 Steam 完整数据');
+      steamResult = await SteamGuardCloudRepository.stageAutoPush(context, this.tokens);
+    } else {
+      this.updateSteamCloudSyncState({
+        status: '同步成功（上传0条，下载0条）',
+        finished: true,
+        success: true,
+        uploadTotal: 0,
+        uploadSuccess: 0,
+        uploadFailed: 0,
+        downloadTotal: 0,
+        downloadSuccess: 0,
+        downloadFailed: 0
+      });
+    }
+    if (!steamResult.success) {
+      this.finishSteamSupplementalWarning('Steam 完整数据同步失败', false);
+      this.showToast('通用令牌已保存，Steam 完整数据同步失败');
+      return;
+    }
     if (!result.changed) {
       this.updateCloudSyncState({ status: '同步成功', finished: true, success: true });
+    }
+    if (this.hasCompleteSteamGuardData(this.tokens) && !steamResult.changed) {
+      this.updateSteamCloudSyncState({
+        status: '同步成功（上传0条，下载0条）',
+        finished: true,
+        success: true,
+        uploadTotal: 0,
+        uploadSuccess: 0,
+        uploadFailed: 0,
+        downloadTotal: 0,
+        downloadSuccess: 0,
+        downloadFailed: 0
+      });
     }
   }
 
   private beginCloudSync(status: string): void {
     this.cloudSyncing = true;
+    this.tokenCloudSyncing = true;
     this.cloudSyncStatus = status;
     this.cloudLastSyncTime = Date.now();
     this.cloudSyncRefreshKey += 1;
@@ -8889,7 +9389,8 @@ struct Index {
     this.cloudSyncStatus = state.finished && !state.success ? (state.message || state.status) : state.status;
     this.cloudLastSyncTime = Date.now();
     if (state.finished) {
-      this.cloudSyncing = false;
+      this.tokenCloudSyncing = false;
+      this.cloudSyncing = this.steamCloudSyncing;
     }
     this.cloudSyncRefreshKey += 1;
     this.saveSettings();
@@ -8900,7 +9401,8 @@ struct Index {
   }
 
   private finishCloudSyncFailure(status: string, showOperationToast: boolean): void {
-    this.cloudSyncing = false;
+    this.tokenCloudSyncing = false;
+    this.cloudSyncing = this.steamCloudSyncing;
     this.cloudSyncStatus = status;
     this.cloudLastSyncTime = Date.now();
     this.cloudSyncRefreshKey += 1;
@@ -8908,6 +9410,49 @@ struct Index {
     if (showOperationToast) {
       this.showToast(`操作失败-${status}`);
     }
+  }
+
+  private finishSteamSupplementalWarning(status: string, showOperationToast: boolean): void {
+    this.steamCloudSyncing = false;
+    this.cloudSyncing = this.tokenCloudSyncing;
+    this.steamCloudSyncStatus = status;
+    this.cloudLastSyncTime = Date.now();
+    this.cloudSyncRefreshKey += 1;
+    this.saveSettings();
+    console.error(status);
+    if (showOperationToast) {
+      this.showToast(status);
+    }
+  }
+
+  private beginSteamCloudSync(status: string): void {
+    this.cloudSyncing = true;
+    this.steamCloudSyncing = true;
+    this.steamCloudSyncStatus = status;
+    this.cloudLastSyncTime = Date.now();
+    this.cloudSyncRefreshKey += 1;
+    this.saveSettings();
+  }
+
+  private updateSteamCloudSyncState(state: CloudSyncState): void {
+    this.steamCloudSyncStatus = state.finished && !state.success ? (state.message || state.status) : state.status;
+    this.cloudLastSyncTime = Date.now();
+    if (state.finished) {
+      this.steamCloudSyncing = false;
+      this.cloudSyncing = this.tokenCloudSyncing;
+    }
+    this.cloudSyncRefreshKey += 1;
+    this.saveSettings();
+  }
+
+  private hasSteamTokens(records: TokenRecord[]): boolean {
+    return records.some((record: TokenRecord): boolean => this.normalizeTokenType(record.type) === 'Steam');
+  }
+
+  private hasCompleteSteamGuardData(records: TokenRecord[]): boolean {
+    return records.some((record: TokenRecord): boolean => {
+      return this.normalizeTokenType(record.type) === 'Steam' && !!record.steamData && record.steamData.length > 0;
+    });
   }
 
   private mergeCloudTokensWithoutDeletingLocal(localRecords: TokenRecord[], cloudRecords: TokenRecord[]): TokenRecord[] {
@@ -8955,7 +9500,8 @@ struct Index {
 
   private shouldShowCloudDisabledHint(): boolean {
     return this.cloudSyncStatus.indexOf('未启用') >= 0 || this.cloudSyncStatus.indexOf('（3）') >= 0 ||
-      this.cloudSyncStatus.indexOf('(3)') >= 0;
+      this.cloudSyncStatus.indexOf('(3)') >= 0 || this.steamCloudSyncStatus.indexOf('未启用') >= 0 ||
+      this.steamCloudSyncStatus.indexOf('（3）') >= 0 || this.steamCloudSyncStatus.indexOf('(3)') >= 0;
   }
 
   private cloudLastSyncTimeText(): string {
@@ -10328,35 +10874,25 @@ struct Index {
   }
 
   private async showAppCommentDialog(): Promise<void> {
-    if (!canIUse('SystemCapability.AppGalleryService.Distribution.Comment')) {
-      this.showToast('当前设备不支持应用内评论');
-      return;
-    }
     const context = this.getAbilityContext();
     if (!context) {
       this.showToast('暂时无法打开应用评论');
       return;
     }
-    this.showToast('正在打开应用评论');
-    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Requesting app comment dialog');
+    const commentWant: Want = {
+      action: 'ohos.want.action.appdetail',
+      uri: 'store://appgallery.huawei.com/app/detail?id=' + APP_BUNDLE_NAME + '&action=write-review'
+    };
+    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Opening AppGallery write-review page');
     try {
-      await commentManager.showCommentDialog(context);
-      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'App comment dialog request succeeded');
+      await context.startAbility(commentWant);
+      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'AppGallery write-review page opened');
     } catch (error) {
       const code = this.getErrorCode(error);
-      if (code === 1021500006) {
-        this.showToast('请先登录华为账号');
-      } else if (code === 1021500007) {
-        this.showToast('感谢支持，你已评价过当前版本');
-      } else if (code === 1021500008) {
-        this.showToast('本次评价次数已达上限');
-      } else if (code === 1021500009) {
-        this.showToast('感谢支持，暂时无需重复评价');
-      } else {
-        this.showToast(this.tf('暂时无法打开应用评论（错误码：{0}）', [code.toString()]));
-      }
+      this.showToast(this.tf('暂时无法打开应用评论（错误码：{0}）', [code.toString()]));
       hilog.error(APPLOCK_DOMAIN, APP_COMMENT_TAG,
-        'Failed to show app comment dialog, code=%{public}d, error=%{public}s', code, JSON.stringify(error));
+        'Failed to open AppGallery write-review page, code=%{public}d, error=%{public}s', code,
+        JSON.stringify(error));
     }
   }
 
@@ -10500,7 +11036,7 @@ struct Index {
     }
     const restoreAutoSync = this.cloudBackupEnabled;
     this.beginCloudSync('正在删除');
-    if (!await TokenRepository.configureCloudSync(context, false)) {
+    if (!await this.configureCloudAutoSync(false)) {
       await this.persistTokens(previousTokens, '', false);
       this.finishCloudSyncFailure('云同步不可用', true);
       return;
@@ -10512,12 +11048,35 @@ struct Index {
         this.updateCloudSyncState(state);
       }
     );
+    if (!success) {
+      if (restoreAutoSync) {
+        await this.configureCloudAutoSync(true);
+      }
+      await this.persistTokens(previousTokens, '', false);
+      this.showToast('云端删除失败，已恢复本地令牌');
+      return;
+    }
+
+    let steamDeleteSuccess = true;
+    if (this.normalizeTokenType(token.type) === 'Steam' && token.steamData && token.steamData.length > 0) {
+      steamDeleteSuccess = false;
+      if (await SteamGuardCloudRepository.configureCloudSync(context, false)) {
+        this.beginSteamCloudSync('正在删除 Steam 完整数据');
+        steamDeleteSuccess = await SteamGuardCloudRepository.deleteFromCloud(
+          context,
+          token.id,
+          (state: CloudSyncState): void => {
+            this.updateSteamCloudSyncState(state);
+          }
+        );
+      }
+    }
     if (restoreAutoSync) {
       await this.configureCloudAutoSync(true);
     }
-    if (!success) {
-      await this.persistTokens(previousTokens, '', false);
-      this.showToast('云端删除失败，已恢复本地令牌');
+    if (!steamDeleteSuccess) {
+      this.finishSteamSupplementalWarning('Steam 完整数据删除失败', false);
+      this.showToast('通用令牌删除成功，Steam 完整数据未删除');
       return;
     }
     this.cloudSyncStatus = '删除成功';
