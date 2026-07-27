@@ -2,7 +2,7 @@ import { abilityAccessCtrl, bundleManager, common, ConfigurationConstant, Permis
 import { authentication } from '@kit.AccountKit';
 import { privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
-import { ButtonModifier, LengthMetrics, SymbolGlyphModifier, window } from '@kit.ArkUI';
+import { ButtonModifier, LengthMetrics, SymbolGlyphModifier, display, window } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import deviceInfo from '@ohos.deviceInfo';
 import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
@@ -39,7 +39,7 @@ import {
 } from '../data/SteamGuardCloudRepository';
 import { TokenRecord } from '../model/TokenRecord';
 import { Totp } from '../utils/Totp';
-import { SettingsRepository } from '../data/SettingsRepository';
+import { Settings, SettingsRepository } from '../data/SettingsRepository';
 import { FormManager } from '../form/FormManager';
 import { GoogleAuthenticatorMigration, GoogleOtpParameter } from '../utils/GoogleAuthenticatorMigration';
 import { LogoResolver, LogoResolveResult } from '../utils/LogoResolver';
@@ -137,6 +137,7 @@ const LANGUAGE_OPTIONS: SelectOption[] = [
 const ISSUER_LOGO_COLOR_OPTIONS: SelectOption[] = [{ value: '品牌色' }, { value: '纯色' }];
 const TOKEN_LAYOUT_SINGLE: string = 'single';
 const TOKEN_LAYOUT_DOUBLE: string = 'double';
+const CUSTOM_BACKGROUND_CACHE_PREFIX: string = 'custom_background_render_';
 const CARD_PRESSED_SCALE: number = 0.97;
 const CARD_PRESS_ANIMATION_DURATION: number = 160;
 const DEFAULT_TOKEN_DIGITS: number = 6;
@@ -145,10 +146,22 @@ const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
 const CAMLINK_URL: string =
   'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
 const QQ_GROUP_NUMBER: string = '1061983927';
-const APP_VERSION: string = 'V1.4.0';
-const APP_VERSION_CODE: string = '1000040';
-const UPDATE_NOTICE_VERSION: string = 'V1.4.0';
+const APP_VERSION: string = 'V1.4.1';
+const APP_VERSION_CODE: string = '1000041';
+const UPDATE_NOTICE_VERSION: string = 'V1.4.1';
 const UPDATE_LOGS: UpdateLogEntry[] = [
+  {
+    version: '1.4.1',
+    date: '2026.07.27',
+    summary: '优化界面适配、背景体验与交互细节',
+    items: [
+      '优化“我的”、设置、第三方库等页面在手机、平板及宽屏设备上的响应式布局。',
+      '新增背景图明亮程度调节，并修复从图库选择背景后未立即刷新的问题。',
+      '复用预解码背景并缓存静态渲染结果，提升启用背景图后的页面转场流畅度。',
+      '修复顶部导航栏开始滚动时模糊效果短暂缺失的问题。',
+      '完善 QQ 群号复制与二维码保存、多语言文案、应用图标及 Microsoft 品牌资源。'
+    ]
+  },
   {
     version: '1.4.0',
     date: '2026.07.23',
@@ -230,8 +243,6 @@ const STEAM_ENROLLMENT_CREDENTIALS: string = 'credentials';
 const STEAM_ENROLLMENT_GUARD: string = 'guard';
 const STEAM_ENROLLMENT_ACTIVATION: string = 'activation';
 const STEAM_ENROLLMENT_RECOVERY: string = 'recovery';
-const STEAM_CLOUD_SYNC_NOTICE: string =
-  'Steam 验证码密钥仍通过通用令牌同步；完整登录凭证和交易确认信息通过独立加密云表同步。新设备获取完成后可恢复扫码登录、交易确认并重新生成 maFile；原始 maFile 和 SDA 加密信息仍仅保留在本地。';
 const FORM_TEXT_SIZE: number = 16;
 const PAGE_CARD_GAP: number = 10;
 const FORM_ROW_HEIGHT: number = 60;
@@ -280,6 +291,10 @@ const ACCENT_GLOW_RADIUS: number = 5;
 const ME_CARD_RADIUS: number = 15;
 const ME_LOGIN_CARD_HEIGHT: number = 75;
 const ME_ROW_HEIGHT: number = 60;
+const STEAM_ACCESS_HINT_HEIGHT: number = 58;
+const DONATION_QR_IMAGE_MAX_WIDTH: number = 420;
+const DONATION_QR_IMAGE_RATIO: number = 1653 / 1397;
+const DONATION_QR_CARD_FIXED_HEIGHT: number = 164;
 const CLOUD_STATUS_ROW_HEIGHT: number = 76;
 const ME_AVATAR_SIZE: number = 48;
 const ME_TEXT_SIZE: number = 18;
@@ -291,6 +306,7 @@ const BACKGROUND_THUMBNAIL_WIDTH: number = 38;
 const BACKGROUND_THUMBNAIL_HEIGHT: number = 56;
 const BACKGROUND_PICKER_ROW_HEIGHT: number = 146;
 const BACKGROUND_BLUR_ROW_HEIGHT: number = 82;
+const BACKGROUND_BRIGHTNESS_ROW_HEIGHT: number = 82;
 const BACKGROUND_BLUR_MAX_RADIUS: number = 50;
 const ADD_BUTTON_SIZE: number = 50;
 const ADD_BUTTON_RIGHT: number = 36;
@@ -307,7 +323,6 @@ const WATCH_HORIZONTAL_PADDING: number = 18;
 const WATCH_TOKEN_CARD_HEIGHT: number = 108;
 const WATCH_TOKEN_CODE_SIZE: number = 28;
 const WATCH_SYNC_ACTION: string = 'tool2fa.watch.tokens.replace';
-const SHEET_TITLE_BLUR_HEIGHT: number = 56;
 const SHEET_HORIZONTAL_PADDING: number = 20;
 const SHEET_CONTENT_TOP_PADDING: number = 10;
 const SHEET_ROW_HEIGHT: number = 58;
@@ -422,6 +437,26 @@ enum HoldingHandStatus {
   LEFT_HAND_HELD = 1
 }
 
+enum SettingsSwitchKey {
+  SteamEnhancedAccess,
+  CloudBackup,
+  SmartGrip,
+  AntiPeep,
+  AppLock,
+  ShowNextToken,
+  GlobalImmersion,
+  GlobalBackground
+}
+
+enum SettingsSelectKey {
+  Language,
+  IssuerLogoColor,
+  MaterialType,
+  MaterialLevel,
+  ThemeMode,
+  ThemeColor
+}
+
 interface WearMessageReceiver {
   deviceId: string;
   appParam: wearEngine.P2pAppParam;
@@ -524,12 +559,17 @@ struct Index {
   @State private globalImmersionEnabled: boolean = false;
   @State private backgroundSelection: string = 'none';
   @State private customBackgroundUri: string = '';
+  @State private customBackgroundRenderVersion: number = 0;
+  private customBackgroundPixelMap: image.PixelMap | undefined = undefined;
+  private customBackgroundPixelMapUri: string = '';
+  private customBackgroundLoadSerial: number = 0;
   @State private backgroundBlurPercent: number = 0;
+  @State private backgroundBrightnessPercent: number = 50;
   @State private globalBackgroundEnabled: boolean = true;
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
   @State private showUpdateLogSheet: boolean = false;
-  @State private expandedUpdateLogVersion: string = '1.4.0';
+  @State private expandedUpdateLogVersion: string = '1.4.1';
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
@@ -550,6 +590,7 @@ struct Index {
 
   aboutToAppear(): void {
     this.refreshSystemLanguage();
+    this.refreshResponsiveWaterFlowSections();
     this.initializeAppData();
     this.loadCardTokenIds();
     this.timerId = setInterval(() => {
@@ -584,6 +625,7 @@ struct Index {
   @StorageProp('tool2fa_naviIndicatorHeight') private naviIndicatorHeight: number = 0;
   private homeScroller: Scroller = new Scroller();
   private meScroller: Scroller = new Scroller();
+  private meWaterFlowSections: WaterFlowSections = new WaterFlowSections();
   private settingsScroller: Scroller = new Scroller();
   private appearanceSettingsScroller: Scroller = new Scroller();
   private featureSecurityScroller: Scroller = new Scroller();
@@ -611,6 +653,7 @@ struct Index {
   private timerId: number = -1;
   private updateNoticePresentationTimer: number = -1;
   private settingsLoaded: boolean = false;
+  private settingsLoadPromise: Promise<void> | undefined = undefined;
   private phoneRootReady: boolean = false;
   private isHomeListScrolling: boolean = false;
   private tokenCodeCache: Map<string, string> = new Map<string, string>();
@@ -645,6 +688,7 @@ struct Index {
   @State private showUserAgreementSheet: boolean = false;
   @State private showWebSheet: boolean = false;
   @State private showQQGroupSheet: boolean = false;
+  @State private isSavingQQGroupQRCode: boolean = false;
   @State private webSheetTitle: string = '';
   @State private webSheetUrl: string = 'about:blank';
   @State private importProgressVisible: boolean = false;
@@ -697,6 +741,7 @@ struct Index {
   private tokenDragReordered: boolean = false;
   private wearMessageReceivers: WearMessageReceiver[] = [];
   private thirdPartyScroller: Scroller = new Scroller();
+  private thirdPartyWaterFlowSections: WaterFlowSections = new WaterFlowSections();
 
   private async initializeAppData(): Promise<void> {
     await this.loadTokens();
@@ -704,8 +749,23 @@ struct Index {
   }
 
   private async loadSettings(): Promise<void> {
+    if (this.settingsLoaded) {
+      return;
+    }
+    if (this.settingsLoadPromise === undefined) {
+      this.settingsLoadPromise = this.performLoadSettings();
+    }
+    const activeLoadPromise: Promise<void> = this.settingsLoadPromise;
+    await activeLoadPromise;
+    if (this.settingsLoadPromise === activeLoadPromise) {
+      this.settingsLoadPromise = undefined;
+    }
+  }
+
+  private async performLoadSettings(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
+      this.settingsLoaded = true;
       return;
     }
     const settings = await SettingsRepository.load(context);
@@ -725,9 +785,23 @@ struct Index {
     this.materialTypeInput = settings.materialType;
     this.materialLevelInput = settings.materialLevel;
     this.globalImmersionEnabled = settings.globalImmersionEnabled;
+    let loadedBackgroundUri: string = settings.customBackgroundUri;
+    let backgroundCacheMigrated = false;
+    if (settings.backgroundSelection === 'custom' && loadedBackgroundUri.length > 0) {
+      const backgroundPrepared = await this.prepareCustomBackground(loadedBackgroundUri);
+      if (backgroundPrepared && !this.isOptimizedCustomBackgroundUri(loadedBackgroundUri)) {
+        const optimizedUri = await this.persistPreparedCustomBackground(context);
+        if (optimizedUri.length > 0) {
+          loadedBackgroundUri = optimizedUri;
+          this.customBackgroundPixelMapUri = optimizedUri;
+          backgroundCacheMigrated = true;
+        }
+      }
+    }
+    this.customBackgroundUri = loadedBackgroundUri;
     this.backgroundSelection = settings.backgroundSelection;
-    this.customBackgroundUri = settings.customBackgroundUri;
     this.backgroundBlurPercent = this.clamp(settings.backgroundBlurPercent, 0, 100);
+    this.backgroundBrightnessPercent = this.clamp(settings.backgroundBrightnessPercent, 0, 100);
     this.globalBackgroundEnabled = settings.globalBackgroundEnabled;
     this.updateNoticeVersion = settings.updateNoticeVersion;
     this.languageInput = normalizeSelectedLanguage(settings.language);
@@ -769,9 +843,11 @@ struct Index {
       this.registerWearSyncReceivers();
     }
     this.settingsLoaded = true;
-    if (migratedExistingUser) {
+    if (migratedExistingUser || backgroundCacheMigrated) {
       await this.saveSettings();
-      console.info('Skipped onboarding for upgraded user with existing local tokens');
+      if (migratedExistingUser) {
+        console.info('Skipped onboarding for upgraded user with existing local tokens');
+      }
     }
     this.scheduleUpdateNoticePresentation();
     hilog.info(APPLOCK_DOMAIN, APPLOCK_TAG, 'loadSettings: appLock=%{public}d, isLocked=%{public}d, huaweiLoggedIn=%{public}d', this.appLockEnabled ? 1 : 0, this.isLocked ? 1 : 0, this.isHuaweiLoggedIn ? 1 : 0);
@@ -782,7 +858,7 @@ struct Index {
     if (!context) {
       return;
     }
-    await SettingsRepository.save(context, {
+    const snapshot: Settings = {
       cloudBackup: this.cloudBackupEnabled,
       smartGrip: this.smartGripEnabled,
       antiPeep: this.antiPeepEnabled,
@@ -802,6 +878,7 @@ struct Index {
       backgroundSelection: this.backgroundSelection,
       customBackgroundUri: this.customBackgroundUri,
       backgroundBlurPercent: this.backgroundBlurPercent,
+      backgroundBrightnessPercent: this.backgroundBrightnessPercent,
       globalBackgroundEnabled: this.globalBackgroundEnabled,
       updateNoticeVersion: this.updateNoticeVersion,
       language: normalizeSelectedLanguage(this.languageInput),
@@ -815,7 +892,8 @@ struct Index {
       steamEnhancedAccess: this.steamEnhancedAccess,
       steamGatewayUrl: this.steamGatewayUrl,
       steamGatewayToken: this.steamGatewayToken
-    });
+    };
+    await SettingsRepository.save(context, snapshot);
   }
 
   private startAppLockAuth(): void {
@@ -921,10 +999,8 @@ struct Index {
         },
         style: {
           scrollEffectOpts: {
-            enableScrollEffect: true,
-            scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
-            blurEffectiveStartOffset: LengthMetrics.vp(0),
-            blurEffectiveEndOffset: LengthMetrics.vp(this.statusBarHeight + HOME_TITLE_HEIGHT)
+            enableScrollEffect: false,
+            scrollEffectType: ScrollEffectType.GRADIENT_BLUR
           },
           blurStrategy: BlurStrategy.ADAPTIVE,
           originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
@@ -948,6 +1024,7 @@ struct Index {
       this.SteamLoginSheetAnchor()
       this.SteamDecryptSheetAnchor()
       this.SteamEnrollmentSheetAnchor()
+      this.QQGroupSheetAnchor()
       if (this.shouldShowAddFloatingButton()) {
         this.AddFloatingButton()
       }
@@ -968,6 +1045,7 @@ struct Index {
       const nextHeight = this.lengthToNumber(newValue.height, this.pageHeight);
       if (nextWidth > 0 && Math.abs(nextWidth - this.pageWidth) > 0.5) {
         this.pageWidth = nextWidth;
+        this.refreshResponsiveWaterFlowSections();
       }
       if (nextHeight > 0 && Math.abs(nextHeight - this.pageHeight) > 0.5) {
         this.pageHeight = nextHeight;
@@ -1025,13 +1103,16 @@ struct Index {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .backgroundColor(this.pageBackgroundColor())
       .clip(true)
+      .renderGroup(this.backgroundSelection !== 'none')
       .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
   private SelectedBackgroundImage(height: number, radius: number) {
     if (this.backgroundSelection === 'custom' && this.customBackgroundUri.length > 0) {
-      this.CustomBackgroundImageLayer(this.customBackgroundUri, height, radius)
+      ForEach([this.customBackgroundRenderVersion], (version: number) => {
+        this.CustomBackgroundImageLayer(this.customBackgroundUri, height, radius)
+      }, (version: number) => version.toString())
     } else if (this.backgroundSelection === 'preset_2') {
       this.PresetBackgroundImageLayer($r('app.media.background_preset_2'), height, radius)
     } else if (this.backgroundSelection === 'preset_3') {
@@ -1054,9 +1135,11 @@ struct Index {
     Image(source)
       .width('100%')
       .height(height)
+      .syncLoad(true)
       .objectFit(ImageFit.Cover)
       .borderRadius(radius)
       .blur(this.backgroundBlurRadius())
+      .brightness(this.backgroundImageBrightness())
       .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
       .zIndex(0)
       .hitTestBehavior(HitTestMode.None)
@@ -1064,15 +1147,24 @@ struct Index {
 
   @Builder
   private CustomBackgroundImageLayer(source: string, height: number, radius: number) {
-    Image(source)
+    Image(this.customBackgroundImageSource(source))
       .width('100%')
       .height(height)
+      .syncLoad(true)
       .objectFit(ImageFit.Cover)
       .borderRadius(radius)
       .blur(this.backgroundBlurRadius())
+      .brightness(this.backgroundImageBrightness())
       .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
       .zIndex(0)
       .hitTestBehavior(HitTestMode.None)
+  }
+
+  private customBackgroundImageSource(source: string): image.PixelMap | string {
+    if (this.customBackgroundPixelMap !== undefined) {
+      return this.customBackgroundPixelMap;
+    }
+    return source;
   }
 
   @Builder
@@ -1226,6 +1318,10 @@ struct Index {
 
   private backgroundImageScale(): number {
     return 1 + this.backgroundBlurPercent / 100 * 0.12;
+  }
+
+  private backgroundImageBrightness(): number {
+    return this.backgroundBrightnessPercent / 50;
   }
 
   @Builder
@@ -1811,43 +1907,48 @@ struct Index {
     if (this.isWatchLayout()) {
       this.WatchHomePageContent()
     } else {
-      HdsTabs() {
-        TabContent() {
-          this.TokenListContent()
-        }
-        .tabBar(this.tokenTabBarStyle())
+      Stack() {
+        HdsTabs() {
+          TabContent() {
+            this.TokenListContent()
+          }
+          .tabBar(this.tokenTabBarStyle())
 
-        TabContent() {
-          this.MePageContent()
+          TabContent() {
+            this.MePageContent()
+          }
+          .tabBar(this.meTabBarStyle())
         }
-        .tabBar(this.meTabBarStyle())
+        .barOverlap(true)
+        .vertical(false)
+        .scrollable(false)
+        .barPosition(BarPosition.End)
+        .barWidth(HOME_NAV_WIDTH)
+        .barHeight(HOME_NAV_HEIGHT)
+        .barFloatingStyle({
+          barBottomMargin: this.naviIndicatorHeight,
+          barWidth: {
+            smallWidth: HOME_NAV_WIDTH,
+            mediumWidth: HOME_NAV_WIDTH,
+            largeWidth: HOME_NAV_WIDTH
+          },
+          lightColor: this.accentColor(),
+          systemMaterialEffect: {
+            materialType: this.configuredMaterialType(),
+            materialLevel: this.configuredMaterialLevel()
+          }
+        })
+        .onChange((index: number) => {
+          this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
+          this.isHomeListScrolling = false;
+          if (this.selectedHomeTab === HomeTab.Token) {
+            this.currentTimeMs = Date.now();
+          }
+        })
+        .width('100%')
+        .height('100%')
+
       }
-      .barOverlap(true)
-      .vertical(false)
-      .scrollable(false)
-      .barPosition(BarPosition.End)
-      .barWidth(HOME_NAV_WIDTH)
-      .barHeight(HOME_NAV_HEIGHT)
-      .barFloatingStyle({
-        barBottomMargin: this.naviIndicatorHeight,
-        barWidth: {
-          smallWidth: HOME_NAV_WIDTH,
-          mediumWidth: HOME_NAV_WIDTH,
-          largeWidth: HOME_NAV_WIDTH
-        },
-        lightColor: this.accentColor(),
-        systemMaterialEffect: {
-          materialType: this.configuredMaterialType(),
-          materialLevel: this.configuredMaterialLevel()
-        }
-      })
-      .onChange((index: number) => {
-        this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
-        this.isHomeListScrolling = false;
-        if (this.selectedHomeTab === HomeTab.Token) {
-          this.currentTimeMs = Date.now();
-        }
-      })
       .width('100%')
       .height('100%')
     }
@@ -2091,10 +2192,8 @@ struct Index {
           },
           style: {
             scrollEffectOpts: {
-              enableScrollEffect: true,
-              scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
-              blurEffectiveStartOffset: LengthMetrics.vp(0),
-              blurEffectiveEndOffset: LengthMetrics.vp(this.statusBarHeight + HOME_TITLE_HEIGHT)
+              enableScrollEffect: false,
+              scrollEffectType: ScrollEffectType.GRADIENT_BLUR
             },
             blurStrategy: BlurStrategy.ADAPTIVE,
             originalStyle: { backgroundStyle: { backgroundColor: '#00ffffff' } },
@@ -2352,77 +2451,82 @@ struct Index {
   @Builder
   private MePageContent() {
     Stack() {
-      List({ scroller: this.meScroller }) {
-        ListItemGroup({ header: this.MeLoginGroupHeader, space: PAGE_CARD_GAP }) {
-          ListItem() {
-            this.MeActionCard([
-              ['华为云空间', $r('sys.symbol.icloud')],
-              ['手表端数据同步', $r('sys.symbol.square_grid_2x2')],
-              ['备份导出', $r('sys.symbol.square_and_arrow_down')]
-            ], 0)
-          }
-          .width('100%')
-          .bindSheet($$this.showExportPicker, this.ExportTokenPickerSheet(), {
-            height: SheetSize.MEDIUM,
-            dragBar: true,
-            showClose: false,
-            backgroundColor: this.sheetSurfaceBackgroundColor(),
-            blurStyle: this.sheetSurfaceBlurStyle(),
-            radius: LengthMetrics.vp(28)
-          })
-
-          ListItem() {
-            this.MeActionCard([
-              ['外观与主题', $r('sys.symbol.paintpalette')],
-              ['功能与安全', $r('sys.symbol.key_shield')]
-            ], 1)
-          }
-          .width('100%')
-
-          ListItem() {
-            this.MeActionCard([
-              ['打赏一杯咖啡', $r('sys.symbol.heart')],
-              ['更多作品', $r('sys.symbol.square_grid_2x2')]
-            ], 2)
-          }
-          .width('100%')
-          .bindSheet($$this.showExportQR, this.ExportQRCodeSheet(), {
-            height: SheetSize.FIT_CONTENT,
-            dragBar: true,
-            showClose: false,
-            backgroundColor: this.sheetSurfaceBackgroundColor(),
-            blurStyle: this.sheetSurfaceBlurStyle(),
-            radius: LengthMetrics.vp(28)
-          })
-          ListItem() {
-            this.MeActionCard([
-              ['开源地址', $r('sys.symbol.link_slash')],
-              ['用户协议', $r('sys.symbol.checkmark_shield')],
-              ['隐私声明', $r('sys.symbol.person_shield')],
-              ['关于', $r('sys.symbol.person_2')]
-            ], 3)
-          }
-          .width('100%')
-          .bindSheet($$this.showExportFormat, this.ExportFormatSheet(), {
-            height: SheetSize.FIT_CONTENT,
-            dragBar: true,
-            showClose: false,
-            backgroundColor: this.sheetSurfaceBackgroundColor(),
-            blurStyle: this.sheetSurfaceBlurStyle(),
-            radius: LengthMetrics.vp(28)
-          })
+      WaterFlow({
+        scroller: this.meScroller,
+        sections: this.meWaterFlowSections
+      }) {
+        FlowItem() {
+          this.MeLoginCard()
         }
+        .width('100%')
+
+        FlowItem() {
+          this.MeActionCard([
+            ['华为云空间', $r('sys.symbol.icloud')],
+            ['手表端数据同步', $r('sys.symbol.square_grid_2x2')],
+            ['备份导出', $r('sys.symbol.square_and_arrow_down')]
+          ], 0)
+        }
+        .width('100%')
+        .bindSheet($$this.showExportPicker, this.ExportTokenPickerSheet(), {
+          height: SheetSize.MEDIUM,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.sheetSurfaceBackgroundColor(),
+          blurStyle: this.sheetSurfaceBlurStyle(),
+          radius: LengthMetrics.vp(28)
+        })
+
+        FlowItem() {
+          this.MeActionCard([
+            ['外观与主题', $r('sys.symbol.paintpalette')],
+            ['功能与安全', $r('sys.symbol.key_shield')]
+          ], 1)
+        }
+        .width('100%')
+
+        FlowItem() {
+          this.MeActionCard([
+            ['打赏一杯咖啡', $r('sys.symbol.heart')],
+            ['更多作品', $r('sys.symbol.square_grid_2x2')]
+          ], 2)
+        }
+        .width('100%')
+        .bindSheet($$this.showExportQR, this.ExportQRCodeSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.sheetSurfaceBackgroundColor(),
+          blurStyle: this.sheetSurfaceBlurStyle(),
+          radius: LengthMetrics.vp(28)
+        })
+
+        FlowItem() {
+          this.MeActionCard([
+            ['开源地址', $r('sys.symbol.link_slash')],
+            ['用户协议', $r('sys.symbol.checkmark_shield')],
+            ['隐私声明', $r('sys.symbol.person_shield')],
+            ['关于', $r('sys.symbol.person_2')]
+          ], 3)
+        }
+        .width('100%')
+        .bindSheet($$this.showExportFormat, this.ExportFormatSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          showClose: false,
+          backgroundColor: this.sheetSurfaceBackgroundColor(),
+          blurStyle: this.sheetSurfaceBlurStyle(),
+          radius: LengthMetrics.vp(28)
+        })
       }
       .width('100%')
       .height('100%')
-      .lanes({ minLength: RESPONSIVE_CARD_MIN_WIDTH, maxLength: RESPONSIVE_CARD_MAX_WIDTH }, PAGE_CARD_GAP)
       .padding({
         left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP
+        right: HOME_HORIZONTAL_PADDING
       })
+      .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
       .contentEndOffset(this.naviIndicatorHeight + HOME_NAV_HEIGHT + PAGE_CARD_GAP + 18)
-      .cachedCount(HOME_LIST_CACHE_COUNT, true)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
       .clip(false)
@@ -2431,6 +2535,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .clip(false)
   }
 
   @Builder
@@ -2482,6 +2587,24 @@ struct Index {
         onDisappear: () => {
           this.pendingSteamLoginTokenId = '';
         }
+      })
+  }
+
+  @Builder
+  private QQGroupSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showQQGroupSheet, this.QQGroupSheet(), {
+        height: SheetSize.MEDIUM,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28)
       })
   }
 
@@ -2541,21 +2664,21 @@ struct Index {
         Scroll(this.updateNoticeSheetScroller) {
           Column({ space: 12 }) {
             this.UpdateNoticeHero()
-            this.UpdateNoticeItem('1', '完整 Steam Guard',
-              '支持 maFile 导入、账号登录生成验证器、扫码登录、交易确认和 maFile 导出。',
-              '令牌页 → 新增 → 登录 Steam 账号 / 导入 Steam maFile')
-            this.UpdateNoticeItem('2', 'Steam 完整数据云同步',
-              '登录凭证和交易确认信息通过独立加密云表同步，通用令牌同步逻辑保持不变。',
-              '我的 → 华为云空间 → 手动推送 / 手动获取')
-            this.UpdateNoticeItem('3', '同步状态更清晰',
-              '通用令牌与 Steam 完整数据分开显示状态，并展示实际上传、下载数量。',
-              '我的 → 华为云空间 → 同步记录')
-            this.UpdateNoticeItem('4', '全局主题背景',
-              '背景图默认可显示在全部二级页面，并支持预设图、图库图片和模糊程度调节。',
-              '我的 → 外观与主题 → 背景图是否全局显示')
-            this.UpdateNoticeItem('5', '关于页功能完善',
-              '新增历史更新日志、AppGallery 评价入口及 Steam Desktop Authenticator 项目链接。',
-              '我的 → 关于 → 更新日志')
+            this.UpdateNoticeItem('1', '响应式界面升级',
+              '优化“我的”、设置、第三方库等页面在手机、平板及宽屏设备上的布局。',
+              '各页面会根据窗口宽度自动适配')
+            this.UpdateNoticeItem('2', '背景控制更完整',
+              '新增背景图明亮程度调节，并修复图库背景选择后未立即刷新的问题。',
+              '我的 → 外观与主题 → 颜色与背景')
+            this.UpdateNoticeItem('3', '转场更加流畅',
+              '复用预解码背景并缓存静态渲染结果，降低启用背景图后的转场渲染开销。',
+              '启用背景图后进入任意二级页面')
+            this.UpdateNoticeItem('4', '导航模糊稳定',
+              '修复顶部导航栏开始滚动时模糊效果短暂缺失的问题。',
+              '滚动支持顶部模糊效果的页面')
+            this.UpdateNoticeItem('5', '细节体验完善',
+              '完善 QQ 群号复制与二维码保存、多语言文案、应用图标及品牌资源。',
+              '我的 → 关于 → 加入QQ群 / 更新日志')
           }
           .width('100%')
           .padding({
@@ -2636,12 +2759,12 @@ struct Index {
         .objectFit(ImageFit.Cover)
 
       Column({ space: 4 }) {
-        Text(this.t('Steam Guard 全面升级'))
+        Text(this.t('界面与背景体验优化'))
           .fontSize(19)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
 
-        Text(this.t('V1.4.0：完整凭证同步、登录与交易确认一步到位。'))
+        Text(this.t('V1.4.1：适配更完善，背景切换与页面转场更流畅。'))
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
@@ -2932,25 +3055,25 @@ struct Index {
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text(this.t('这是非官方兼容功能。本应用、此登录功能与 Valve、Steam、Steam Desktop Authenticator 均无隶属、授权或担保关系。'))
-          .fontSize(14)
-          .lineHeight(21)
-          .fontColor(this.secondaryTextColor())
-          .width('100%')
-
-        Text(this.t('把验证器和 Steam 客户端放在同一设备会降低双重验证的隔离效果；设备或安装包一旦被恶意控制，账号和交易都可能受影响。请只从可信来源安装，并自行承担使用风险。'))
-          .fontSize(14)
-          .lineHeight(21)
-          .fontColor(this.secondaryTextColor())
-          .width('100%')
-
-        Text(this.t('登录请求由本机网络通过 HTTPS 直接发往 api.steampowered.com，不使用 Steam 增强访问网关，也不经过开发者服务器。账号、密码和验证码只在当前登录过程中使用，不会保存。'))
+        Text(this.t('本应用提供 Steam 相关辅助功能，仅用于帮助用户管理个人验证信息及提升使用体验。本应用与 Valve、Steam 官方不存在隶属、授权或合作关系。'))
           .fontSize(14)
           .lineHeight(21)
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text(this.t('生成的原始 maFile 仅保存在本机；开启华为云同步后，恢复扫码登录和交易确认所需的结构化凭证会写入独立加密云表，通用 Steam 验证码密钥仍按现有令牌逻辑同步。请另外备份 maFile 和恢复码。'))
+        Text(this.t('登录过程中，账号认证请求由用户设备直接与 Steam 官方服务进行通信，登录成功后会实时删除账号密码等敏感信息。本应用不会收集、上传或存储用户的 Steam 密码、登录验证码等敏感信息。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('生成的验证配置文件默认仅保存在本地设备中。若开启华为云备份功能，将采用加密方式保存相关配置数据到华为云空间，用于设备迁移或恢复使用。请妥善保管备份文件及恢复信息，避免因泄露导致账号安全风险。'))
+          .fontSize(14)
+          .lineHeight(21)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('请确保仅在本人授权的 Steam 账号上使用本功能，并从可信来源安装应用。因账号、设备或备份信息管理不当造成的风险，请用户自行承担。'))
           .fontSize(14)
           .lineHeight(21)
           .fontColor(this.primaryTextColor())
@@ -3018,13 +3141,13 @@ struct Index {
     Stack({ alignContent: Alignment.Center }) {
       this.MeasuredImmersionCardSurface('steam-enrollment-credentials', SHEET_OPTION_CARD_RADIUS)
       Column({ space: 14 }) {
-        Text(this.t('设备直连 Steam'))
+        Text(this.t('直连 Steam 官方服务（需要🪜）'))
           .fontSize(17)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text(this.t('密码会先使用 Steam 返回的 RSA 公钥在本机加密，再发送给 Steam；成功发起登录后会立即从页面状态清除。'))
+        Text(this.t('需打开网络代理，登录凭证加密后通过 https 通道直接发送 Steam 官方服务 api.steampowered.com，不会进行任何第三方中转；成功发起登录后账号密码敏感信息会立即删除。'))
           .fontSize(13)
           .lineHeight(19)
           .fontColor(this.secondaryTextColor())
@@ -3758,24 +3881,26 @@ struct Index {
 
   @Builder
   private MoreAppsPageContent() {
-    Scroll(this.moreAppsScroller) {
-      Column() {
+    WaterFlow({ scroller: this.moreAppsScroller }) {
+      FlowItem() {
         this.MoreAppsHeroCard()
       }
       .width('100%')
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
-      .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
@@ -3845,25 +3970,34 @@ struct Index {
 
   @Builder
   private DonationPageContent() {
-    Scroll(this.donationScroller) {
-      Column({ space: PAGE_CARD_GAP }) {
+    WaterFlow({ scroller: this.donationScroller }) {
+      FlowItem() {
         this.DonationHeroCard()
+      }
+      .width('100%')
+      FlowItem() {
         this.DonationQrCard()
+      }
+      .width('100%')
+      FlowItem() {
         this.DonationBenefitsCard()
       }
       .width('100%')
-      .constraintSize({ maxWidth: 620 })
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
     }
     .width('100%')
     .height('100%')
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
@@ -3912,7 +4046,9 @@ struct Index {
   @Builder
   private DonationQrCard() {
     Stack({ alignContent: Alignment.Center }) {
-      this.MeasuredImmersionCardSurface('donation-qr', ME_CARD_RADIUS)
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(this.donationQrCardHeight(), ME_CARD_RADIUS)
+      }
       Column({ space: 16 }) {
           Row({ space: 12 }) {
             SymbolGlyph($r('sys.symbol.qrcode'))
@@ -3934,7 +4070,7 @@ struct Index {
 
           Image($rawfile('wechat_donation_qr.png'))
             .width('100%')
-            .constraintSize({ maxWidth: 420 })
+            .constraintSize({ maxWidth: DONATION_QR_IMAGE_MAX_WIDTH })
             .aspectRatio(1397 / 1653)
             .objectFit(ImageFit.Contain)
             .borderRadius(16)
@@ -3958,11 +4094,13 @@ struct Index {
           .height(44)
         }
         .width('100%')
+        .height(this.donationQrCardHeight())
         .padding({ left: 24, right: 24, top: 24, bottom: 24 })
         .alignItems(HorizontalAlign.Center)
         .zIndex(2)
     }
     .width('100%')
+    .height(this.donationQrCardHeight())
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -3971,9 +4109,6 @@ struct Index {
     .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
     .onTouch((event: TouchEvent) => {
       this.handleAppCardTouch('donation-qr', event.type);
-    })
-    .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.updateMeasuredCardHeight('donation-qr', newValue);
     })
   }
 
@@ -4014,32 +4149,30 @@ struct Index {
 
   @Builder
   private AboutPageContent() {
-    Scroll(this.aboutScroller) {
-      Column({ space: PAGE_CARD_GAP }) {
+    WaterFlow({ scroller: this.aboutScroller }) {
+      FlowItem() {
         this.AboutHeroCard()
+      }
+      .width('100%')
+      FlowItem() {
         this.AboutActionsCard()
       }
       .width('100%')
-      .constraintSize({ maxWidth: 620 })
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
     }
     .width('100%')
     .height('100%')
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
-    .bindSheet($$this.showQQGroupSheet, this.QQGroupSheet(), {
-      height: SheetSize.MEDIUM,
-      dragBar: true,
-      showClose: false,
-      backgroundColor: this.sheetSurfaceBackgroundColor(),
-      blurStyle: this.sheetSurfaceBlurStyle(),
-      radius: LengthMetrics.vp(28)
-    })
+    .clip(false)
     .bindSheet($$this.showUpdateLogSheet, this.UpdateLogSheet(), {
       height: SheetSize.LARGE,
       dragBar: true,
@@ -4049,7 +4182,7 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28),
       onDisappear: () => {
-        this.expandedUpdateLogVersion = '1.4.0';
+        this.expandedUpdateLogVersion = '1.4.1';
       }
     })
   }
@@ -4166,7 +4299,7 @@ struct Index {
           })
           this.MeCardDivider()
           this.AboutActionRow('更新日志', '', () => {
-            this.expandedUpdateLogVersion = '1.4.0';
+            this.expandedUpdateLogVersion = '1.4.1';
             this.showUpdateLogSheet = true;
           })
           this.MeCardDivider()
@@ -4309,7 +4442,7 @@ struct Index {
               .fontColor(this.primaryTextColor())
               .maxLines(1)
 
-            Text(entry.summary)
+            Text(this.t(entry.summary))
               .fontSize(13)
               .fontColor(this.secondaryTextColor())
               .maxLines(2)
@@ -4335,7 +4468,7 @@ struct Index {
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.accentColor())
 
-                Text(item)
+                Text(this.t(item))
                   .fontSize(14)
                   .lineHeight(21)
                   .fontColor(this.secondaryTextColor())
@@ -4376,35 +4509,45 @@ struct Index {
 
   @Builder
   private ThirdPartyPageContent() {
-    Scroll(this.thirdPartyScroller) {
-      Column({ space: PAGE_CARD_GAP }) {
+    WaterFlow({
+      scroller: this.thirdPartyScroller,
+      sections: this.thirdPartyWaterFlowSections
+    }) {
+      FlowItem() {
         Text(this.t('感谢以下开源项目与三方库作者的贡献'))
           .width('100%')
           .fontSize(15)
           .fontColor(this.secondaryTextColor())
           .padding({ left: 4, right: 4, bottom: 4 })
-
+      }
+      .width('100%')
+      FlowItem() {
         this.ThirdPartyLibraryCard('@tangs/components', 'Apache-2.0',
           this.t('提供 ImmersionButton 与 ImmersionSearch 沉浸光感组件'), TANGS_COMPONENTS_URL)
+      }
+      .width('100%')
+      FlowItem() {
         this.ThirdPartyLibraryCard('kdada/Authenticator', 'MIT',
           this.t('Steam Authenticator 功能实现参考'), STEAM_REFERENCE_URL)
+      }
+      .width('100%')
+      FlowItem() {
         this.ThirdPartyLibraryCard('Jessecar96/SteamDesktopAuthenticator', 'MIT',
           this.t('Steam Desktop Authenticator（SDA）功能实现参考'), SDA_REFERENCE_URL)
       }
       .width('100%')
-      .constraintSize({ maxWidth: 620 })
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
@@ -4458,22 +4601,45 @@ struct Index {
   @Builder
   private QQGroupSheet() {
     HdsNavigation() {
-      Column({ space: 14 }) {
-        Image($rawfile('qq_group_qr.png'))
-          .width('100%')
-          .constraintSize({ maxWidth: 320, maxHeight: 420 })
-          .layoutWeight(1)
-          .objectFit(ImageFit.Contain)
-          .borderRadius(18)
+      Stack({ alignContent: Alignment.Bottom }) {
+        Column({ space: 14 }) {
+          Image($rawfile('qq_group_qr.png'))
+            .width('100%')
+            .constraintSize({ maxWidth: 320, maxHeight: 420 })
+            .layoutWeight(1)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(18)
 
-        Text(this.t('扫描二维码加入QQ群'))
-          .fontSize(14)
-          .fontColor(this.secondaryTextColor())
+          Text(this.t('扫描二维码加入QQ群'))
+            .fontSize(14)
+            .fontColor(this.secondaryTextColor())
+        }
+        .width('100%')
+        .height('100%')
+        .padding({
+          left: 24,
+          right: 24,
+          top: 12,
+          bottom: this.sheetListBottomPadding()
+        })
+        .alignItems(HorizontalAlign.Center)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('复制群号'),
+          secondaryAction: () => {
+            this.copyQQGroupNumber();
+          },
+          primaryLabel: this.isSavingQQGroupQRCode ? this.t('保存中') : this.t('保存到相册'),
+          primaryEnabled: !this.isSavingQQGroupQRCode,
+          primaryLoading: this.isSavingQQGroupQRCode,
+          primaryAction: () => {
+            this.saveQQGroupQRCode();
+          }
+        })
       }
       .width('100%')
       .height('100%')
-      .padding({ left: 24, right: 24, top: 12, bottom: this.naviIndicatorHeight + 18 })
-      .alignItems(HorizontalAlign.Center)
+      .clip(false)
     }
     .titleMode(HdsNavigationTitleMode.MODAL)
     .titleBar({
@@ -4495,112 +4661,114 @@ struct Index {
 
   @Builder
   private AppearanceSettingsPageContent() {
-    Scroll(this.appearanceSettingsScroller) {
-      GridRow({
-        columns: { xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 },
-        gutter: PAGE_CARD_GAP,
-        breakpoints: {
-          value: ['600vp'],
-          reference: BreakpointsReference.ComponentSize
+    WaterFlow({ scroller: this.appearanceSettingsScroller }) {
+      FlowItem() {
+        Column() {
+          this.SettingsSectionTitle(this.t('令牌外观'))
+          this.SettingsAppearanceTokenCard()
         }
-      }) {
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsAppearanceSection()
-        }
+        .width('100%')
       }
       .width('100%')
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
+      FlowItem() {
+        Column() {
+          this.SettingsSectionTitle(this.t('高级材质'))
+          this.SettingsAppearanceMaterialCard()
+        }
+        .width('100%')
+      }
+      .width('100%')
+      FlowItem() {
+        Column() {
+          this.SettingsSectionTitle(this.t('颜色与背景'))
+          this.SettingsAppearanceBackgroundCard()
+        }
+        .width('100%')
+      }
+      .width('100%')
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
   private FeatureSecurityPageContent() {
-    Scroll(this.featureSecurityScroller) {
-      GridRow({
-        columns: { xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 },
-        gutter: PAGE_CARD_GAP,
-        breakpoints: {
-          value: ['600vp'],
-          reference: BreakpointsReference.ComponentSize
-        }
-      }) {
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsSecuritySection()
-        }
-
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsWidgetSection()
-        }
-
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsSteamAccessSection()
-        }
+    WaterFlow({ scroller: this.featureSecurityScroller }) {
+      FlowItem() {
+        this.SettingsSecuritySection()
       }
       .width('100%')
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
+      FlowItem() {
+        this.SettingsWidgetSection()
+      }
+      .width('100%')
+      FlowItem() {
+        this.SettingsSteamAccessSection()
+      }
+      .width('100%')
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
   private SettingsPageContent() {
-    Scroll(this.settingsScroller) {
-      GridRow({
-        columns: { xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 },
-        gutter: PAGE_CARD_GAP,
-        breakpoints: {
-          value: ['600vp'],
-          reference: BreakpointsReference.ComponentSize
-        }
-      }) {
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsSecuritySection()
-        }
-
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsAppearanceSection()
-        }
-
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsWidgetSection()
-        }
-
-        GridCol({ span: { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1 } }) {
-          this.SettingsSteamAccessSection()
-        }
+    WaterFlow({ scroller: this.settingsScroller }) {
+      FlowItem() {
+        this.SettingsSecuritySection()
       }
       .width('100%')
-      .padding({
-        left: HOME_HORIZONTAL_PADDING,
-        right: HOME_HORIZONTAL_PADDING,
-        top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-      })
+      FlowItem() {
+        this.SettingsAppearanceSection()
+      }
+      .width('100%')
+      FlowItem() {
+        this.SettingsWidgetSection()
+      }
+      .width('100%')
+      FlowItem() {
+        this.SettingsSteamAccessSection()
+      }
+      .width('100%')
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
+    .columnsTemplate(this.responsivePageColumnsTemplate())
+    .columnsGap(PAGE_CARD_GAP)
+    .rowsGap(PAGE_CARD_GAP)
+    .padding({
+      left: HOME_HORIZONTAL_PADDING,
+      right: HOME_HORIZONTAL_PADDING,
+      bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+    })
+    .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
@@ -4657,31 +4825,31 @@ struct Index {
   @Builder
   private SettingsSteamAccessCard() {
     Stack({ alignContent: Alignment.Center }) {
-      this.MeasuredImmersionCardSurface('steam-access', ME_CARD_RADIUS)
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(this.steamAccessCardHeight(), ME_CARD_RADIUS)
+      }
       this.SettingsSteamAccessCardContent()
     }
     .width('100%')
+    .height(this.steamAccessCardHeight())
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
     .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
-    .scale({ x: this.appCardScale('steam-access'), y: this.appCardScale('steam-access') })
+    .scale({
+      x: this.appCardScale('steam-access'),
+      y: this.appCardScale('steam-access')
+    })
     .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
     .onTouch((event: TouchEvent) => {
       this.handleAppCardTouch('steam-access', event.type);
-    })
-    .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.updateMeasuredCardHeight('steam-access', newValue);
     })
   }
 
   @Builder
   private SettingsSteamAccessCardContent() {
       Column() {
-        this.SettingsSwitchRow('启用 Steam 增强访问', this.steamEnhancedAccess, (enabled: boolean) => {
-          this.steamEnhancedAccess = enabled;
-          this.saveSettings();
-        })
+        this.SettingsSwitchRow(SettingsSwitchKey.SteamEnhancedAccess, '启用 Steam 增强访问')
 
         if (this.steamEnhancedAccess) {
           this.MeCardDivider()
@@ -4720,6 +4888,7 @@ struct Index {
         }
       }
       .width('100%')
+      .height(this.steamAccessCardHeight())
       .padding({ left: 20, right: 18 })
       .zIndex(2)
   }
@@ -4737,57 +4906,46 @@ struct Index {
   @Builder
   private CloudSpacePageContent() {
     Stack() {
-      Scroll(this.watchSyncScroller) {
-        Column({ space: PAGE_CARD_GAP }) {
-          Text(this.t('同步设置'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 10, bottom: 8 })
-
-          this.CloudAutoSyncCard()
-
-          Text(this.t('同步操作'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 18, bottom: 8 })
-
-          this.CloudActionsCard()
-
-          Text(this.t('同步记录'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 18, bottom: 8 })
-
-          this.CloudRecordsCard()
-
-          Text(this.t('Steam 同步说明'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 18, bottom: 8 })
-
-          this.CloudSteamSyncNoticeCard()
+      WaterFlow({ scroller: this.cloudSpaceScroller }) {
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步设置'))
+            this.CloudAutoSyncCard()
+          }
+          .width('100%')
         }
         .width('100%')
-        .padding({
-          left: HOME_HORIZONTAL_PADDING,
-          right: HOME_HORIZONTAL_PADDING,
-          top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-          bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-        })
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步操作'))
+            this.CloudActionsCard()
+          }
+          .width('100%')
+        }
+        .width('100%')
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步记录'))
+            this.CloudRecordsCard()
+          }
+          .width('100%')
+        }
+        .width('100%')
       }
       .width('100%')
       .height('100%')
-      .align(Alignment.Top)
+      .columnsTemplate(this.responsivePageColumnsTemplate())
+      .columnsGap(PAGE_CARD_GAP)
+      .rowsGap(PAGE_CARD_GAP)
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+      .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .clip(false)
 
     }
     .width('100%')
@@ -4801,9 +4959,7 @@ struct Index {
         this.ImmersionCardSurface(ME_ROW_HEIGHT, ME_CARD_RADIUS)
       }
       Column() {
-        this.SettingsSwitchRow('云空间自动同步', this.cloudBackupEnabled, (isOn: boolean) => {
-          this.toggleCloudBackup(isOn);
-        })
+        this.SettingsSwitchRow(SettingsSwitchKey.CloudBackup, '云空间自动同步')
       }
       .width('100%')
       .height(ME_ROW_HEIGHT)
@@ -4947,7 +5103,7 @@ struct Index {
         .alignItems(VerticalAlign.Center)
 
         if (this.shouldShowCloudDisabledHint()) {
-          Text('请点击「云空间管理」或前往「设置-云空间」，找到开源验证器应用，并开启云同步！')
+          Text(this.t('请点击「云空间管理」或前往「设置-云空间」，找到开源验证器应用，并开启云同步！'))
             .fontSize(12)
             .fontColor(this.secondaryTextColor())
             .lineHeight(18)
@@ -4976,83 +5132,48 @@ struct Index {
   }
 
   @Builder
-  private CloudSteamSyncNoticeCard() {
-    Stack({ alignContent: Alignment.Center }) {
-      if (this.shouldUseCardMaterial()) {
-        this.MeasuredImmersionCardSurface('cloud-steam-notice', ME_CARD_RADIUS)
-      }
-      Row({ space: 12 }) {
-        SymbolGlyph($r('sys.symbol.key_shield'))
-          .fontSize(ME_ACTION_ICON_SIZE)
-          .fontColor([this.accentColor()])
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-
-        Text(this.t(STEAM_CLOUD_SYNC_NOTICE))
-          .fontSize(12)
-          .fontColor(this.secondaryTextColor())
-          .lineHeight(18)
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Top)
-      .padding({ left: 20, right: 18, top: 14, bottom: 14 })
-      .zIndex(2)
-    }
-    .width('100%')
-    .borderRadius(ME_CARD_RADIUS)
-    .clip(true)
-    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
-    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
-    .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.updateMeasuredCardHeight('cloud-steam-notice', newValue);
-    })
-  }
-
-  @Builder
   private WatchSyncPageContent() {
     Stack() {
-      Scroll(this.cloudSpaceScroller) {
-        Column({ space: PAGE_CARD_GAP }) {
-          Text(this.t('同步设置'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 10, bottom: 8 })
-
-          this.WatchTokenSelectionCard()
-
-          Text(this.t('同步操作'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 18, bottom: 8 })
-
-          this.WatchActionsCard()
-
-          Text(this.t('同步记录'))
-            .fontSize(ME_ACTION_TEXT_SIZE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.primaryTextColor())
-            .width('100%')
-            .padding({ left: 20, top: 18, bottom: 8 })
-
-          this.WatchRecordsCard()
+      WaterFlow({ scroller: this.watchSyncScroller }) {
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步设置'))
+            this.WatchTokenSelectionCard()
+          }
+          .width('100%')
         }
         .width('100%')
-        .padding({
-          left: HOME_HORIZONTAL_PADDING,
-          right: HOME_HORIZONTAL_PADDING,
-          top: this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP,
-          bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
-        })
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步操作'))
+            this.WatchActionsCard()
+          }
+          .width('100%')
+        }
+        .width('100%')
+        FlowItem() {
+          Column() {
+            this.SettingsSectionTitle(this.t('同步记录'))
+            this.WatchRecordsCard()
+          }
+          .width('100%')
+        }
+        .width('100%')
       }
       .width('100%')
       .height('100%')
-      .align(Alignment.Top)
+      .columnsTemplate(this.responsivePageColumnsTemplate())
+      .columnsGap(PAGE_CARD_GAP)
+      .rowsGap(PAGE_CARD_GAP)
+      .padding({
+        left: HOME_HORIZONTAL_PADDING,
+        right: HOME_HORIZONTAL_PADDING,
+        bottom: this.naviIndicatorHeight + PAGE_CARD_GAP
+      })
+      .contentStartOffset(this.statusBarHeight + HOME_TITLE_HEIGHT + PAGE_CARD_GAP)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .clip(false)
     }
     .width('100%')
     .height('100%')
@@ -5783,7 +5904,7 @@ struct Index {
           this.AgreementParagraph('本协议的订立、执行和解释适用中华人民共和国法律。发生争议时，双方应先友好协商；协商不成的，可依法向有管辖权的人民法院提起诉讼。', false)
 
           this.AgreementHeading('12. 联系我们')
-          this.AgreementParagraph('如对本协议或本应用有疑问，可发送邮件至 ' + USER_AGREEMENT_EMAIL + '。', false)
+          this.AgreementParagraph(this.tf('如对本协议或本应用有疑问，可发送邮件至 {0}。', [USER_AGREEMENT_EMAIL]), false)
           this.AgreementFooter('开源验证器开发者')
         }
         .width('100%')
@@ -5825,7 +5946,7 @@ struct Index {
 
   @Builder
   private AgreementTitle(text: string) {
-    Text(text)
+    Text(this.t(text))
       .width('100%')
       .fontSize(22)
       .lineHeight(30)
@@ -5836,7 +5957,7 @@ struct Index {
 
   @Builder
   private AgreementDate(text: string) {
-    Text(text)
+    Text(this.t(text))
       .width('100%')
       .fontSize(13)
       .lineHeight(20)
@@ -5845,7 +5966,7 @@ struct Index {
 
   @Builder
   private AgreementNotice(text: string) {
-    Text(text)
+    Text(this.t(text))
       .width('100%')
       .fontSize(14)
       .lineHeight(22)
@@ -5860,7 +5981,7 @@ struct Index {
 
   @Builder
   private AgreementHeading(text: string) {
-    Text(text)
+    Text(this.t(text))
       .width('100%')
       .fontSize(17)
       .lineHeight(24)
@@ -5871,7 +5992,7 @@ struct Index {
 
   @Builder
   private AgreementParagraph(text: string, emphasized: boolean) {
-    Text(text)
+    Text(this.t(text))
       .width('100%')
       .fontSize(14)
       .lineHeight(24)
@@ -5885,7 +6006,7 @@ struct Index {
     Column({ space: 14 }) {
       Divider()
         .color(this.dividerColor())
-      Text(text)
+      Text(this.t(text))
         .width('100%')
         .fontSize(13)
         .lineHeight(20)
@@ -6032,23 +6153,13 @@ struct Index {
   @Builder
   private SettingsSecurityCardContent() {
     Column() {
-      this.SettingsSwitchRow('智感握姿', this.smartGripEnabled, (isOn: boolean) => {
-        this.toggleSmartGrip(isOn);
-      })
+      this.SettingsSwitchRow(SettingsSwitchKey.SmartGrip, '智感握姿')
       this.MeCardDivider()
-      this.SettingsSwitchRow('防窥保护', this.antiPeepEnabled, (isOn: boolean) => {
-        this.toggleAntiPeep(isOn);
-      })
+      this.SettingsSwitchRow(SettingsSwitchKey.AntiPeep, '防窥保护')
       this.MeCardDivider()
-      this.SettingsSwitchRow('应用锁定', this.appLockEnabled, (isOn: boolean) => {
-        this.toggleAppLock(isOn);
-      })
+      this.SettingsSwitchRow(SettingsSwitchKey.AppLock, '应用锁定')
       this.MeCardDivider()
-      this.SettingsSelectRow('语言', this.languageInput, LANGUAGE_OPTIONS, false, (value: string) => {
-        this.languageInput = normalizeSelectedLanguage(value);
-        this.refreshSystemLanguage();
-        this.saveSettings();
-      })
+      this.SettingsSelectRow(SettingsSelectKey.Language, '语言', LANGUAGE_OPTIONS, false)
     }
     .width('100%')
     .height(ME_ROW_HEIGHT * 4 + 3)
@@ -6057,7 +6168,7 @@ struct Index {
   }
 
   @Builder
-  private SettingsSwitchRow(label: string, isOn: boolean, onChanged: (isOn: boolean) => void) {
+  private SettingsSwitchRow(key: SettingsSwitchKey, label: string) {
     Row() {
       Text(this.t(label))
         .fontSize(ME_ACTION_TEXT_SIZE)
@@ -6065,16 +6176,79 @@ struct Index {
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
-      Toggle({ type: ToggleType.Switch, isOn: isOn })
+      Toggle({ type: ToggleType.Switch, isOn: this.settingsSwitchValue(key) })
         .selectedColor(this.accentColor())
         .switchPointColor(this.cardBackgroundColor())
         .onChange((checked: boolean) => {
-          onChanged(checked);
+          if (checked !== this.settingsSwitchValue(key)) {
+            this.updateSettingsSwitchValue(key, checked);
+          }
         })
     }
     .width('100%')
     .height(ME_ROW_HEIGHT)
     .alignItems(VerticalAlign.Center)
+  }
+
+  private settingsSwitchValue(key: SettingsSwitchKey): boolean {
+    if (key === SettingsSwitchKey.SteamEnhancedAccess) {
+      return this.steamEnhancedAccess;
+    }
+    if (key === SettingsSwitchKey.CloudBackup) {
+      return this.cloudBackupEnabled;
+    }
+    if (key === SettingsSwitchKey.SmartGrip) {
+      return this.smartGripEnabled;
+    }
+    if (key === SettingsSwitchKey.AntiPeep) {
+      return this.antiPeepEnabled;
+    }
+    if (key === SettingsSwitchKey.AppLock) {
+      return this.appLockEnabled;
+    }
+    if (key === SettingsSwitchKey.ShowNextToken) {
+      return this.showNextToken;
+    }
+    if (key === SettingsSwitchKey.GlobalImmersion) {
+      return this.globalImmersionEnabled;
+    }
+    return this.globalBackgroundEnabled;
+  }
+
+  private updateSettingsSwitchValue(key: SettingsSwitchKey, checked: boolean): void {
+    if (key === SettingsSwitchKey.SteamEnhancedAccess) {
+      this.steamEnhancedAccess = checked;
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSwitchKey.CloudBackup) {
+      this.toggleCloudBackup(checked);
+      return;
+    }
+    if (key === SettingsSwitchKey.SmartGrip) {
+      this.toggleSmartGrip(checked);
+      return;
+    }
+    if (key === SettingsSwitchKey.AntiPeep) {
+      this.toggleAntiPeep(checked);
+      return;
+    }
+    if (key === SettingsSwitchKey.AppLock) {
+      this.toggleAppLock(checked);
+      return;
+    }
+    if (key === SettingsSwitchKey.ShowNextToken) {
+      this.showNextToken = checked;
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSwitchKey.GlobalImmersion) {
+      this.globalImmersionEnabled = checked;
+      this.saveSettings();
+      return;
+    }
+    this.globalBackgroundEnabled = checked;
+    this.saveSettings();
   }
 
   @Builder
@@ -6101,17 +6275,14 @@ struct Index {
   @Builder
   private SettingsAppearanceTokenCardContent() {
     Column() {
-      this.SettingsSwitchRow('显示下一组令牌', this.showNextToken, (isOn: boolean) => {
-        this.showNextToken = isOn;
-        this.saveSettings();
-      })
+      this.SettingsSwitchRow(SettingsSwitchKey.ShowNextToken, '显示下一组令牌')
       this.MeCardDivider()
-      this.SettingsSelectRow('发行方图标显示颜色', this.issuerLogoColorMode, ISSUER_LOGO_COLOR_OPTIONS, false,
-        (value: string) => {
-          this.issuerLogoColorMode = value;
-          this.refreshTokenLogoDisplay();
-          this.saveSettings();
-        })
+      this.SettingsSelectRow(
+        SettingsSelectKey.IssuerLogoColor,
+        '发行方图标显示颜色',
+        ISSUER_LOGO_COLOR_OPTIONS,
+        false
+      )
     }
     .width('100%')
     .height(ME_ROW_HEIGHT * 2 + 1)
@@ -6143,20 +6314,11 @@ struct Index {
   @Builder
   private SettingsAppearanceMaterialCardContent() {
     Column() {
-      this.SettingsSwitchRow('全局沉浸光感', this.globalImmersionEnabled, (isOn: boolean) => {
-        this.globalImmersionEnabled = isOn;
-        this.saveSettings();
-      })
+      this.SettingsSwitchRow(SettingsSwitchKey.GlobalImmersion, '全局沉浸光感')
       this.MeCardDivider()
-      this.SettingsSelectRow('材质类型', this.materialTypeInput, MATERIAL_TYPE_OPTIONS, false, (value: string) => {
-        this.materialTypeInput = value;
-        this.saveSettings();
-      })
+      this.SettingsSelectRow(SettingsSelectKey.MaterialType, '材质类型', MATERIAL_TYPE_OPTIONS, false)
       this.MeCardDivider()
-      this.SettingsSelectRow('材质等级', this.materialLevelInput, MATERIAL_LEVEL_OPTIONS, false, (value: string) => {
-        this.materialLevelInput = value;
-        this.saveSettings();
-      })
+      this.SettingsSelectRow(SettingsSelectKey.MaterialLevel, '材质等级', MATERIAL_LEVEL_OPTIONS, false)
     }
     .width('100%')
     .height(ME_ROW_HEIGHT * 3 + 2)
@@ -6169,14 +6331,16 @@ struct Index {
     Stack({ alignContent: Alignment.Top }) {
       if (this.shouldUseCardMaterial()) {
         this.ImmersionCardSurface(
-          ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3,
+          ME_ROW_HEIGHT * 3 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT +
+            BACKGROUND_BRIGHTNESS_ROW_HEIGHT + 5,
           ME_CARD_RADIUS
         )
       }
       this.SettingsAppearanceBackgroundCardContent()
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3)
+    .height(ME_ROW_HEIGHT * 3 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT +
+      BACKGROUND_BRIGHTNESS_ROW_HEIGHT + 5)
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -6191,22 +6355,21 @@ struct Index {
   @Builder
   private SettingsAppearanceBackgroundCardContent() {
     Column() {
-      this.SettingsSelectRow('主题色', this.themeColorInput, THEME_COLOR_OPTIONS, true, (value: string) => {
-        this.themeColorInput = value;
-        this.saveSettings();
-      })
+      this.SettingsSelectRow(SettingsSelectKey.ThemeMode, '颜色模式', THEME_MODE_OPTIONS, false)
+      this.MeCardDivider()
+      this.SettingsSelectRow(SettingsSelectKey.ThemeColor, '主题色', THEME_COLOR_OPTIONS, true)
       this.MeCardDivider()
       this.SettingsBackgroundPickerRow()
       this.MeCardDivider()
       this.SettingsBackgroundBlurRow()
       this.MeCardDivider()
-      this.SettingsSwitchRow('背景图是否全局显示', this.globalBackgroundEnabled, (isOn: boolean) => {
-        this.globalBackgroundEnabled = isOn;
-        this.saveSettings();
-      })
+      this.SettingsBackgroundBrightnessRow()
+      this.MeCardDivider()
+      this.SettingsSwitchRow(SettingsSwitchKey.GlobalBackground, '背景图是否全局显示')
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT * 2 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT + 3)
+    .height(ME_ROW_HEIGHT * 3 + BACKGROUND_PICKER_ROW_HEIGHT + BACKGROUND_BLUR_ROW_HEIGHT +
+      BACKGROUND_BRIGHTNESS_ROW_HEIGHT + 5)
     .padding({ left: 20, right: 18 })
     .zIndex(2)
   }
@@ -6304,19 +6467,21 @@ struct Index {
 
   @Builder
   private CustomBackgroundThumbnail() {
-    Image(this.customBackgroundUri)
-      .width(BACKGROUND_THUMBNAIL_WIDTH)
-      .height(BACKGROUND_THUMBNAIL_HEIGHT)
-      .objectFit(ImageFit.Cover)
-      .borderRadius(8)
-      .border({
-        width: this.backgroundSelection === 'custom' ? 3 : 0.5,
-        color: this.backgroundSelection === 'custom' ? this.accentColor() : this.dividerColor()
-      })
-      .onClick(() => {
-        this.backgroundSelection = 'custom';
-        this.saveSettings();
-      })
+    ForEach([this.customBackgroundRenderVersion], (version: number) => {
+      Image(this.customBackgroundUri)
+        .width(BACKGROUND_THUMBNAIL_WIDTH)
+        .height(BACKGROUND_THUMBNAIL_HEIGHT)
+        .syncLoad(true)
+        .objectFit(ImageFit.Cover)
+        .borderRadius(8)
+        .border({
+          width: this.backgroundSelection === 'custom' ? 3 : 0.5,
+          color: this.backgroundSelection === 'custom' ? this.accentColor() : this.dividerColor()
+        })
+        .onClick(() => {
+          this.activateCustomBackground();
+        })
+    }, (version: number) => version.toString())
   }
 
   @Builder
@@ -6353,12 +6518,44 @@ struct Index {
   }
 
   @Builder
+  private SettingsBackgroundBrightnessRow() {
+    Column({ space: 6 }) {
+      Row() {
+        Text(this.t('背景图明亮程度'))
+          .fontSize(ME_ACTION_TEXT_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+
+        Text(Math.round(this.backgroundBrightnessPercent).toString() + '%')
+          .fontSize(HOME_SEARCH_TEXT_SIZE)
+          .fontColor(this.secondaryTextColor())
+      }
+      .width('100%')
+
+      Slider({ value: this.backgroundBrightnessPercent, min: 0, max: 100, step: 1 })
+        .width('100%')
+        .selectedColor(this.accentColor())
+        .trackColor(this.dividerColor())
+        .blockColor(this.accentColor())
+        .enabled(this.backgroundSelection !== 'none')
+        .opacity(this.backgroundSelection === 'none' ? 0.4 : 1)
+        .onChange((value: number) => {
+          this.backgroundBrightnessPercent = this.clamp(value, 0, 100);
+          this.saveSettings();
+        })
+    }
+    .width('100%')
+    .height(BACKGROUND_BRIGHTNESS_ROW_HEIGHT)
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
   private SettingsSelectRow(
+    key: SettingsSelectKey,
     label: string,
-    selectedValue: string,
     values: SelectOption[],
-    showColorDot: boolean,
-    onSelected: (value: string) => void
+    showColorDot: boolean
   ) {
     Row() {
       Text(this.t(label))
@@ -6377,8 +6574,8 @@ struct Index {
       }
 
       Select(this.localizedOptions(values))
-        .selected(this.optionIndex(values, selectedValue))
-        .value(this.t(selectedValue))
+        .selected(this.optionIndex(values, this.settingsSelectValue(key)))
+        .value(this.t(this.settingsSelectValue(key)))
         .font({ size: ME_ACTION_TEXT_SIZE, weight: FontWeight.Regular })
         .fontColor(this.secondaryTextColor())
         .selectedOptionFont({ size: ME_ACTION_TEXT_SIZE, weight: FontWeight.Regular })
@@ -6388,12 +6585,68 @@ struct Index {
         .backgroundColor(Color.Transparent)
         .padding({ left: 0, right: 0 })
         .onSelect((index: number, value: string) => {
-          onSelected(index >= 0 && index < values.length ? `${values[index].value}` : value);
+          const nextValue = index >= 0 && index < values.length ? `${values[index].value}` : value;
+          if (nextValue !== this.settingsSelectValue(key)) {
+            this.updateSettingsSelectValue(key, nextValue);
+          }
         })
     }
     .width('100%')
     .height(ME_ROW_HEIGHT)
     .alignItems(VerticalAlign.Center)
+  }
+
+  private settingsSelectValue(key: SettingsSelectKey): string {
+    if (key === SettingsSelectKey.Language) {
+      return this.languageInput;
+    }
+    if (key === SettingsSelectKey.IssuerLogoColor) {
+      return this.issuerLogoColorMode;
+    }
+    if (key === SettingsSelectKey.MaterialType) {
+      return this.materialTypeInput;
+    }
+    if (key === SettingsSelectKey.MaterialLevel) {
+      return this.materialLevelInput;
+    }
+    if (key === SettingsSelectKey.ThemeMode) {
+      return this.themeModeInput;
+    }
+    return this.themeColorInput;
+  }
+
+  private updateSettingsSelectValue(key: SettingsSelectKey, value: string): void {
+    if (key === SettingsSelectKey.Language) {
+      this.languageInput = normalizeSelectedLanguage(value);
+      this.refreshSystemLanguage();
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSelectKey.IssuerLogoColor) {
+      this.issuerLogoColorMode = value;
+      this.refreshTokenLogoDisplay();
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSelectKey.MaterialType) {
+      this.materialTypeInput = value;
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSelectKey.MaterialLevel) {
+      this.materialLevelInput = value;
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSelectKey.ThemeMode) {
+      this.themeModeInput = value;
+      this.saveSettings().then((): void => {
+        this.applyColorMode();
+      });
+      return;
+    }
+    this.themeColorInput = value;
+    this.saveSettings();
   }
 
   @Builder
@@ -6631,7 +6884,7 @@ struct Index {
       options: { placeholder: this.t('搜索令牌') },
       modifier: new HomeSearchModifier(
         this.primaryTextColor(),
-        this.secondaryTextColor(),
+        this.primaryTextColor(),
         (value: string): void => {
           this.searchText = value;
         }
@@ -6681,6 +6934,91 @@ struct Index {
     const responsiveCount = Math.max(1,
       Math.floor((availableWidth + PAGE_CARD_GAP) / (minWidth + PAGE_CARD_GAP)));
     return Math.max(baseCount, responsiveCount);
+  }
+
+  private responsivePageColumnCount(): number {
+    const availableWidth = Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2);
+    const columnCount = Math.max(1,
+      Math.floor((availableWidth + PAGE_CARD_GAP) / (RESPONSIVE_CARD_MIN_WIDTH + PAGE_CARD_GAP)));
+    return Math.min(6, columnCount);
+  }
+
+  private responsivePageColumnsTemplate(): string {
+    const columnCount = this.responsivePageColumnCount();
+    if (columnCount >= 6) {
+      return '1fr 1fr 1fr 1fr 1fr 1fr';
+    }
+    if (columnCount === 5) {
+      return '1fr 1fr 1fr 1fr 1fr';
+    }
+    if (columnCount === 4) {
+      return '1fr 1fr 1fr 1fr';
+    }
+    if (columnCount === 3) {
+      return '1fr 1fr 1fr';
+    }
+    if (columnCount === 2) {
+      return '1fr 1fr';
+    }
+    return '1fr';
+  }
+
+  private responsivePageColumnWidth(): number {
+    const availableWidth = Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2);
+    const columnCount = this.responsivePageColumnCount();
+    return Math.max(1, (availableWidth - PAGE_CARD_GAP * (columnCount - 1)) / columnCount);
+  }
+
+  private donationQrCardHeight(): number {
+    const imageWidth = Math.min(DONATION_QR_IMAGE_MAX_WIDTH,
+      Math.max(1, this.responsivePageColumnWidth() - 48));
+    return DONATION_QR_CARD_FIXED_HEIGHT + imageWidth * DONATION_QR_IMAGE_RATIO;
+  }
+
+  private steamAccessCardHeight(): number {
+    return this.steamEnhancedAccess ? ME_ROW_HEIGHT * 3 + 2 + STEAM_ACCESS_HINT_HEIGHT : ME_ROW_HEIGHT;
+  }
+
+  private refreshResponsiveWaterFlowSections(): void {
+    const sectionBottomMargin: Margin = { bottom: PAGE_CARD_GAP };
+    const meHeader: SectionOptions = {
+      itemsCount: 1,
+      crossCount: 1,
+      margin: sectionBottomMargin
+    };
+    const meCards: SectionOptions = {
+      itemsCount: 4,
+      crossCount: this.responsivePageColumnCount(),
+      columnsGap: PAGE_CARD_GAP,
+      rowsGap: PAGE_CARD_GAP
+    };
+    if (this.meWaterFlowSections.length() === 0) {
+      this.meWaterFlowSections.push(meHeader);
+      this.meWaterFlowSections.push(meCards);
+    } else {
+      this.meWaterFlowSections.update(0, meHeader);
+      this.meWaterFlowSections.update(1, meCards);
+    }
+
+    const thirdPartyHeader: SectionOptions = {
+      itemsCount: 1,
+      crossCount: 1,
+      margin: sectionBottomMargin
+    };
+    const thirdPartyCards: SectionOptions = {
+      itemsCount: 3,
+      crossCount: this.responsivePageColumnCount(),
+      columnsGap: PAGE_CARD_GAP,
+      rowsGap: PAGE_CARD_GAP
+    };
+    if (this.thirdPartyWaterFlowSections.length() === 0) {
+      this.thirdPartyWaterFlowSections.push(thirdPartyHeader);
+      this.thirdPartyWaterFlowSections.push(thirdPartyCards);
+    } else {
+      this.thirdPartyWaterFlowSections.update(0, thirdPartyHeader);
+      this.thirdPartyWaterFlowSections.update(1, thirdPartyCards);
+    }
+
   }
 
   private emptyTokenStateHeight(): number {
@@ -7269,6 +7607,23 @@ struct Index {
         .height(size)
         .borderRadius(size / 2)
         .objectFit(ImageFit.Contain)
+    } else if (allowLocalLogo && this.localIssuerLogoKey(name, issuer) === 'microsoft') {
+      if (this.issuerLogoColorMode === '品牌色') {
+        Image($r('app.media.logo_microsoft_brand'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      } else if (this.isDarkTheme()) {
+        Image($r('app.media.logo_microsoft_dark'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      } else {
+        Image($r('app.media.logo_microsoft_light'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      }
     } else if (logoUri.length > 0) {
       Image(logoUri)
         .width(size)
@@ -7372,7 +7727,7 @@ struct Index {
 
         Stack({ alignContent: Alignment.Center }) {
           ImmersionButton({
-          systemMaterialEffect: this.configuredMaterialEffect(),
+            systemMaterialEffect: this.configuredMaterialEffect(),
             buttonModify: new ActionButtonModifier(
               '100%',
               46,
@@ -7409,6 +7764,7 @@ struct Index {
     .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
+    .clip(false)
   }
 
   @Builder
@@ -7856,7 +8212,10 @@ struct Index {
   }
 
   private secondaryTextColor(): string {
-    return this.isDarkTheme() ? '#A3A3A3' : '#777777';
+    if (this.shouldUseCardMaterial()) {
+      return this.isDarkTheme() ? '#D0D0D0' : '#4A4A4A';
+    }
+    return this.isDarkTheme() ? '#B8B8B8' : '#666666';
   }
 
   private dividerColor(): string {
@@ -7996,10 +8355,8 @@ struct Index {
   private sheetTitleBarStyle(): TitleBarStyleOptions {
     return {
       scrollEffectOpts: {
-        enableScrollEffect: true,
-        scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
-        blurEffectiveStartOffset: LengthMetrics.vp(0),
-        blurEffectiveEndOffset: LengthMetrics.vp(SHEET_TITLE_BLUR_HEIGHT)
+        enableScrollEffect: false,
+        scrollEffectType: ScrollEffectType.GRADIENT_BLUR
       },
       blurStrategy: BlurStrategy.ADAPTIVE,
       originalStyle: {
@@ -8331,6 +8688,9 @@ struct Index {
     const source = `${issuer} ${name}`.toLowerCase();
     if (source.indexOf('openai') >= 0 || source.indexOf('chatgpt') >= 0 || source.indexOf('codex') >= 0) {
       return 'openai';
+    }
+    if (source.indexOf('microsoft') >= 0 || source.indexOf('微软') >= 0) {
+      return 'microsoft';
     }
     return '';
   }
@@ -9931,6 +10291,29 @@ struct Index {
     await this.saveQRCodeImages(indices);
   }
 
+  private async copyQQGroupNumber(): Promise<void> {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, QQ_GROUP_NUMBER);
+      await pasteboard.getSystemPasteboard().setData(data);
+      this.showToast('群号已复制');
+    } catch (error) {
+      console.error('Copy QQ group number failed: ' + JSON.stringify(error));
+      this.showToast('复制失败');
+    }
+  }
+
+  private async saveQQGroupQRCode(): Promise<void> {
+    if (this.isSavingQQGroupQRCode) {
+      return;
+    }
+    this.isSavingQQGroupQRCode = true;
+    try {
+      await this.saveRawImageToGallery('qq_group_qr.png', 'OpenAuthenticator_QQ_Group');
+    } finally {
+      this.isSavingQQGroupQRCode = false;
+    }
+  }
+
   private async saveRawImageToGallery(rawFileName: string, title: string): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
@@ -10534,24 +10917,149 @@ struct Index {
       if (!result.photoUris || result.photoUris.length === 0) {
         return;
       }
-      const persistedUri = await this.persistPickedBackground(context, result.photoUris[0]);
-      this.customBackgroundUri = persistedUri;
-      this.backgroundSelection = 'custom';
+      const pickedUri = result.photoUris[0];
+      const materializedUri = await this.persistPickedBackground(context, pickedUri);
+      if (materializedUri.length === 0) {
+        this.showToast('背景图保存失败');
+        return;
+      }
+      const backgroundPrepared = await this.prepareCustomBackground(materializedUri);
+      if (!backgroundPrepared) {
+        this.showToast('背景图加载失败');
+        return;
+      }
+      this.commitCustomBackground(materializedUri);
       this.saveSettings();
+      const persistedUri = await this.persistPreparedCustomBackground(context);
+      if (persistedUri.length > 0) {
+        this.commitCustomBackground(persistedUri);
+        this.saveSettings();
+      }
     } catch (error) {
       this.showToast('选择背景图失败');
       console.error('Failed to pick background: ' + JSON.stringify(error));
     }
   }
 
+  private async activateCustomBackground(): Promise<void> {
+    if (this.customBackgroundUri.length === 0) {
+      return;
+    }
+    const backgroundPrepared = await this.prepareCustomBackground(this.customBackgroundUri);
+    if (!backgroundPrepared) {
+      this.showToast('背景图加载失败');
+      return;
+    }
+    this.commitCustomBackground(this.customBackgroundUri);
+    this.saveSettings();
+  }
+
+  private commitCustomBackground(uri: string): void {
+    this.customBackgroundPixelMapUri = uri;
+    this.customBackgroundUri = uri;
+    this.backgroundSelection = 'custom';
+    this.customBackgroundRenderVersion = this.customBackgroundRenderVersion + 1;
+  }
+
+  private async prepareCustomBackground(uri: string): Promise<boolean> {
+    if (this.customBackgroundPixelMap !== undefined && this.customBackgroundPixelMapUri === uri) {
+      return true;
+    }
+    const loadSerial = this.customBackgroundLoadSerial + 1;
+    this.customBackgroundLoadSerial = loadSerial;
+    let sourceFile: fileIo.File | undefined = undefined;
+    let imageSource: image.ImageSource | undefined = undefined;
+    try {
+      sourceFile = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      imageSource = image.createImageSource(sourceFile.fd);
+      const imageInfo: image.ImageInfo = await imageSource.getImageInfo();
+      const screen: display.Display = display.getDefaultDisplaySync();
+      const sourceLongEdge = Math.max(imageInfo.size.width, imageInfo.size.height);
+      const targetLongEdge = Math.max(screen.width, screen.height);
+      let pixelMap: image.PixelMap;
+      if (sourceLongEdge > targetLongEdge && targetLongEdge > 0) {
+        const decodeScale = targetLongEdge / sourceLongEdge;
+        const desiredSize: image.Size = {
+          width: Math.max(1, Math.round(imageInfo.size.width * decodeScale)),
+          height: Math.max(1, Math.round(imageInfo.size.height * decodeScale))
+        };
+        const options: image.DecodingOptions = {
+          desiredSize: desiredSize,
+          editable: false
+        };
+        pixelMap = await imageSource.createPixelMap(options);
+      } else {
+        pixelMap = await imageSource.createPixelMap();
+      }
+      if (loadSerial !== this.customBackgroundLoadSerial) {
+        pixelMap.release();
+        return false;
+      }
+      const previousPixelMap = this.customBackgroundPixelMap;
+      this.customBackgroundPixelMap = pixelMap;
+      this.customBackgroundPixelMapUri = uri;
+      if (previousPixelMap !== undefined) {
+        previousPixelMap.release();
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to preload custom background: ' + JSON.stringify(error));
+      return false;
+    } finally {
+      if (imageSource !== undefined) {
+        await imageSource.release();
+      }
+      if (sourceFile !== undefined) {
+        fileIo.closeSync(sourceFile);
+      }
+    }
+  }
+
   private async persistPickedBackground(context: common.UIAbilityContext, uri: string): Promise<string> {
     const targetPath = context.filesDir + '/background_' + Date.now().toString() + '.jpg';
+    let sourceFile: fileIo.File | undefined = undefined;
     try {
-      await fileIo.copyFile(uri, targetPath);
+      sourceFile = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      await fileIo.copyFile(sourceFile.fd, targetPath);
       return fileUri.getUriFromPath(targetPath);
     } catch (error) {
-      console.error('Failed to copy background, use original uri: ' + JSON.stringify(error));
-      return uri;
+      console.error('Failed to materialize picked background: ' + JSON.stringify(error));
+      return '';
+    } finally {
+      if (sourceFile !== undefined) {
+        fileIo.closeSync(sourceFile);
+      }
+    }
+  }
+
+  private isOptimizedCustomBackgroundUri(uri: string): boolean {
+    return uri.indexOf(CUSTOM_BACKGROUND_CACHE_PREFIX) >= 0;
+  }
+
+  private async persistPreparedCustomBackground(context: common.UIAbilityContext): Promise<string> {
+    if (this.customBackgroundPixelMap === undefined) {
+      return '';
+    }
+    const targetPath = context.filesDir + '/' + CUSTOM_BACKGROUND_CACHE_PREFIX + Date.now().toString() + '.jpg';
+    const packer: image.ImagePacker = image.createImagePacker();
+    try {
+      const jpegData: ArrayBuffer = await packer.packToData(this.customBackgroundPixelMap, {
+        format: 'image/jpeg',
+        quality: 92
+      });
+      const targetFile = fileIo.openSync(targetPath,
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(targetFile.fd, jpegData);
+      } finally {
+        fileIo.closeSync(targetFile);
+      }
+      return fileUri.getUriFromPath(targetPath);
+    } catch (error) {
+      console.error('Failed to cache prepared background: ' + JSON.stringify(error));
+      return '';
+    } finally {
+      await packer.release();
     }
   }
 
@@ -11279,7 +11787,7 @@ struct Index {
 
   private steamEnrollmentTitle(): string {
     if (this.steamEnrollmentStage === STEAM_ENROLLMENT_RISK) {
-      return this.t('Steam 登录风险告知');
+      return this.t('Steam 辅助功能使用说明');
     }
     if (this.steamEnrollmentStage === STEAM_ENROLLMENT_CREDENTIALS) {
       return this.t('登录 Steam 账号');

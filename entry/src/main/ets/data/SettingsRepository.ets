@@ -4,7 +4,7 @@ import { preferences } from '@kit.ArkData';
 const SETTINGS_NAME = 'tool_2fa_settings';
 const BACKGROUND_SETTINGS_VERSION = 2;
 
-interface Settings {
+export interface Settings {
   cloudBackup: boolean;
   smartGrip: boolean;
   antiPeep: boolean;
@@ -24,6 +24,7 @@ interface Settings {
   backgroundSelection: string;
   customBackgroundUri: string;
   backgroundBlurPercent: number;
+  backgroundBrightnessPercent: number;
   globalBackgroundEnabled: boolean;
   updateNoticeVersion: string;
   language: string;
@@ -59,6 +60,7 @@ const DEFAULTS: Settings = {
   backgroundSelection: 'none',
   customBackgroundUri: '',
   backgroundBlurPercent: 0,
+  backgroundBrightnessPercent: 50,
   globalBackgroundEnabled: true,
   updateNoticeVersion: '',
   language: '跟随系统',
@@ -75,6 +77,8 @@ const DEFAULTS: Settings = {
 };
 
 let prefs: preferences.Preferences | null = null;
+let pendingSaveSettings: Settings | undefined = undefined;
+let settingsSavePromise: Promise<void> | undefined = undefined;
 
 async function getPrefs(context: common.UIAbilityContext): Promise<preferences.Preferences> {
   if (prefs) {
@@ -87,16 +91,22 @@ async function getPrefs(context: common.UIAbilityContext): Promise<preferences.P
 export class SettingsRepository {
   static async load(context: common.UIAbilityContext): Promise<Settings> {
     try {
+      while (settingsSavePromise !== undefined) {
+        const activeSavePromise: Promise<void> = settingsSavePromise;
+        await activeSavePromise;
+      }
       const store = await getPrefs(context);
-      const json = await store.get('settings', '{}');
+      const json = store.getSync('settings', '{}');
       const parsed: Record<string, Object> = typeof json === 'string' ? JSON.parse(json) : {};
-      const globalImmersionValue = await store.get('globalImmersionEnabled', DEFAULTS.globalImmersionEnabled);
-      const backgroundSelectionValue = await store.get('backgroundSelection', DEFAULTS.backgroundSelection);
-      const backgroundSettingsVersionValue = await store.get('backgroundSettingsVersion', 0);
-      const customBackgroundUriValue = await store.get('customBackgroundUri', DEFAULTS.customBackgroundUri);
-      const backgroundBlurValue = await store.get('backgroundBlurPercent', DEFAULTS.backgroundBlurPercent);
-      const globalBackgroundValue = await store.get('globalBackgroundEnabled', DEFAULTS.globalBackgroundEnabled);
-      const updateNoticeVersionValue = await store.get('updateNoticeVersion', DEFAULTS.updateNoticeVersion);
+      const globalImmersionValue = store.getSync('globalImmersionEnabled', DEFAULTS.globalImmersionEnabled);
+      const backgroundSelectionValue = store.getSync('backgroundSelection', DEFAULTS.backgroundSelection);
+      const backgroundSettingsVersionValue = store.getSync('backgroundSettingsVersion', 0);
+      const customBackgroundUriValue = store.getSync('customBackgroundUri', DEFAULTS.customBackgroundUri);
+      const backgroundBlurValue = store.getSync('backgroundBlurPercent', DEFAULTS.backgroundBlurPercent);
+      const backgroundBrightnessValue =
+        store.getSync('backgroundBrightnessPercent', DEFAULTS.backgroundBrightnessPercent);
+      const globalBackgroundValue = store.getSync('globalBackgroundEnabled', DEFAULTS.globalBackgroundEnabled);
+      const updateNoticeVersionValue = store.getSync('updateNoticeVersion', DEFAULTS.updateNoticeVersion);
       return {
         cloudBackup: parsed['cloudBackup'] as boolean ?? DEFAULTS.cloudBackup,
         smartGrip: parsed['smartGrip'] as boolean ?? DEFAULTS.smartGrip,
@@ -122,6 +132,8 @@ export class SettingsRepository {
           DEFAULTS.customBackgroundUri,
         backgroundBlurPercent: typeof backgroundBlurValue === 'number' ? backgroundBlurValue :
           DEFAULTS.backgroundBlurPercent,
+        backgroundBrightnessPercent: typeof backgroundBrightnessValue === 'number' ? backgroundBrightnessValue :
+          DEFAULTS.backgroundBrightnessPercent,
         globalBackgroundEnabled: typeof globalBackgroundValue === 'boolean' ? globalBackgroundValue :
           DEFAULTS.globalBackgroundEnabled,
         updateNoticeVersion: typeof updateNoticeVersionValue === 'string' ? updateNoticeVersionValue :
@@ -139,11 +151,30 @@ export class SettingsRepository {
         steamGatewayToken: parsed['steamGatewayToken'] as string ?? DEFAULTS.steamGatewayToken
       };
     } catch (error) {
+      console.error(`Failed to load settings: ${JSON.stringify(error)}`);
       return DEFAULTS;
     }
   }
 
   static async save(context: common.UIAbilityContext, settings: Settings): Promise<void> {
+    pendingSaveSettings = settings;
+    if (settingsSavePromise === undefined) {
+      settingsSavePromise = SettingsRepository.drainSaveQueue(context);
+    }
+    const activeSavePromise: Promise<void> = settingsSavePromise;
+    await activeSavePromise;
+  }
+
+  private static async drainSaveQueue(context: common.UIAbilityContext): Promise<void> {
+    while (pendingSaveSettings !== undefined) {
+      const settings: Settings = pendingSaveSettings;
+      pendingSaveSettings = undefined;
+      await SettingsRepository.persist(context, settings);
+    }
+    settingsSavePromise = undefined;
+  }
+
+  private static async persist(context: common.UIAbilityContext, settings: Settings): Promise<void> {
     try {
       const store = await getPrefs(context);
       await store.put('settings', JSON.stringify(settings));
@@ -152,6 +183,7 @@ export class SettingsRepository {
       await store.put('backgroundSettingsVersion', BACKGROUND_SETTINGS_VERSION);
       await store.put('customBackgroundUri', settings.customBackgroundUri);
       await store.put('backgroundBlurPercent', settings.backgroundBlurPercent);
+      await store.put('backgroundBrightnessPercent', settings.backgroundBrightnessPercent);
       await store.put('globalBackgroundEnabled', settings.globalBackgroundEnabled);
       await store.put('updateNoticeVersion', settings.updateNoticeVersion);
       await store.flush();
