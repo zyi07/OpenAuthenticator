@@ -1092,9 +1092,9 @@ struct Index {
 
   @Builder
   private PageBackground() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       if (this.backgroundSelection !== 'none') {
-        this.SelectedBackgroundImage(Math.max(this.pageHeight, 1), 0)
+        this.SelectedBackgroundImage('100%', 0)
       }
     }
       .width('100%')
@@ -1104,11 +1104,12 @@ struct Index {
       .backgroundColor(this.pageBackgroundColor())
       .clip(true)
       .renderGroup(this.backgroundSelection !== 'none')
+      .brightness(this.backgroundImageBrightness())
       .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
-  private SelectedBackgroundImage(height: number, radius: number) {
+  private SelectedBackgroundImage(height: Length, radius: number) {
     if (this.backgroundSelection === 'custom' && this.customBackgroundUri.length > 0) {
       ForEach([this.customBackgroundRenderVersion], (version: number) => {
         this.CustomBackgroundImageLayer(this.customBackgroundUri, height, radius)
@@ -1131,7 +1132,7 @@ struct Index {
   }
 
   @Builder
-  private PresetBackgroundImageLayer(source: Resource, height: number, radius: number) {
+  private PresetBackgroundImageLayer(source: Resource, height: Length, radius: number) {
     Image(source)
       .width('100%')
       .height(height)
@@ -1139,14 +1140,13 @@ struct Index {
       .objectFit(ImageFit.Cover)
       .borderRadius(radius)
       .blur(this.backgroundBlurRadius())
-      .brightness(this.backgroundImageBrightness())
       .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
       .zIndex(0)
       .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
-  private CustomBackgroundImageLayer(source: string, height: number, radius: number) {
+  private CustomBackgroundImageLayer(source: string, height: Length, radius: number) {
     Image(this.customBackgroundImageSource(source))
       .width('100%')
       .height(height)
@@ -1154,7 +1154,6 @@ struct Index {
       .objectFit(ImageFit.Cover)
       .borderRadius(radius)
       .blur(this.backgroundBlurRadius())
-      .brightness(this.backgroundImageBrightness())
       .scale({ x: this.backgroundImageScale(), y: this.backgroundImageScale() })
       .zIndex(0)
       .hitTestBehavior(HitTestMode.None)
