@@ -12,6 +12,7 @@ import { i18n } from '@kit.LocalizationKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { motion } from '@kit.MultimodalAwarenessKit';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
+import { vibrator } from '@kit.SensorServiceKit';
 import { userAuth } from '@kit.UserAuthenticationKit';
 import { wearEngine } from '@kit.WearEngine';
 import { webview } from '@kit.ArkWeb';
@@ -691,9 +692,8 @@ struct Index {
   private homePathStack: NavPathStack = new NavPathStack();
   private addPageScroller: Scroller = new Scroller();
   private onboardingSwiperController: SwiperController = new SwiperController();
-  private watchHomeSwiperController: SwiperController = new SwiperController();
-  private watchHomeSwipeStartPageIndex: number = WatchHomePage.Tokens;
   private timerId: number = -1;
+  private watchCrownLastHapticAt: number = 0;
   private updateNoticePresentationTimer: number = -1;
   private settingsLoaded: boolean = false;
   private settingsLoadPromise: Promise<void> | undefined = undefined;
@@ -751,7 +751,7 @@ struct Index {
   @State private watchLanStatus: string = '';
   @State private watchLanReceiving: boolean = false;
   @State private watchLanExpiresAt: number = 0;
-  @State private watchHomePageIndex: number = WatchHomePage.Tokens;
+  @State private watchHomePageIndex: WatchHomePage = WatchHomePage.Tokens;
   @State private watchLanSyncPageVisible: boolean = false;
   @State private steamEnhancedAccess: boolean = false;
   @State private steamGatewayUrl: string = '';
@@ -2034,28 +2034,23 @@ struct Index {
 
   @Builder
   private WatchHomePageContent() {
-    Swiper(this.watchHomeSwiperController) {
-      this.WatchTokenPageContent()
-      this.WatchFeaturePageContent()
+    Stack() {
+      if (this.watchHomePageIndex === WatchHomePage.Tokens) {
+        this.WatchTokenPageContent()
+      } else {
+        this.WatchFeaturePageContent()
+      }
     }
-    .index(this.watchHomePageIndex)
-    .loop(false)
-    .indicator(false)
-    .duration(260)
-    .curve(Curve.EaseInOut)
-    .onChange((index: number) => {
-      this.watchHomePageIndex = index;
-      this.requestWatchFocus(index === WatchHomePage.Tokens ?
-        WATCH_TOKEN_FOCUS_KEY : WATCH_FEATURE_FOCUS_KEY, 280);
-    })
-    .parallelGesture(PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
-      .onActionStart(() => {
-        this.watchHomeSwipeStartPageIndex = this.watchHomePageIndex;
-      })
+    .gesture(PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
       .onActionEnd((event: GestureEvent) => {
-        if (this.watchHomeSwipeStartPageIndex === WatchHomePage.Tokens &&
-          event.offsetX >= WATCH_PAGE_SWIPE_DISTANCE) {
-          this.exitWatchApp();
+        if (this.watchHomePageIndex === WatchHomePage.Tokens) {
+          if (event.offsetX <= -WATCH_PAGE_SWIPE_DISTANCE) {
+            this.showWatchHomePage(WatchHomePage.Features);
+          } else if (event.offsetX >= WATCH_PAGE_SWIPE_DISTANCE) {
+            this.exitWatchApp();
+          }
+        } else if (event.offsetX >= WATCH_PAGE_SWIPE_DISTANCE) {
+          this.showWatchHomePage(WatchHomePage.Tokens);
         }
       }))
     .width('100%')
@@ -2089,6 +2084,7 @@ struct Index {
       .key(WATCH_TOKEN_FOCUS_KEY)
       .focusable(true)
       .focusOnTouch(true)
+      .defaultFocus(true)
       .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
       .align(Alignment.Top)
       .onAppear(() => {
@@ -2135,9 +2131,13 @@ struct Index {
     .key(WATCH_FEATURE_FOCUS_KEY)
     .focusable(true)
     .focusOnTouch(true)
+    .defaultFocus(true)
     .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
     .align(Alignment.Top)
     .clip(false)
+    .onAppear(() => {
+      this.requestWatchFocus(WATCH_FEATURE_FOCUS_KEY, 80);
+    })
   }
 
   @Builder
@@ -10327,7 +10327,21 @@ struct Index {
     return this.tf('配对码剩余{0}秒', [seconds.toString()]);
   }
 
+  private showWatchHomePage(index: WatchHomePage): void {
+    if (this.watchHomePageIndex === index) {
+      return;
+    }
+    this.watchHomePageIndex = index;
+    this.requestWatchFocus(index === WatchHomePage.Tokens ?
+      WATCH_TOKEN_FOCUS_KEY : WATCH_FEATURE_FOCUS_KEY, 80);
+  }
+
   private requestWatchFocus(key: string, delayMs: number): void {
+    this.scheduleWatchFocusRequest(key, delayMs);
+    this.scheduleWatchFocusRequest(key, delayMs + 240);
+  }
+
+  private scheduleWatchFocusRequest(key: string, delayMs: number): void {
     setTimeout(() => {
       if (key === WATCH_LAN_SYNC_FOCUS_KEY && !this.watchLanSyncPageVisible) {
         return;
@@ -10341,7 +10355,11 @@ struct Index {
         return;
       }
       try {
-        this.getUIContext().getFocusController().requestFocus(key);
+        const focusController = this.getUIContext().getFocusController();
+        focusController.activate(true, false);
+        if (!focusControl.requestFocus(key)) {
+          focusController.requestFocus(key);
+        }
       } catch (error) {
         console.error('Failed to focus watch page: ' + JSON.stringify(error));
       }
@@ -10352,7 +10370,7 @@ struct Index {
     if (event.action !== CrownAction.UPDATE || this.watchLanSyncPageVisible) {
       return;
     }
-    const scrollDelta = event.degree * 2;
+    const scrollDelta = -event.degree * 2;
     if (Math.abs(scrollDelta) < 0.01) {
       return;
     }
@@ -10361,7 +10379,28 @@ struct Index {
     } else {
       this.watchScroller.scrollBy(0, scrollDelta);
     }
+    this.playWatchCrownHaptic();
     event.stopPropagation();
+  }
+
+  private playWatchCrownHaptic(): void {
+    const now = Date.now();
+    if (now - this.watchCrownLastHapticAt < 24) {
+      return;
+    }
+    this.watchCrownLastHapticAt = now;
+    try {
+      vibrator.startVibration({
+        type: 'preset',
+        effectId: vibrator.EffectId.EFFECT_CLOCK_TIMER,
+        count: 1
+      }, {
+        usage: 'physicalFeedback'
+      }, () => {
+      });
+    } catch (error) {
+      console.warn('Failed to play watch crown haptic: ' + JSON.stringify(error));
+    }
   }
 
   private async exitWatchApp(): Promise<void> {
