@@ -81,6 +81,7 @@ hdc app install -r OpenAuthenticator-v1.4.3.hap
 - **华为云空间同步**：基于 ArkData 同应用端云数据同步，支持自动同步、手动推送、手动获取与同步状态展示。
 - **完整 Steam Guard**：支持未加密/加密 maFile 导入、账号登录生成验证器、恢复码保存、扫码登录、交易确认和 maFile 导出。
 - **Steam 凭证云同步**：使用独立加密云表同步结构化 Steam 登录凭证与交易确认信息，不改变通用令牌同步逻辑。
+- **手机与手表同步**：保留 Wear Engine 推送，并支持通过同一 Wi-Fi 扫描手表配对码同步令牌，无需配置 Wear Engine Client ID。
 - **桌面服务卡片**：提供 1x2、2x2、2x4、4x4 四种尺寸，每种尺寸包含浅色和深色版本。
 - **多端自适应**：令牌列表、我的页、设置页和新增页支持手机、平板、折叠屏与 2in1 设备响应式多列布局。
 - **原生系统体验**：使用 ArkUI 原生组件、HdsNavigation、HdsTabs、标准 Sheet、系统文件选择器、扫码能力与服务卡片管理器。
@@ -100,6 +101,20 @@ hdc app install -r OpenAuthenticator-v1.4.3.hap
 
 在“设置 > 服务卡片”中选择需要显示的令牌与顺序，再点击“选择服务卡片”拉起系统服务卡片管理器添加到桌面。令牌数据更新后，已注册卡片会同步刷新。
 
+## 手机与手表同步
+
+局域网扫码同步不依赖 Wear Engine、AppGallery Connect Client ID 或两端签名一致，但手机与手表都需要安装包含此功能的 OpenAuthenticator。
+
+1. 在手表端打开 OpenAuthenticator，令牌页右侧是“功能”页；向右滑进入后，点击“手机同步”自动生成配对二维码。
+2. 在手机端进入“我的 > 手表端数据同步”，选择令牌后点击“扫码同步到手表”。
+3. 扫描手表上的二维码，等待两端显示同步成功。
+
+手表启动时默认显示左侧令牌列表；功能页向左滑返回令牌，手机同步页向左滑会关闭当前配对会话并返回左侧功能页。在令牌首页继续向左滑会退出应用。
+
+两端必须处于可互相访问的同一 Wi-Fi；开启 AP 隔离的访客网络无法使用。配对会话两分钟后失效且成功后立即关闭。二维码包含本次会话的一次性 256 位密钥，请勿分享截图。
+
+同步使用 mDNS 发现手表，通过 TCP 传输 AES-256-GCM 加密且带完整性校验的数据。手表会以手机所选令牌替换当前列表；仅传输生成验证码所需字段，不传输 Steam 登录会话令牌、设备标识、恢复码或交易确认凭证。
+
 ## 技术架构
 
 ```mermaid
@@ -108,6 +123,7 @@ flowchart TD
   B --> C["TokenRepository"]
   B --> D["SettingsRepository"]
   B --> E["FormManager"]
+  B --> M["LanWatchSyncService"]
   C --> F[("ArkData RDB 本地存储")]
   C --> G["ArkData 云同步"]
   E --> H["FormExtensionAbility"]
@@ -115,6 +131,8 @@ flowchart TD
   B --> J["Totp"]
   J --> K["CryptoFramework HMAC"]
   J --> L["ArkTS SHA-1 兼容回退"]
+  M --> N["mDNS + TCP"]
+  M --> O["AES-256-GCM"]
 ```
 
 主要目录：
@@ -128,6 +146,7 @@ entry/src/main/ets/
 ├── data/SteamGuardCloudSchema.ets        # Steam Guard 云表结构
 ├── data/SteamEnrollmentService.ets       # Steam 登录及验证器激活
 ├── data/SteamService.ets                 # Steam 扫码登录与交易确认
+├── data/LanWatchSyncService.ets          # 局域网扫码配对、加密传输与手表接收
 ├── model/SteamGuardData.ets              # 完整 Steam Guard 数据模型
 ├── data/SettingsRepository.ets           # 用户设置、语言、主题、引导状态
 ├── utils/Totp.ets                        # TOTP/HOTP/Steam 生成逻辑

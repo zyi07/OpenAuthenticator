@@ -34,6 +34,13 @@ import {
 } from '@kit.UIDesignKit';
 import { CloudStageResult, CloudSyncState, TokenRepository } from '../data/TokenRepository';
 import {
+  LanWatchPairingInfo,
+  LanWatchReceiver,
+  LanWatchReceiverState,
+  LanWatchSender,
+  watchTransferRecords
+} from '../data/LanWatchSyncService';
+import {
   SteamGuardCloudRecord,
   SteamGuardCloudRepository
 } from '../data/SteamGuardCloudRepository';
@@ -338,6 +345,14 @@ const WATCH_LAYOUT_MAX_HEIGHT: number = 360;
 const WATCH_HORIZONTAL_PADDING: number = 18;
 const WATCH_TOKEN_CARD_HEIGHT: number = 108;
 const WATCH_TOKEN_CODE_SIZE: number = 28;
+const WATCH_PAGE_SWIPE_DISTANCE: number = 64;
+const WATCH_FEATURE_TOP_PADDING: number = 12;
+const WATCH_FEATURE_CARD_HEIGHT: number = 92;
+const WATCH_LAN_QR_FRAME_SIZE: number = 120;
+const WATCH_LAN_QR_SIZE: number = 112;
+const WATCH_TOKEN_FOCUS_KEY: string = 'watch-token-scroll';
+const WATCH_FEATURE_FOCUS_KEY: string = 'watch-feature-scroll';
+const WATCH_LAN_SYNC_FOCUS_KEY: string = 'watch-lan-sync-page';
 const WATCH_SYNC_ACTION: string = 'tool2fa.watch.tokens.replace';
 const SHEET_HORIZONTAL_PADDING: number = 20;
 const SHEET_CONTENT_TOP_PADDING: number = 10;
@@ -446,6 +461,11 @@ enum PageMode {
 enum HomeTab {
   Token,
   Me
+}
+
+enum WatchHomePage {
+  Tokens = 0,
+  Features = 1
 }
 
 enum HoldingHandStatus {
@@ -634,6 +654,7 @@ struct Index {
     this.stopAntiPeep();
     this.clearLogoLookupTimer();
     this.unregisterWearSyncReceivers();
+    this.stopLanWatchReceiver();
   }
 
   onPageShow(): void {
@@ -650,6 +671,7 @@ struct Index {
   private featureSecurityScroller: Scroller = new Scroller();
   private cloudSpaceScroller: Scroller = new Scroller();
   private watchScroller: Scroller = new Scroller();
+  private watchFeatureScroller: Scroller = new Scroller();
   private watchSyncScroller: Scroller = new Scroller();
   private moreAppsScroller: Scroller = new Scroller();
   private donationScroller: Scroller = new Scroller();
@@ -669,6 +691,8 @@ struct Index {
   private homePathStack: NavPathStack = new NavPathStack();
   private addPageScroller: Scroller = new Scroller();
   private onboardingSwiperController: SwiperController = new SwiperController();
+  private watchHomeSwiperController: SwiperController = new SwiperController();
+  private watchHomeSwipeStartPageIndex: number = WatchHomePage.Tokens;
   private timerId: number = -1;
   private updateNoticePresentationTimer: number = -1;
   private settingsLoaded: boolean = false;
@@ -723,6 +747,12 @@ struct Index {
   @State private watchLastPushTime: number = 0;
   @State private watchPushing: boolean = false;
   @State private watchReceiverStatus: string = '';
+  @State private watchLanQrText: string = '';
+  @State private watchLanStatus: string = '';
+  @State private watchLanReceiving: boolean = false;
+  @State private watchLanExpiresAt: number = 0;
+  @State private watchHomePageIndex: number = WatchHomePage.Tokens;
+  @State private watchLanSyncPageVisible: boolean = false;
   @State private steamEnhancedAccess: boolean = false;
   @State private steamGatewayUrl: string = '';
   @State private steamGatewayToken: string = '';
@@ -759,6 +789,7 @@ struct Index {
   private pendingSteamConfirmations: SteamPendingConfirmation[] = [];
   private tokenDragReordered: boolean = false;
   private wearMessageReceivers: WearMessageReceiver[] = [];
+  private lanWatchReceiver: LanWatchReceiver | undefined = undefined;
   private thirdPartyScroller: Scroller = new Scroller();
   private thirdPartyWaterFlowSections: WaterFlowSections = new WaterFlowSections();
 
@@ -1105,14 +1136,27 @@ struct Index {
   private WatchAppRoot() {
     Stack() {
       this.PageBackground()
-      this.WatchHomePageContent()
+      if (this.watchLanSyncPageVisible) {
+        this.WatchLanSyncPageContent()
+      } else {
+        this.WatchHomePageContent()
+      }
       if (this.importProgressVisible) {
         this.ImportProgressOverlay()
       }
     }
     .width('100%')
     .height('100%')
+    .focusable(true)
+    .focusOnTouch(true)
+    .defaultFocus(true)
+    .onDigitalCrown((event: CrownEvent) => {
+      this.handleWatchCrown(event);
+    })
     .backgroundColor(this.pageBackgroundColor())
+    .onAppear(() => {
+      this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 80);
+    })
     .onAreaChange((oldValue: Area, newValue: Area) => {
       const nextWidth = this.lengthToNumber(newValue.width, this.pageWidth);
       const nextHeight = this.lengthToNumber(newValue.height, this.pageHeight);
@@ -1990,6 +2034,36 @@ struct Index {
 
   @Builder
   private WatchHomePageContent() {
+    Swiper(this.watchHomeSwiperController) {
+      this.WatchTokenPageContent()
+      this.WatchFeaturePageContent()
+    }
+    .index(this.watchHomePageIndex)
+    .loop(false)
+    .indicator(false)
+    .duration(260)
+    .curve(Curve.EaseInOut)
+    .onChange((index: number) => {
+      this.watchHomePageIndex = index;
+      this.requestWatchFocus(index === WatchHomePage.Tokens ?
+        WATCH_TOKEN_FOCUS_KEY : WATCH_FEATURE_FOCUS_KEY, 280);
+    })
+    .parallelGesture(PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
+      .onActionStart(() => {
+        this.watchHomeSwipeStartPageIndex = this.watchHomePageIndex;
+      })
+      .onActionEnd((event: GestureEvent) => {
+        if (this.watchHomeSwipeStartPageIndex === WatchHomePage.Tokens &&
+          event.offsetX >= WATCH_PAGE_SWIPE_DISTANCE) {
+          this.exitWatchApp();
+        }
+      }))
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  private WatchTokenPageContent() {
     Scroll(this.watchScroller) {
       Column({ space: 10 }) {
         if (this.watchVisibleTokens().length === 0) {
@@ -2012,11 +2086,249 @@ struct Index {
       .layoutWeight(1)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .key(WATCH_TOKEN_FOCUS_KEY)
+      .focusable(true)
+      .focusOnTouch(true)
+      .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+      .align(Alignment.Top)
+      .onAppear(() => {
+        this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 150);
+      })
       .clip(false)
       .width('100%')
       .height('100%')
       .clip(false)
     }
+
+  @Builder
+  private WatchFeaturePageContent() {
+    Scroll(this.watchFeatureScroller) {
+      Column({ space: 12 }) {
+        Text(this.t('功能'))
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+
+        this.WatchFeatureActionCard()
+
+        Text(this.t('左滑返回令牌'))
+          .fontSize(11)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .padding({
+        left: WATCH_HORIZONTAL_PADDING,
+        right: WATCH_HORIZONTAL_PADDING,
+        top: this.statusBarHeight + WATCH_FEATURE_TOP_PADDING,
+        bottom: this.naviIndicatorHeight + 18
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+    .key(WATCH_FEATURE_FOCUS_KEY)
+    .focusable(true)
+    .focusOnTouch(true)
+    .digitalCrownSensitivity(CrownSensitivity.MEDIUM)
+    .align(Alignment.Top)
+    .clip(false)
+  }
+
+  @Builder
+  private WatchFeatureActionCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(WATCH_FEATURE_CARD_HEIGHT, 18)
+      }
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
+            .fontSize(22)
+            .fontColor([this.accentColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width(42)
+        .height(42)
+        .borderRadius(21)
+        .backgroundColor(this.accentTintColor())
+
+        Column({ space: 4 }) {
+          Text(this.t('手机同步'))
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .width('100%')
+
+          Text(this.t('手机和手表连接同一Wi-Fi后，可将手机令牌同步到手表'))
+            .fontSize(11)
+            .fontColor(this.secondaryTextColor())
+            .lineHeight(14)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(16)
+          .fontColor([this.secondaryTextColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      }
+      .width('100%')
+      .height(WATCH_FEATURE_CARD_HEIGHT)
+      .padding({ left: 14, right: 14 })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(WATCH_FEATURE_CARD_HEIGHT)
+    .borderRadius(18)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('watch-phone-sync'), y: this.appCardScale('watch-phone-sync') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('watch-phone-sync', event.type);
+    })
+    .onClick(() => {
+      this.openWatchLanSyncPage();
+    })
+  }
+
+  @Builder
+  private WatchLanSyncPageContent() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.watchLanReceiving && this.watchLanQrText.length > 0) {
+        Stack({ alignContent: Alignment.Center }) {
+          QRCode(this.watchLanQrText)
+            .width(WATCH_LAN_QR_SIZE)
+            .height(WATCH_LAN_QR_SIZE)
+            .color('#000000')
+            .backgroundColor('#FFFFFF')
+        }
+        .width(WATCH_LAN_QR_FRAME_SIZE)
+        .height(WATCH_LAN_QR_FRAME_SIZE)
+        .padding(4)
+        .borderRadius(8)
+        .backgroundColor('#FFFFFF')
+      } else if (this.watchLanReceiving) {
+        Column({ space: 12 }) {
+          LoadingProgress()
+            .width(34)
+            .height(34)
+            .color(this.accentColor())
+
+          Text(this.t(this.watchLanStatus.length > 0 ? this.watchLanStatus : '正在创建配对码'))
+            .fontSize(12)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+            .width('100%')
+        }
+        .width('100%')
+        .padding({ left: 36, right: 36 })
+      } else {
+        Column({ space: 16 }) {
+          Text(this.t(this.watchLanStatus.length > 0 ? this.watchLanStatus : '局域网同步不可用'))
+            .fontSize(13)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+            .width('100%')
+
+          Button(this.t('重新生成配对码'))
+            .height(38)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentContrastColor())
+            .backgroundColor(this.accentColor())
+            .onClick(() => {
+              this.startLanWatchReceiver();
+            })
+        }
+        .width('100%')
+        .padding({ left: 36, right: 36 })
+      }
+
+      Column({ space: 2 }) {
+        Text(this.t('手机同步'))
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+
+        if (this.watchLanReceiving && this.watchLanQrText.length > 0) {
+          Text(this.t('请在手机上扫描此二维码'))
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .textAlign(TextAlign.Center)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .padding({
+        left: 28,
+        right: 28,
+        top: this.statusBarHeight + 8
+      })
+      .justifyContent(FlexAlign.Start)
+      .hitTestBehavior(HitTestMode.None)
+
+      Column({ space: 1 }) {
+        if (this.watchLanReceiving && this.watchLanQrText.length > 0) {
+          Text(this.watchLanCountdownText())
+            .fontSize(11)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+            .maxLines(1)
+            .width('100%')
+
+          Text(this.t(this.watchLanStatus))
+            .fontSize(11)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }
+
+        Text(this.t('左滑退出'))
+          .fontSize(11)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .padding({
+        left: 30,
+        right: 30,
+        bottom: this.naviIndicatorHeight + 6
+      })
+      .justifyContent(FlexAlign.End)
+      .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .height('100%')
+    .key(WATCH_LAN_SYNC_FOCUS_KEY)
+    .focusable(true)
+    .focusOnTouch(true)
+    .gesture(PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
+      .onActionEnd((event: GestureEvent) => {
+        if (event.offsetX >= WATCH_PAGE_SWIPE_DISTANCE) {
+          this.closeWatchLanSyncPage();
+        }
+      }))
+  }
 
   @Builder
   private WatchEmptyCard() {
@@ -2160,15 +2472,23 @@ struct Index {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
 
-      Row() {
-        this.TokenCodeView(token, false, WATCH_TOKEN_CODE_SIZE, this.tokenValueColor(), FontWeight.Medium, 1)
+      Stack({ alignContent: Alignment.Center }) {
+        this.TokenCodeView(token, false, WATCH_TOKEN_CODE_SIZE, this.tokenValueColor(), FontWeight.Medium, 0)
 
-        Text(this.tokenCountdownText(token))
-          .fontSize(11)
-          .fontColor(this.secondaryTextColor())
+        Row() {
+          Blank()
+            .layoutWeight(1)
+
+          Text(this.tokenCountdownText(token))
+            .fontSize(11)
+            .fontColor(this.secondaryTextColor())
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .height(this.tokenDigitHeight(WATCH_TOKEN_CODE_SIZE))
     }
     .width('100%')
     .height(WATCH_TOKEN_CARD_HEIGHT)
@@ -5303,20 +5623,24 @@ struct Index {
   private WatchActionsCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.shouldUseCardMaterial()) {
-        this.ImmersionCardSurface(ME_ROW_HEIGHT, ME_CARD_RADIUS)
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
       }
       Column() {
-        this.WatchSyncActionRow('推送手表端', () => {
+        this.WatchSyncActionRow('Wear Engine推送', () => {
           this.pushTokensToWear();
+        })
+        this.MeCardDivider()
+        this.WatchSyncActionRow('扫码同步到手表', () => {
+          this.pushTokensToWatchOverLan();
         })
       }
       .width('100%')
-      .height(ME_ROW_HEIGHT)
+      .height(ME_ROW_HEIGHT * 2 + 1)
       .padding({ left: 20, right: 18 })
       .zIndex(2)
     }
     .width('100%')
-    .height(ME_ROW_HEIGHT)
+    .height(ME_ROW_HEIGHT * 2 + 1)
     .borderRadius(ME_CARD_RADIUS)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -9998,6 +10322,178 @@ struct Index {
       `${this.twoDigit(date.getHours())}:${this.twoDigit(date.getMinutes())}`;
   }
 
+  private watchLanCountdownText(): string {
+    const seconds = Math.max(0, Math.ceil((this.watchLanExpiresAt - this.currentTimeMs) / 1000));
+    return this.tf('配对码剩余{0}秒', [seconds.toString()]);
+  }
+
+  private requestWatchFocus(key: string, delayMs: number): void {
+    setTimeout(() => {
+      if (key === WATCH_LAN_SYNC_FOCUS_KEY && !this.watchLanSyncPageVisible) {
+        return;
+      }
+      if (key === WATCH_TOKEN_FOCUS_KEY &&
+        (this.watchLanSyncPageVisible || this.watchHomePageIndex !== WatchHomePage.Tokens)) {
+        return;
+      }
+      if (key === WATCH_FEATURE_FOCUS_KEY &&
+        (this.watchLanSyncPageVisible || this.watchHomePageIndex !== WatchHomePage.Features)) {
+        return;
+      }
+      try {
+        this.getUIContext().getFocusController().requestFocus(key);
+      } catch (error) {
+        console.error('Failed to focus watch page: ' + JSON.stringify(error));
+      }
+    }, delayMs);
+  }
+
+  private handleWatchCrown(event: CrownEvent): void {
+    if (event.action !== CrownAction.UPDATE || this.watchLanSyncPageVisible) {
+      return;
+    }
+    const scrollDelta = event.degree * 2;
+    if (Math.abs(scrollDelta) < 0.01) {
+      return;
+    }
+    if (this.watchHomePageIndex === WatchHomePage.Features) {
+      this.watchFeatureScroller.scrollBy(0, scrollDelta);
+    } else {
+      this.watchScroller.scrollBy(0, scrollDelta);
+    }
+    event.stopPropagation();
+  }
+
+  private async exitWatchApp(): Promise<void> {
+    if (this.watchLanSyncPageVisible || this.watchHomePageIndex !== WatchHomePage.Tokens) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    try {
+      await context.terminateSelf();
+    } catch (error) {
+      console.error('Failed to exit watch app: ' + JSON.stringify(error));
+    }
+  }
+
+  private openWatchLanSyncPage(): void {
+    if (this.watchLanSyncPageVisible) {
+      return;
+    }
+    this.watchLanSyncPageVisible = true;
+    this.watchLanStatus = '';
+    this.requestWatchFocus(WATCH_LAN_SYNC_FOCUS_KEY, 80);
+    this.startLanWatchReceiver();
+  }
+
+  private closeWatchLanSyncPage(): void {
+    this.watchLanSyncPageVisible = false;
+    this.stopLanWatchReceiver();
+    this.requestWatchFocus(WATCH_FEATURE_FOCUS_KEY, 80);
+  }
+
+  private async startLanWatchReceiver(): Promise<void> {
+    if (this.watchLanReceiving) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.watchLanStatus = '局域网同步不可用';
+      return;
+    }
+
+    this.watchLanReceiving = true;
+    this.watchLanQrText = '';
+    this.watchLanExpiresAt = 0;
+    this.watchLanStatus = '正在创建配对码';
+    const receiver = new LanWatchReceiver();
+    this.lanWatchReceiver = receiver;
+    try {
+      const pairing: LanWatchPairingInfo = await receiver.start(
+        context,
+        async (records: TokenRecord[]): Promise<boolean> => {
+          return await this.applyWearSyncPayload(records);
+        },
+        (state: LanWatchReceiverState): void => {
+          this.updateLanWatchReceiverState(state);
+        }
+      );
+      if (this.lanWatchReceiver !== receiver) {
+        await receiver.stop();
+        return;
+      }
+      this.watchLanQrText = pairing.qrText;
+      this.watchLanExpiresAt = pairing.expiresAt;
+      this.watchLanStatus = '等待手机连接';
+    } catch (error) {
+      if (this.lanWatchReceiver === receiver) {
+        this.lanWatchReceiver = undefined;
+        this.watchLanReceiving = false;
+        this.watchLanQrText = '';
+        this.watchLanExpiresAt = 0;
+        this.watchLanStatus = '局域网同步不可用';
+        this.showToast('请确认手表已连接Wi-Fi');
+      }
+    }
+  }
+
+  private async stopLanWatchReceiver(): Promise<void> {
+    const receiver = this.lanWatchReceiver;
+    this.lanWatchReceiver = undefined;
+    if (receiver) {
+      await receiver.stop();
+    }
+    this.watchLanReceiving = false;
+    this.watchLanQrText = '';
+    this.watchLanExpiresAt = 0;
+    if (this.watchLanStatus === '等待手机连接' || this.watchLanStatus === '正在接收' ||
+      this.watchLanStatus === '正在创建配对码') {
+      this.watchLanStatus = '已取消';
+    }
+  }
+
+  private updateLanWatchReceiverState(state: LanWatchReceiverState): void {
+    if (state === LanWatchReceiverState.Waiting) {
+      this.watchLanStatus = '等待手机连接';
+      return;
+    }
+    if (state === LanWatchReceiverState.Receiving) {
+      this.watchLanStatus = '正在接收';
+      return;
+    }
+    if (state === LanWatchReceiverState.InvalidData) {
+      this.watchLanStatus = '收到无效同步数据';
+      return;
+    }
+    if (state === LanWatchReceiverState.Success) {
+      this.lanWatchReceiver = undefined;
+      this.watchLanReceiving = false;
+      this.watchLanQrText = '';
+      this.watchLanExpiresAt = 0;
+      this.watchLanStatus = '接收成功';
+      this.showToast('接收成功');
+      return;
+    }
+    if (state === LanWatchReceiverState.Expired) {
+      this.lanWatchReceiver = undefined;
+      this.watchLanReceiving = false;
+      this.watchLanQrText = '';
+      this.watchLanExpiresAt = 0;
+      this.watchLanStatus = '配对码已过期';
+      return;
+    }
+    if (state === LanWatchReceiverState.Failed) {
+      this.lanWatchReceiver = undefined;
+      this.watchLanReceiving = false;
+      this.watchLanQrText = '';
+      this.watchLanExpiresAt = 0;
+      this.watchLanStatus = '局域网同步不可用';
+    }
+  }
+
   private openWatchTokenPicker(): void {
     this.pendingWatchTokenIds = this.validWatchSelectedTokenIds();
     this.bumpSheetSelectionRevision();
@@ -10087,7 +10583,7 @@ struct Index {
       const payload: WatchSyncPayload = {
         action: WATCH_SYNC_ACTION,
         version: 1,
-        tokens: selectedTokens,
+        tokens: watchTransferRecords(selectedTokens),
         pushedAt: Date.now()
       };
       const message: wearEngine.P2pMessage = {
@@ -10122,12 +10618,79 @@ struct Index {
     }
   }
 
-  private finishWatchPush(success: boolean, status: string): void {
+  private async pushTokensToWatchOverLan(): Promise<void> {
+    if (this.watchPushing || this.isScanning) {
+      return;
+    }
+    const selectedTokens = this.watchSelectedTokens();
+    if (selectedTokens.length === 0) {
+      this.showToast('请至少选择1个令牌');
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.showToast('推送失败');
+      return;
+    }
+
+    this.watchPushing = true;
+    this.watchPushStatus = '等待扫描手表配对码';
+    this.isScanning = true;
+    try {
+      const result = await scanBarcode.startScanForResult(context, {
+        scanTypes: [scanCore.ScanType.QR_CODE],
+        enableMultiMode: false,
+        enableAlbum: true
+      });
+      this.watchPushStatus = '正在通过局域网同步';
+      const count = await LanWatchSender.push(context, result.originalValue, selectedTokens);
+      const successText = this.tf('同步成功（{0}个令牌）', [count.toString()]);
+      this.finishWatchPush(true, successText, successText);
+    } catch (error) {
+      const code = this.getErrorCode(error);
+      if (code === scanCore.ScanErrorCode.SCAN_SERVICE_CANCELED) {
+        this.watchPushing = false;
+        this.watchPushStatus = '已取消';
+        this.saveSettings();
+      } else {
+        this.finishWatchPush(false, this.lanWatchSyncErrorText(error));
+      }
+    } finally {
+      this.isScanning = false;
+    }
+  }
+
+  private lanWatchSyncErrorText(error: Object): string {
+    const text = error.toString();
+    if (text.indexOf('LAN_SYNC_INVALID_PAIRING_CODE') >= 0) {
+      return '这不是OpenAuthenticator手表配对码';
+    }
+    if (text.indexOf('LAN_SYNC_SESSION_EXPIRED') >= 0) {
+      return '手表配对码已过期';
+    }
+    if (text.indexOf('LAN_SYNC_DISCOVERY_TIMEOUT') >= 0 ||
+      text.indexOf('LAN_SYNC_SERVICE_UNAVAILABLE') >= 0) {
+      return '未发现手表，请确认连接同一Wi-Fi';
+    }
+    if (text.indexOf('LAN_SYNC_MESSAGE_TOO_LARGE') >= 0) {
+      return '令牌数据过大，无法同步';
+    }
+    if (text.indexOf('LAN_SYNC_RESPONSE_TIMEOUT') >= 0 ||
+      text.indexOf('LAN_SYNC_CONNECTION') >= 0) {
+      return '手表连接超时，请重试';
+    }
+    if (text.indexOf('LAN_SYNC_REJECTED') >= 0) {
+      return '手表拒绝了同步数据';
+    }
+    return '局域网同步失败';
+  }
+
+  private finishWatchPush(success: boolean, status: string, successToast: string = '操作成功，同步中'): void {
     this.watchPushing = false;
     this.watchPushStatus = status;
     this.watchLastPushTime = Date.now();
     this.saveSettings();
-    this.showToast(success ? '操作成功，同步中' : status);
+    this.showToast(success ? successToast : status);
   }
 
   private async connectedWearDevices(context: common.UIAbilityContext): Promise<wearEngine.Device[]> {
@@ -10256,14 +10819,20 @@ struct Index {
     }
   }
 
-  private async applyWearSyncPayload(records: TokenRecord[]): Promise<void> {
+  private async applyWearSyncPayload(records: TokenRecord[]): Promise<boolean> {
     const validRecords = this.uniqueTokenRecordsWithValidation(records, false);
+    if (validRecords.length === 0) {
+      return false;
+    }
     if (await this.persistTokens(validRecords, '')) {
       this.watchSelectedTokenIds = validRecords.map((token: TokenRecord) => token.id);
       this.watchPushStatus = '接收成功';
       this.watchLastPushTime = Date.now();
       this.saveSettings();
+      this.hydrateMissingTokenLogos();
+      return true;
     }
+    return false;
   }
 
   private twoDigit(value: number): string {
@@ -13567,6 +14136,9 @@ struct Index {
     }
     if (await TokenRepository.save(context, nextTokens)) {
       this.tokens = nextTokens;
+      if (this.isWatchLayout()) {
+        this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 120);
+      }
       this.updateWidgetCards();
       if (this.cloudBackupEnabled) {
         this.queueTokensForAutoCloudPush();
@@ -13581,6 +14153,9 @@ struct Index {
         return;
       }
       this.tokens = await TokenRepository.load(context);
+      if (this.isWatchLayout()) {
+        this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 120);
+      }
       this.updateWidgetCards();
       this.hydrateMissingTokenLogos();
     } catch (error) {
@@ -13752,6 +14327,9 @@ struct Index {
     }
 
     this.tokens = nextTokens;
+    if (this.isWatchLayout()) {
+      this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 120);
+    }
     this.logoRenderVersion += 1;
     this.updateWidgetCards();
     if (successMessage.length > 0) {
