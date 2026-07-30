@@ -1,4 +1,21 @@
 {
   "version": 1,
-  "logos": []
+  "logos": [
+    {
+      "slug": "bitget",
+      "aliases": ["bitget", "bitget.com"],
+      "brand": "logos/bitget.svg",
+      "light": "logos/bitget-light.svg",
+      "dark": "logos/bitget-dark.svg",
+      "revision": "1"
+    },
+    {
+      "slug": "bybit",
+      "aliases": ["bybit", "bybit.com"],
+      "brand": "logos/bybit.svg",
+      "light": "logos/bybit-light.svg",
+      "dark": "logos/bybit-dark.svg",
+      "revision": "1"
+    }
+  ]
 }
