@@ -1,5 +1,17 @@
 # 更新日志
 
+## 1.4.3 - 2026-07-30
+
+- 华为账号退出按钮改为主题色光感样式，并增加二次确认；退出时同步关闭云空间自动同步。
+- “我的”页面卡片分隔线左端与文字起点对齐。
+- 新增 GitCode 内置品牌 Logo，并统一 Microsoft、GitCode 图标的视觉尺寸。
+- 修复二维码与 JSON 备份重新导入后令牌名称、发行方互换的问题。
+- JSON 备份文件名调整为 `OpenAuthenticator_backup_当前年月日.json`。
+- 新增 GitCode 远程发行方 Logo 维护库，优先级为“应用内置 Logo → GitCode 远程维护库 → Simple Icons”。
+- 远程 Logo 清单和图片支持本地缓存、浅色/深色/品牌色资源及版本更新。
+- 远程维护库新增 Bitget、Bybit、Kimi 品牌 Logo。
+- “关于”页面的应用版本改为自动读取当前安装包的 `versionName` 和 `versionCode`。
+
 ## 1.4.0 - 2026-07-23
 
 - 完整支持 Steam maFile 导入，包括未加密文件及配合 `manifest.json` 解密的 SDA 加密文件。

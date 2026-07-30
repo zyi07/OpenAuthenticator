@@ -146,10 +146,23 @@ const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
 const CAMLINK_URL: string =
   'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
 const QQ_GROUP_NUMBER: string = '1061983927';
-const APP_VERSION: string = 'V1.4.1';
-const APP_VERSION_CODE: string = '1000041';
-const UPDATE_NOTICE_VERSION: string = 'V1.4.1';
+const APP_VERSION_FALLBACK: string = 'V1.4.3';
+const APP_VERSION_CODE_FALLBACK: string = '1000043';
+const UPDATE_NOTICE_VERSION: string = 'V1.4.3';
 const UPDATE_LOGS: UpdateLogEntry[] = [
+  {
+    version: '1.4.3',
+    date: '2026.07.30',
+    summary: '完善账号、备份与发行方 Logo 体验',
+    items: [
+      '华为账号退出改为主题色光感按钮，并增加二次确认，避免误操作。',
+      '修复二维码和 JSON 备份重新导入后令牌名称与发行方颠倒的问题。',
+      'JSON 备份文件名统一为 OpenAuthenticator_backup_当前年月日。',
+      '新增 GitCode 远程发行方 Logo 维护库，按“内置、GitCode、Simple Icons”的顺序匹配并支持离线缓存。',
+      '新增 GitCode、Bitget、Bybit、Kimi 品牌资源，统一 Microsoft 与 GitCode 图标视觉尺寸。',
+      '“关于”页面的应用版本改为自动读取当前安装包版本。'
+    ]
+  },
   {
     version: '1.4.1',
     date: '2026.07.27',
@@ -570,10 +583,12 @@ struct Index {
   @State private backgroundBlurPercent: number = 0;
   @State private backgroundBrightnessPercent: number = 50;
   @State private globalBackgroundEnabled: boolean = true;
+  @State private appVersion: string = APP_VERSION_FALLBACK;
+  @State private appVersionCode: string = APP_VERSION_CODE_FALLBACK;
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
   @State private showUpdateLogSheet: boolean = false;
-  @State private expandedUpdateLogVersion: string = '1.4.1';
+  @State private expandedUpdateLogVersion: string = '1.4.3';
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
@@ -748,8 +763,24 @@ struct Index {
   private thirdPartyWaterFlowSections: WaterFlowSections = new WaterFlowSections();
 
   private async initializeAppData(): Promise<void> {
+    await this.loadAppVersion();
     await this.loadTokens();
     await this.loadSettings();
+  }
+
+  private async loadAppVersion(): Promise<void> {
+    try {
+      const bundleInfo = await bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      const versionName = bundleInfo.versionName.trim();
+      if (versionName.length > 0) {
+        const normalizedVersion = versionName.charAt(0).toLowerCase() === 'v' ?
+          versionName.substring(1) : versionName;
+        this.appVersion = `V${normalizedVersion}`;
+      }
+      this.appVersionCode = bundleInfo.versionCode.toString();
+    } catch (error) {
+      console.error(`Failed to load app version: ${JSON.stringify(error)}`);
+    }
   }
 
   private async loadSettings(): Promise<void> {
@@ -2667,21 +2698,21 @@ struct Index {
         Scroll(this.updateNoticeSheetScroller) {
           Column({ space: 12 }) {
             this.UpdateNoticeHero()
-            this.UpdateNoticeItem('1', '响应式界面升级',
-              '优化“我的”、设置、第三方库等页面在手机、平板及宽屏设备上的布局。',
-              '各页面会根据窗口宽度自动适配')
-            this.UpdateNoticeItem('2', '背景控制更完整',
-              '新增背景图明亮程度调节，并修复图库背景选择后未立即刷新的问题。',
-              '我的 → 外观与主题 → 颜色与背景')
-            this.UpdateNoticeItem('3', '转场更加流畅',
-              '复用预解码背景并缓存静态渲染结果，降低启用背景图后的转场渲染开销。',
-              '启用背景图后进入任意二级页面')
-            this.UpdateNoticeItem('4', '导航模糊稳定',
-              '修复顶部导航栏开始滚动时模糊效果短暂缺失的问题。',
-              '滚动支持顶部模糊效果的页面')
-            this.UpdateNoticeItem('5', '细节体验完善',
-              '完善 QQ 群号复制与二维码保存、多语言文案、应用图标及品牌资源。',
-              '我的 → 关于 → 加入QQ群 / 更新日志')
+            this.UpdateNoticeItem('1', '账号退出更安全',
+              '华为账号退出使用主题色光感按钮，并在操作前进行二次确认。',
+              '我的 → 华为账号 → 退出')
+            this.UpdateNoticeItem('2', '备份导入更准确',
+              '修复二维码和 JSON 备份重新导入后令牌名称与发行方颠倒的问题。',
+              '我的 → 备份与导入')
+            this.UpdateNoticeItem('3', '远程 Logo 维护',
+              '新增 GitCode 发行方 Logo 维护库，无需重新发布安装包即可补充品牌资源。',
+              '内置 Logo → GitCode → Simple Icons')
+            this.UpdateNoticeItem('4', '品牌显示更统一',
+              '新增 GitCode、Bitget、Bybit、Kimi Logo，并统一 Microsoft 与 GitCode 图标尺寸。',
+              '令牌卡片与新增、编辑页面')
+            this.UpdateNoticeItem('5', '版本信息自动同步',
+              '“关于”页面会直接读取当前安装包的版本名称和版本号。',
+              '我的 → 关于 → 应用版本')
           }
           .width('100%')
           .padding({
@@ -2762,12 +2793,12 @@ struct Index {
         .objectFit(ImageFit.Cover)
 
       Column({ space: 4 }) {
-        Text(this.t('界面与背景体验优化'))
+        Text(this.t('账号、备份与品牌体验升级'))
           .fontSize(19)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
 
-        Text(this.t('V1.4.1：适配更完善，背景切换与页面转场更流畅。'))
+        Text(this.t('V1.4.3：账号退出更安全，备份导入更准确，发行方 Logo 可远程维护。'))
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
@@ -4219,7 +4250,7 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28),
       onDisappear: () => {
-        this.expandedUpdateLogVersion = '1.4.1';
+        this.expandedUpdateLogVersion = '1.4.3';
       }
     })
   }
@@ -4336,11 +4367,11 @@ struct Index {
           })
           this.MeCardDivider()
           this.AboutActionRow('更新日志', '', () => {
-            this.expandedUpdateLogVersion = '1.4.1';
+            this.expandedUpdateLogVersion = '1.4.3';
             this.showUpdateLogSheet = true;
           })
           this.MeCardDivider()
-          this.AboutActionRow('应用版本', APP_VERSION, () => {
+          this.AboutActionRow('应用版本', this.appVersion, () => {
           })
         }
         .width('100%')
@@ -4446,7 +4477,7 @@ struct Index {
             .fontSize(13)
             .fontColor(this.secondaryTextColor())
 
-          Text(APP_VERSION + ' (' + APP_VERSION_CODE + ')')
+          Text(this.appVersion + ' (' + this.appVersionCode + ')')
             .fontSize(19)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
