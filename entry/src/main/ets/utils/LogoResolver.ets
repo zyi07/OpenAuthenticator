@@ -70,12 +70,18 @@ export class LogoResolver {
           logoSource: 'bundled:gitcode'
         };
       }
+    }
+    const maintainedLogo = await LogoResolver.resolveMaintained(context, issuer, name);
+    if (maintainedLogo) {
+      return maintainedLogo;
+    }
+    for (const slug of candidates) {
       const result = await LogoResolver.downloadSimpleIcon(context, slug);
       if (result) {
         return result;
       }
     }
-    return await LogoResolver.resolveMaintainedLogo(context, issuer, name);
+    return null;
   }
 
   private static logoCandidates(issuer: string, name: string): string[] {
@@ -157,7 +163,7 @@ export class LogoResolver {
     }
   }
 
-  private static async resolveMaintainedLogo(
+  static async resolveMaintained(
     context: common.UIAbilityContext,
     issuer: string,
     name: string

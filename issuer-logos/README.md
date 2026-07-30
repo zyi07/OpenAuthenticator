@@ -1,6 +1,6 @@
 # 发行方 Logo 维护
 
-此目录是 OpenAuthenticator 的远程 Logo 保底源。应用仍会优先使用内置 Logo 和 Simple Icons；只有现有逻辑无法获取 Logo 时，才读取这里的清单。
+此目录是 OpenAuthenticator 的远程 Logo 维护源。应用按“内置 Logo → GitCode 远程维护库 → Simple Icons”的顺序获取发行方 Logo。
 
 ## 新增品牌
 

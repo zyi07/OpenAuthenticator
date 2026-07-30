@@ -13436,11 +13436,12 @@ struct Index {
         }
         continue;
       }
-      const logo = await LogoResolver.resolve(
-        context,
-        this.logoLookupIssuer(record.type, record.remark),
-        this.logoLookupName(record.type, record.name)
-      );
+      const source = record.logoSource || '';
+      const lookupIssuer = this.logoLookupIssuer(record.type, record.remark);
+      const lookupName = this.logoLookupName(record.type, record.name);
+      const logo = !refreshResolved && source.indexOf('simple-icons-v2:') === 0 ?
+        await LogoResolver.resolveMaintained(context, lookupIssuer, lookupName) :
+        await LogoResolver.resolve(context, lookupIssuer, lookupName);
       result.push(logo ? this.withResolvedLogo(record, logo) : this.withoutUnavailableResolvedLogo(record, refreshResolved));
       if (this.importProgressVisible) {
         this.updateImportProgress(index + 1, index + 1, this.importRejectedCount, '正在导入令牌');
@@ -13491,6 +13492,9 @@ struct Index {
     }
     const source = record.logoSource || '';
     if (source.indexOf('gitcode-logo:') === 0) {
+      return true;
+    }
+    if (source.indexOf('simple-icons-v2:') === 0) {
       return true;
     }
     if (this.localIssuerLogoKey(record.name, record.remark) === 'gitcode') {
