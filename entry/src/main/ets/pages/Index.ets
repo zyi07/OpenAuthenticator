@@ -300,6 +300,9 @@ const ME_AVATAR_SIZE: number = 48;
 const ME_TEXT_SIZE: number = 18;
 const ME_ACTION_TEXT_SIZE: number = 15;
 const ME_ACTION_ICON_SIZE: number = 20;
+const ME_ACTION_CONTENT_GAP: number = 16;
+const ME_LOGOUT_BUTTON_WIDTH: number = 88;
+const ME_LOGOUT_BUTTON_HEIGHT: number = 34;
 const ME_ARROW_WIDTH: number = 8;
 const ME_ARROW_HEIGHT: number = 15;
 const BACKGROUND_THUMBNAIL_WIDTH: number = 38;
@@ -542,6 +545,7 @@ struct Index {
   @State private huaweiAvatarUri: string = '';
   @State private huaweiUserId: string = '';
   @State private huaweiLoginInProgress: boolean = false;
+  @State private huaweiLogoutInProgress: boolean = false;
   @State private cloudBackupEnabled: boolean = false;
   @State private smartGripEnabled: boolean = false;
   @State private holdingHandStatus: HoldingHandStatus = HoldingHandStatus.NOT_HELD;
@@ -3722,14 +3726,11 @@ struct Index {
     .onTouch((event: TouchEvent) => {
       this.handleAppCardTouch('me-login', event.type);
     })
-    .onClick(() => {
-      this.handleMeLoginClick();
-    })
   }
 
   @Builder
   private MeLoginCardContent() {
-    Row({ space: 16 }) {
+    Row({ space: ME_ACTION_CONTENT_GAP }) {
       this.MeAvatar()
 
       Column({ space: 4 }) {
@@ -3740,28 +3741,57 @@ struct Index {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.isHuaweiLoggedIn ? this.t('已登录·点击退出') :
-          (this.huaweiLoginInProgress ? this.t('正在登录') : this.t('点击登录')))
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.secondaryTextColor())
+        if (!this.isHuaweiLoggedIn) {
+          Text(this.huaweiLoginInProgress ? this.t('正在登录') : this.t('点击登录'))
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.secondaryTextColor())
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
+      if (this.isHuaweiLoggedIn) {
+        this.MeLogoutButton()
+      }
     }
     .width('100%')
     .height(ME_LOGIN_CARD_HEIGHT)
     .padding({ left: 18, right: 20 })
     .alignItems(VerticalAlign.Center)
     .zIndex(2)
+    .onClick(() => {
+      if (!this.isHuaweiLoggedIn && !this.huaweiLoginInProgress) {
+        this.loginHuaweiAccount();
+      }
+    })
   }
 
-  private handleMeLoginClick(): void {
-    if (this.isHuaweiLoggedIn) {
-      this.logoutHuaweiAccount();
-    } else if (!this.huaweiLoginInProgress) {
-      this.loginHuaweiAccount();
+  @Builder
+  private MeLogoutButton() {
+    Stack({ alignContent: Alignment.Center }) {
+      ImmersionButton({
+        systemMaterialEffect: this.configuredMaterialEffect(),
+        buttonModify: new ActionButtonModifier(
+          ME_LOGOUT_BUTTON_WIDTH,
+          ME_LOGOUT_BUTTON_HEIGHT,
+          this.primaryActionFillColor(),
+          this.accentColor()
+        ),
+        click: (): void => {
+          this.confirmLogoutHuaweiAccount();
+        }
+      }) {
+        Text(this.t(this.huaweiLogoutInProgress ? '退出中' : '退出'))
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accentColor())
+      }
     }
+    .width(ME_LOGOUT_BUTTON_WIDTH)
+    .height(ME_LOGOUT_BUTTON_HEIGHT)
+    .borderRadius(ME_LOGOUT_BUTTON_HEIGHT / 2)
+    .clip(false)
   }
 
   @Builder
@@ -3830,7 +3860,7 @@ struct Index {
           this.handleMeAction(group, index);
         })
         if (index < items.length - 1) {
-          this.MeCardDivider()
+          this.MeActionCardDivider()
         }
       }, (item: [string, Resource]) => item[0])
     }
@@ -3876,6 +3906,14 @@ struct Index {
       .fontColor([this.secondaryTextColor()])
       .fontWeight(FontWeight.Medium)
       .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+  }
+
+  @Builder
+  private MeActionCardDivider() {
+    Divider()
+      .strokeWidth(1)
+      .color(this.dividerColor())
+      .margin({ left: ME_ACTION_ICON_SIZE + ME_ACTION_CONTENT_GAP })
   }
 
   @Builder
@@ -7623,6 +7661,23 @@ struct Index {
           .height(size)
           .objectFit(ImageFit.Contain)
       }
+    } else if (allowLocalLogo && this.localIssuerLogoKey(name, issuer) === 'gitcode') {
+      if (this.issuerLogoColorMode === '品牌色') {
+        Image($r('app.media.logo_gitcode_brand'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      } else if (this.isDarkTheme()) {
+        Image($r('app.media.logo_gitcode_dark'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      } else {
+        Image($r('app.media.logo_gitcode_light'))
+          .width(size)
+          .height(size)
+          .objectFit(ImageFit.Contain)
+      }
     } else if (logoUri.length > 0) {
       Image(logoUri)
         .width(size)
@@ -8691,6 +8746,9 @@ struct Index {
     if (source.indexOf('microsoft') >= 0 || source.indexOf('微软') >= 0) {
       return 'microsoft';
     }
+    if (source.indexOf('gitcode') >= 0) {
+      return 'gitcode';
+    }
     return '';
   }
 
@@ -9277,6 +9335,10 @@ struct Index {
   }
 
   private async logoutHuaweiAccount(): Promise<void> {
+    if (this.huaweiLogoutInProgress) {
+      return;
+    }
+    this.huaweiLogoutInProgress = true;
     try {
       const provider = new authentication.HuaweiIDProvider();
       const cancelRequest = provider.createCancelAuthorizationRequest();
@@ -9296,6 +9358,30 @@ struct Index {
     this.configureCloudAutoSync(false);
     this.saveSettings();
     this.showToast('已退出登录');
+    this.huaweiLogoutInProgress = false;
+  }
+
+  private confirmLogoutHuaweiAccount(): void {
+    if (this.huaweiLogoutInProgress) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t('确认退出登录'),
+      message: this.t('退出华为账号后，云空间自动同步将同时关闭。确定退出吗？'),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t('退出'),
+        fontColor: ERROR_RED,
+        action: () => {
+          this.logoutHuaweiAccount();
+        }
+      }
+    });
   }
 
   private async toggleCloudBackup(isOn: boolean): Promise<void> {
@@ -10238,16 +10324,17 @@ struct Index {
   private buildOtpAuthUri(token: TokenRecord): string {
     const type = this.normalizeTokenType(token.type).toLowerCase();
     const label = encodeURIComponent(
-      token.remark.trim().length > 0 ? `${token.name}:${token.remark}` : token.name
+      token.remark.trim().length > 0 ? `${token.remark}:${token.name}` : token.name
     );
-    const issuer = encodeURIComponent(token.name);
     const params: string[] = [
       `secret=${encodeURIComponent(token.secret)}`,
-      `issuer=${issuer}`,
       `algorithm=${token.algorithm || 'SHA1'}`,
       `digits=${this.tokenDigitsForRecord(token)}`,
       `period=${this.tokenPeriodForRecord(token)}`
     ];
+    if (token.remark.trim().length > 0) {
+      params.push(`issuer=${encodeURIComponent(token.remark)}`);
+    }
     if (type === 'hotp') {
       params.push(`counter=${this.tokenCounterForRecord(token)}`);
     }
@@ -10526,8 +10613,8 @@ struct Index {
       const portableToken: Record<string, Object> = {
         'uri': this.buildOtpAuthUri(token),
         'name': token.name,
-        'issuer': token.name,
-        'account': token.remark,
+        'issuer': token.remark,
+        'account': token.name,
         'secret': token.secret,
         'type': this.normalizeTokenType(token.type),
         'algorithm': token.algorithm || 'SHA1',
@@ -10567,7 +10654,7 @@ struct Index {
       'tokens': portableTokens
     };
     const jsonContent = JSON.stringify(exportData, null, 2);
-    const fileName = `2fa_backup_${this.formatExportDate()}.json`;
+    const fileName = `OpenAuthenticator_backup_${this.formatExportDate()}.json`;
     try {
       const options = new picker.DocumentSaveOptions();
       options.newFileNames = [fileName];
@@ -13403,6 +13490,15 @@ struct Index {
       return false;
     }
     const source = record.logoSource || '';
+    if (source.indexOf('gitcode-logo:') === 0) {
+      return true;
+    }
+    if (this.localIssuerLogoKey(record.name, record.remark) === 'gitcode') {
+      return source !== 'bundled:gitcode';
+    }
+    if (source.indexOf('bundled:') === 0) {
+      return false;
+    }
     if (refreshResolved) {
       return true;
     }

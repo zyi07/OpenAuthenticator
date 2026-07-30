@@ -1,4 +1,5 @@
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { updateManager } from '@kit.AppGalleryKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { FormManager } from '../form/FormManager';
@@ -11,6 +12,7 @@ const FORCE_DARK_SYSTEM_BARS_KEY = 'tool2fa_forceDarkSystemBars';
 
 export default class EntryAbility extends UIAbility {
   private hasSafeAreaListener: boolean = false;
+  private hasCheckedAppUpdate: boolean = false;
   private mainWindow: window.Window | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -129,6 +131,29 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<boolean>('tool2fa_requireAuth', true);
     AppStorage.setOrCreate<boolean>('tool2fa_isLocked', true);
     hilog.info(DOMAIN, 'testTag', 'Set tool2fa_isLocked=true in onForeground');
+    this.checkForAppUpdate();
+  }
+
+  private checkForAppUpdate(): void {
+    if (this.hasCheckedAppUpdate) {
+      return;
+    }
+    this.hasCheckedAppUpdate = true;
+    this.performAppUpdateCheck();
+  }
+
+  private async performAppUpdateCheck(): Promise<void> {
+    try {
+      const checkResult = await updateManager.checkAppUpdate(this.context);
+      if (checkResult.updateAvailable !== updateManager.UpdateAvailableCode.LATER_VERSION_EXIST) {
+        hilog.info(DOMAIN, 'testTag', 'App is already up to date.');
+        return;
+      }
+      const resultCode = await updateManager.showUpdateDialog(this.context);
+      hilog.info(DOMAIN, 'testTag', 'Show update dialog result: %{public}d', resultCode);
+    } catch (error) {
+      hilog.warn(DOMAIN, 'testTag', 'Failed to check app update. Cause: %{public}s', JSON.stringify(error));
+    }
   }
 
   onBackground(): void {
