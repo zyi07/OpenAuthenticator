@@ -16,6 +16,14 @@
       "light": "logos/bybit-light.svg",
       "dark": "logos/bybit-dark.svg",
       "revision": "1"
+    },
+    {
+      "slug": "kimi",
+      "aliases": ["kimi", "moonshot", "moonshot ai", "月之暗面", "kimi.moonshot.cn"],
+      "brand": "logos/kimi.svg",
+      "light": "logos/kimi-light.svg",
+      "dark": "logos/kimi-dark.svg",
+      "revision": "1"
     }
   ]
 }
