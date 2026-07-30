@@ -348,7 +348,7 @@ const WATCH_TOKEN_CARD_HEIGHT: number = 108;
 const WATCH_TOKEN_CODE_SIZE: number = 28;
 const WATCH_PAGE_SWIPE_DISTANCE: number = 64;
 const WATCH_FEATURE_TOP_PADDING: number = 12;
-const WATCH_FEATURE_CARD_HEIGHT: number = 92;
+const WATCH_FEATURE_CARD_HEIGHT: number = 108;
 const WATCH_LAN_QR_FRAME_SIZE: number = 120;
 const WATCH_LAN_QR_SIZE: number = 112;
 const WATCH_TOKEN_FOCUS_KEY: string = 'watch-token-scroll';
@@ -2169,7 +2169,7 @@ struct Index {
             .fontSize(11)
             .fontColor(this.secondaryTextColor())
             .lineHeight(14)
-            .maxLines(2)
+            .maxLines(3)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
