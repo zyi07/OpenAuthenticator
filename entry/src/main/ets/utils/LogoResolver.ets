@@ -29,6 +29,7 @@ const MAINTAINED_LOGO_MANIFEST_URL = `${MAINTAINED_LOGO_RAW_BASE}manifest.json?r
 const MAINTAINED_LOGO_MANIFEST_CACHE = 'issuer_logo_manifest.json';
 const MAINTAINED_LOGO_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAINTAINED_LOGO_MAX_TEXT_LENGTH = 1024 * 1024;
+const MAINTAINED_LOGO_CACHE_FORMAT_VERSION = '2';
 
 const LOGO_ALIASES: LogoAlias[] = [
   { slug: 'openai', keys: ['openai', 'chatgpt', 'codex'] },
@@ -58,6 +59,7 @@ const LOGO_ALIASES: LogoAlias[] = [
 export class LogoResolver {
   private static maintainedLogos: MaintainedLogoEntry[] = [];
   private static maintainedLogosLoadedAt: number = 0;
+  private static svgWriteSerial: number = 0;
 
   static async resolve(context: common.UIAbilityContext, issuer: string, name: string): Promise<LogoResolveResult | null> {
     const candidates = LogoResolver.logoCandidates(issuer, name);
@@ -297,17 +299,21 @@ export class LogoResolver {
     entry: MaintainedLogoEntry
   ): Promise<LogoResolveResult | null> {
     try {
+      const cacheSlug = LogoResolver.maintainedCacheSlug(entry);
+      const cachedResult = LogoResolver.cachedMaintainedLogo(context, entry, cacheSlug);
+      if (cachedResult !== null) {
+        return cachedResult;
+      }
       const brandSvg = await LogoResolver.fetchMaintainedSvg(entry.brand);
       if (brandSvg.length === 0) {
         return null;
       }
       const lightSvg = entry.light.length > 0 ? await LogoResolver.fetchMaintainedSvg(entry.light) : '';
       const darkSvg = entry.dark.length > 0 ? await LogoResolver.fetchMaintainedSvg(entry.dark) : '';
-      const cacheSlug = `maintained_${LogoResolver.safeFilePart(entry.slug)}_${entry.revision}`;
-      const logoUri = LogoResolver.writeSvg(context, cacheSlug, 'brand', brandSvg);
-      const logoLightUri = LogoResolver.writeSvg(context, cacheSlug, 'light',
+      const logoUri = LogoResolver.writeSvgAtomicallyIfMissing(context, cacheSlug, 'brand', brandSvg);
+      const logoLightUri = LogoResolver.writeSvgAtomicallyIfMissing(context, cacheSlug, 'light',
         lightSvg.length > 0 ? lightSvg : brandSvg);
-      const logoDarkUri = LogoResolver.writeSvg(context, cacheSlug, 'dark',
+      const logoDarkUri = LogoResolver.writeSvgAtomicallyIfMissing(context, cacheSlug, 'dark',
         darkSvg.length > 0 ? darkSvg : brandSvg);
       return {
         logoUri: logoUri,
@@ -321,13 +327,56 @@ export class LogoResolver {
     }
   }
 
+  private static maintainedCacheSlug(entry: MaintainedLogoEntry): string {
+    return `maintained_${LogoResolver.safeFilePart(entry.slug)}_${entry.revision}_v` +
+      MAINTAINED_LOGO_CACHE_FORMAT_VERSION;
+  }
+
+  private static cachedMaintainedLogo(
+    context: common.UIAbilityContext,
+    entry: MaintainedLogoEntry,
+    cacheSlug: string
+  ): LogoResolveResult | null {
+    const brandPath = LogoResolver.svgPath(context, cacheSlug, 'brand');
+    const lightPath = LogoResolver.svgPath(context, cacheSlug, 'light');
+    const darkPath = LogoResolver.svgPath(context, cacheSlug, 'dark');
+    if (!LogoResolver.isUsableSvgFile(brandPath) ||
+      !LogoResolver.isUsableSvgFile(lightPath) ||
+      !LogoResolver.isUsableSvgFile(darkPath)) {
+      return null;
+    }
+    return {
+      logoUri: fileUri.getUriFromPath(brandPath),
+      logoLightUri: fileUri.getUriFromPath(lightPath),
+      logoDarkUri: fileUri.getUriFromPath(darkPath),
+      logoSource: `gitcode-logo:${entry.slug}:${entry.revision}`
+    };
+  }
+
   private static async fetchMaintainedSvg(path: string): Promise<string> {
     const content = await LogoResolver.fetchText(`${MAINTAINED_LOGO_RAW_BASE}${path}?ref=main`);
     if (content.length === 0 || content.length > MAINTAINED_LOGO_MAX_TEXT_LENGTH) {
       return '';
     }
-    const svg = content.trim();
-    return svg.indexOf('<svg') >= 0 ? svg : '';
+    return LogoResolver.normalizeMaintainedSvg(content);
+  }
+
+  private static normalizeMaintainedSvg(content: string): string {
+    const svgStart = content.indexOf('<svg');
+    const svgEnd = content.lastIndexOf('</svg>');
+    if (svgStart < 0 || svgEnd < svgStart) {
+      return '';
+    }
+    const svg = content.substring(svgStart, svgEnd + 6);
+    const rootEnd = svg.indexOf('>');
+    if (rootEnd < 0) {
+      return '';
+    }
+    let root = svg.substring(0, rootEnd + 1);
+    root = root.replace(new RegExp('\\s(?:t|class|p-id|xmlns:xlink|width|height)="[^"]*"', 'g'), '');
+    const body = svg.substring(rootEnd + 1)
+      .replace(new RegExp('\\sp-id="[^"]*"', 'g'), '');
+    return root + body;
   }
 
   private static async fetchText(url: string): Promise<string> {
@@ -358,7 +407,7 @@ export class LogoResolver {
   }
 
   private static writeSvg(context: common.UIAbilityContext, slug: string, mode: string, svg: string): string {
-    const path = `${context.filesDir}/issuer_logo_${slug}_${mode}.svg`;
+    const path = LogoResolver.svgPath(context, slug, mode);
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       fileIo.writeSync(file.fd, svg);
@@ -366,5 +415,50 @@ export class LogoResolver {
       fileIo.closeSync(file);
     }
     return fileUri.getUriFromPath(path);
+  }
+
+  private static writeSvgAtomicallyIfMissing(
+    context: common.UIAbilityContext,
+    slug: string,
+    mode: string,
+    svg: string
+  ): string {
+    const path = LogoResolver.svgPath(context, slug, mode);
+    if (LogoResolver.isUsableSvgFile(path)) {
+      return fileUri.getUriFromPath(path);
+    }
+    LogoResolver.svgWriteSerial += 1;
+    const temporaryPath = path + '.tmp_' + Date.now().toString() + '_' + LogoResolver.svgWriteSerial.toString();
+    const file = fileIo.openSync(temporaryPath,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    try {
+      fileIo.writeSync(file.fd, svg);
+    } finally {
+      fileIo.closeSync(file);
+    }
+    try {
+      fileIo.renameSync(temporaryPath, path);
+    } catch (error) {
+      if (!LogoResolver.isUsableSvgFile(path)) {
+        throw new Error(`Failed to publish issuer logo cache: ${JSON.stringify(error)}`);
+      }
+    } finally {
+      if (fileIo.accessSync(temporaryPath)) {
+        fileIo.unlinkSync(temporaryPath);
+      }
+    }
+    return fileUri.getUriFromPath(path);
+  }
+
+  private static svgPath(context: common.UIAbilityContext, slug: string, mode: string): string {
+    return `${context.filesDir}/issuer_logo_${slug}_${mode}.svg`;
+  }
+
+  private static isUsableSvgFile(path: string): boolean {
+    try {
+      return fileIo.accessSync(path) && fileIo.readTextSync(path).indexOf('<svg') >= 0;
+    } catch (error) {
+      return false;
+    }
   }
 }

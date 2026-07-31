@@ -316,6 +316,7 @@ const STEAM_ACCESS_HINT_HEIGHT: number = 58;
 const DONATION_QR_IMAGE_MAX_WIDTH: number = 420;
 const DONATION_QR_IMAGE_RATIO: number = 1653 / 1397;
 const DONATION_QR_CARD_FIXED_HEIGHT: number = 164;
+const DONATION_SUPPORTER_AVATAR_SIZE: number = 72;
 const CLOUD_STATUS_ROW_HEIGHT: number = 76;
 const ME_AVATAR_SIZE: number = 48;
 const ME_TEXT_SIZE: number = 18;
@@ -346,9 +347,17 @@ const WATCH_LAYOUT_MAX_HEIGHT: number = 360;
 const WATCH_HORIZONTAL_PADDING: number = 18;
 const WATCH_TOKEN_CARD_HEIGHT: number = 108;
 const WATCH_TOKEN_CODE_SIZE: number = 28;
+const WATCH_EMPTY_CARD_HEIGHT: number = 92;
+const WATCH_EMPTY_TITLE_SIZE: number = 14;
+const WATCH_EMPTY_BODY_SIZE: number = 11;
 const WATCH_PAGE_SWIPE_DISTANCE: number = 64;
 const WATCH_FEATURE_TOP_PADDING: number = 12;
-const WATCH_FEATURE_CARD_HEIGHT: number = 108;
+const WATCH_FEATURE_CARD_HEIGHT: number = 152;
+const WATCH_FEATURE_ICON_SIZE: number = 36;
+const WATCH_FEATURE_BODY_MAX_LINES: number = 5;
+const WATCH_SYNC_TITLE_SIZE: number = 18;
+const WATCH_SYNC_PATH_SIZE: number = 11;
+const WATCH_SYNC_PATH_MAX_LINES: number = 2;
 const WATCH_LAN_QR_FRAME_SIZE: number = 120;
 const WATCH_LAN_QR_SIZE: number = 112;
 const WATCH_TOKEN_FOCUS_KEY: string = 'watch-token-scroll';
@@ -547,6 +556,7 @@ interface ImportFileContent {
 struct Index {
   @State private pageMode: PageMode = PageMode.Home;
   @State private tokens: TokenRecord[] = [];
+  @State private tokenDataLoaded: boolean = false;
   @State private searchText: string = '';
   @State private nameInput: string = '';
   @State private remarkInput: string = '';
@@ -632,7 +642,6 @@ struct Index {
     this.refreshSystemLanguage();
     this.refreshResponsiveWaterFlowSections();
     this.initializeAppData();
-    this.loadCardTokenIds();
     this.timerId = setInterval(() => {
       if (!this.isHomeListScrolling &&
         (this.selectedHomeTab === HomeTab.Token || this.isWatchLayout())) {
@@ -794,9 +803,14 @@ struct Index {
   private thirdPartyWaterFlowSections: WaterFlowSections = new WaterFlowSections();
 
   private async initializeAppData(): Promise<void> {
-    await this.loadAppVersion();
-    await this.loadTokens();
-    await this.loadSettings();
+    try {
+      await this.loadTokens();
+      await this.loadSettings();
+      await this.loadCardTokenIds();
+      await this.loadAppVersion();
+    } catch (error) {
+      console.error(`Failed to initialize startup data: ${JSON.stringify(error)}`);
+    }
   }
 
   private async loadAppVersion(): Promise<void> {
@@ -840,7 +854,11 @@ struct Index {
     this.antiPeepEnabled = settings.antiPeep;
     this.appLockEnabled = settings.appLock;
     this.showNextToken = settings.showNextToken;
+    const logoColorModeChanged = this.issuerLogoColorMode !== settings.issuerLogoColorMode;
     this.issuerLogoColorMode = settings.issuerLogoColorMode;
+    if (logoColorModeChanged && this.tokens.length > 0) {
+      this.refreshTokenLogoDisplay();
+    }
     this.tokenLayoutMode = settings.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE ? TOKEN_LAYOUT_DOUBLE : TOKEN_LAYOUT_SINGLE;
     this.isHuaweiLoggedIn = settings.huaweiLoggedIn;
     this.huaweiNickname = settings.huaweiNickname;
@@ -852,10 +870,16 @@ struct Index {
     this.materialLevelInput = settings.materialLevel;
     this.globalImmersionEnabled = settings.globalImmersionEnabled;
     let loadedBackgroundUri: string = settings.customBackgroundUri;
+    let loadedBackgroundSelection: string = settings.backgroundSelection;
     let backgroundCacheMigrated = false;
+    if (settings.backgroundSelection === 'custom' && loadedBackgroundUri.length === 0) {
+      loadedBackgroundSelection = 'none';
+    }
     if (settings.backgroundSelection === 'custom' && loadedBackgroundUri.length > 0) {
       const backgroundPrepared = await this.prepareCustomBackground(loadedBackgroundUri);
-      if (backgroundPrepared && !this.isOptimizedCustomBackgroundUri(loadedBackgroundUri)) {
+      if (!backgroundPrepared) {
+        loadedBackgroundSelection = 'none';
+      } else if (!this.isOptimizedCustomBackgroundUri(loadedBackgroundUri)) {
         const optimizedUri = await this.persistPreparedCustomBackground(context);
         if (optimizedUri.length > 0) {
           loadedBackgroundUri = optimizedUri;
@@ -865,7 +889,7 @@ struct Index {
       }
     }
     this.customBackgroundUri = loadedBackgroundUri;
-    this.backgroundSelection = settings.backgroundSelection;
+    this.backgroundSelection = loadedBackgroundSelection;
     this.backgroundBlurPercent = this.clamp(settings.backgroundBlurPercent, 0, 100);
     this.backgroundBrightnessPercent = this.clamp(settings.backgroundBrightnessPercent, 0, 100);
     this.globalBackgroundEnabled = settings.globalBackgroundEnabled;
@@ -2061,12 +2085,14 @@ struct Index {
   private WatchTokenPageContent() {
     Scroll(this.watchScroller) {
       Column({ space: 10 }) {
-        if (this.watchVisibleTokens().length === 0) {
-          this.WatchEmptyCard()
-        } else {
-          ForEach(this.watchVisibleTokens(), (token: TokenRecord) => {
-            this.WatchTokenCard(token)
-          }, (token: TokenRecord) => token.id)
+        if (this.tokenDataLoaded) {
+          if (this.watchVisibleTokens().length === 0) {
+            this.WatchEmptyCard()
+          } else {
+            ForEach(this.watchVisibleTokens(), (token: TokenRecord) => {
+              this.WatchTokenCard(token)
+            }, (token: TokenRecord) => token.id)
+          }
         }
       }
       .width('100%')
@@ -2146,45 +2172,47 @@ struct Index {
       if (this.shouldUseCardMaterial()) {
         this.ImmersionCardSurface(WATCH_FEATURE_CARD_HEIGHT, 18)
       }
-      Row({ space: 12 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
-            .fontSize(22)
-            .fontColor([this.accentColor()])
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-        }
-        .width(42)
-        .height(42)
-        .borderRadius(21)
-        .backgroundColor(this.accentTintColor())
+      Column({ space: 8 }) {
+        Row({ space: 10 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
+              .fontSize(20)
+              .fontColor([this.accentColor()])
+              .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          }
+          .width(WATCH_FEATURE_ICON_SIZE)
+          .height(WATCH_FEATURE_ICON_SIZE)
+          .borderRadius(WATCH_FEATURE_ICON_SIZE / 2)
+          .backgroundColor(this.accentTintColor())
 
-        Column({ space: 4 }) {
-          Text(this.t('手机同步'))
+          Text(this.t('手机扫码同步'))
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
-            .width('100%')
-
-          Text(this.t('手机和手表连接同一Wi-Fi后，可将手机令牌同步到手表'))
-            .fontSize(11)
-            .fontColor(this.secondaryTextColor())
-            .lineHeight(14)
-            .maxLines(3)
+            .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
 
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(16)
-          .fontColor([this.secondaryTextColor()])
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(16)
+            .fontColor([this.secondaryTextColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(this.t('手机端下载「开源验证器」，连接相同WIFI，「我的>手表端数据同步>扫码同步到手表」选择令牌并同步到手表'))
+          .fontSize(11)
+          .fontColor(this.secondaryTextColor())
+          .lineHeight(14)
+          .maxLines(WATCH_FEATURE_BODY_MAX_LINES)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
       }
       .width('100%')
       .height(WATCH_FEATURE_CARD_HEIGHT)
-      .padding({ left: 14, right: 14 })
-      .alignItems(VerticalAlign.Center)
+      .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .justifyContent(FlexAlign.Center)
       .zIndex(2)
     }
     .width('100%')
@@ -2257,19 +2285,24 @@ struct Index {
       }
 
       Column({ space: 2 }) {
-        Text(this.t('手机同步'))
-          .fontSize(20)
+        Text(this.t('打开手机端'))
+          .fontSize(WATCH_SYNC_TITLE_SIZE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .textAlign(TextAlign.Center)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
 
         if (this.watchLanReceiving && this.watchLanQrText.length > 0) {
-          Text(this.t('请在手机上扫描此二维码'))
-            .fontSize(12)
+          Text(this.t('「我的>手表端数据同步>扫码同步到手表」'))
+            .fontSize(WATCH_SYNC_PATH_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
             .textAlign(TextAlign.Center)
+            .lineHeight(14)
+            .maxLines(WATCH_SYNC_PATH_MAX_LINES)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
       }
@@ -2334,22 +2367,34 @@ struct Index {
   private WatchEmptyCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.shouldUseCardMaterial()) {
-        this.ImmersionCardSurface(62, 18)
+        this.ImmersionCardSurface(WATCH_EMPTY_CARD_HEIGHT, 18)
       }
-      Column({ space: 8 }) {
-        Text(this.t('暂无令牌，请先添加令牌'))
-          .fontSize(13)
+      Column({ space: 6 }) {
+        Text(this.t('暂无令牌'))
+          .fontSize(WATCH_EMPTY_TITLE_SIZE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+          .width('100%')
+
+        Text(this.t('左滑进行手机端令牌同步'))
+          .fontSize(WATCH_EMPTY_BODY_SIZE)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
+          .lineHeight(15)
+          .maxLines(2)
           .width('100%')
+
       }
       .width('100%')
-      .height(62)
-      .padding({ top: 18, bottom: 18, left: 12, right: 12 })
+      .height(WATCH_EMPTY_CARD_HEIGHT)
+      .padding({ top: 14, bottom: 14, left: 16, right: 16 })
+      .justifyContent(FlexAlign.Center)
       .zIndex(2)
     }
     .width('100%')
-    .height(62)
+    .height(WATCH_EMPTY_CARD_HEIGHT)
     .borderRadius(18)
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
@@ -2358,6 +2403,9 @@ struct Index {
     .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
     .onTouch((event: TouchEvent) => {
       this.handleAppCardTouch('watch-empty', event.type);
+    })
+    .onClick(() => {
+      this.showWatchHomePage(WatchHomePage.Features);
     })
   }
 
@@ -2587,30 +2635,33 @@ struct Index {
     Stack({ alignContent: Alignment.Top }) {
       List({ scroller: this.homeScroller }) {
 
-      if (this.filteredTokens().length === 0) {
-        ListItem() {
-          this.EmptyTokenState()
-        }
-        .width('100%')
-        .padding({ bottom: PAGE_CARD_GAP })
-        .clip(false)
-      } else {
-        if (this.canMoveTokenList()) {
-          this.MovableTokenListForEach()
+      if (this.tokenDataLoaded) {
+        if (this.filteredTokens().length === 0) {
+          ListItem() {
+            this.EmptyTokenState()
+          }
+          .width('100%')
+          .padding({ bottom: PAGE_CARD_GAP })
+          .clip(false)
         } else {
-          this.TokenListForEach()
-        }
+          if (this.canMoveTokenList()) {
+            this.MovableTokenListForEach()
+          } else {
+            this.TokenListForEach()
+          }
 
-        ListItemGroup({
-          footer: this.TokenListFooter,
-          space: 0
-        }) {
+          ListItemGroup({
+            footer: this.TokenListFooter,
+            space: 0
+          }) {
+          }
         }
       }
       }
       .width('100%')
       .height('100%')
-      .lanes(this.filteredTokens().length === 0 ? 1 : this.tokenListLaneCount(), PAGE_CARD_GAP)
+      .lanes(!this.tokenDataLoaded || this.filteredTokens().length === 0 ? 1 : this.tokenListLaneCount(),
+        PAGE_CARD_GAP)
       .padding({
         left: HOME_HORIZONTAL_PADDING,
         right: HOME_HORIZONTAL_PADDING,
@@ -4371,6 +4422,10 @@ struct Index {
         this.DonationBenefitsCard()
       }
       .width('100%')
+      FlowItem() {
+        this.DonationSupportersCard()
+      }
+      .width('100%')
     }
     .width('100%')
     .height('100%')
@@ -4533,6 +4588,78 @@ struct Index {
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.updateMeasuredCardHeight('donation-benefits', newValue);
     })
+  }
+
+  @Builder
+  private DonationSupportersCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('donation-supporters', ME_CARD_RADIUS)
+      Column({ space: 18 }) {
+        Column({ space: 4 }) {
+          Text(this.t('特别感谢'))
+            .width('100%')
+            .fontSize(17)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+            .textAlign(TextAlign.Center)
+
+          Text(this.t('感谢两位朋友对开源验证器的支持，每一份鼓励都让项目走得更远。'))
+            .width('100%')
+            .fontSize(14)
+            .lineHeight(22)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+        }
+
+        Row({ space: 16 }) {
+          this.DonationSupporterItem($rawfile('donor_zl.jpg'), 'Z*L')
+          this.DonationSupporterItem($rawfile('donor_hua.jpg'), '*华')
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.SpaceEvenly)
+      }
+      .width('100%')
+      .padding({ left: 24, right: 24, top: 24, bottom: 24 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('donation-supporters'), y: this.appCardScale('donation-supporters') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('donation-supporters', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('donation-supporters', newValue);
+    })
+  }
+
+  @Builder
+  private DonationSupporterItem(avatar: Resource, nickname: string) {
+    Column({ space: 8 }) {
+      Image(avatar)
+        .width(DONATION_SUPPORTER_AVATAR_SIZE)
+        .height(DONATION_SUPPORTER_AVATAR_SIZE)
+        .borderRadius(18)
+        .objectFit(ImageFit.Cover)
+        .border({ width: 1, color: this.immersionBorderColor() })
+
+      Text(nickname)
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Text(this.t('感谢支持'))
+        .fontSize(12)
+        .fontColor(this.accentColor())
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
@@ -7997,6 +8124,7 @@ struct Index {
       Image(this.isDarkTheme() ? $r('app.media.logo_openai_dark') : $r('app.media.logo_openai_light'))
         .width(size)
         .height(size)
+        .syncLoad(true)
         .borderRadius(size / 2)
         .objectFit(ImageFit.Contain)
     } else if (allowLocalLogo && this.localIssuerLogoKey(name, issuer) === 'microsoft') {
@@ -8004,16 +8132,19 @@ struct Index {
         Image($r('app.media.logo_microsoft_brand'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       } else if (this.isDarkTheme()) {
         Image($r('app.media.logo_microsoft_dark'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       } else {
         Image($r('app.media.logo_microsoft_light'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       }
     } else if (allowLocalLogo && this.localIssuerLogoKey(name, issuer) === 'gitcode') {
@@ -8021,22 +8152,26 @@ struct Index {
         Image($r('app.media.logo_gitcode_brand'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       } else if (this.isDarkTheme()) {
         Image($r('app.media.logo_gitcode_dark'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       } else {
         Image($r('app.media.logo_gitcode_light'))
           .width(size)
           .height(size)
+          .syncLoad(true)
           .objectFit(ImageFit.Contain)
       }
     } else if (logoUri.length > 0) {
       Image(logoUri)
         .width(size)
         .height(size)
+        .syncLoad(true)
         .borderRadius(size / 2)
         .objectFit(allowLocalLogo ? ImageFit.Contain : ImageFit.Cover)
         .clip(true)
@@ -14204,6 +14339,8 @@ struct Index {
       this.hydrateMissingTokenLogos();
     } catch (error) {
       console.error(`Failed to load tokens: ${JSON.stringify(error)}`);
+    } finally {
+      this.tokenDataLoaded = true;
     }
   }
 
