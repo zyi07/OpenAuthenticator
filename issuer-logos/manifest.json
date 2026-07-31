@@ -24,6 +24,12 @@
       "light": "logos/kimi-light.svg",
       "dark": "logos/kimi-dark.svg",
       "revision": "1"
+    },
+    {
+      "slug": "builddreamssuth",
+      "aliases": ["BuildDreams Auth", "builddreams", "buildreams auth"],
+      "brand": "logos/builddreamsauth.svg",
+      "revision": "1"
     }
   ]
 }
