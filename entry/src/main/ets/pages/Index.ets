@@ -2081,7 +2081,7 @@ struct Index {
       .layoutWeight(1)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
-      .key(WATCH_TOKEN_FOCUS_KEY)
+      .id(WATCH_TOKEN_FOCUS_KEY)
       .focusable(true)
       .focusOnTouch(true)
       .defaultFocus(true)
@@ -2109,7 +2109,7 @@ struct Index {
 
         this.WatchFeatureActionCard()
 
-        Text(this.t('左滑返回令牌'))
+        Text(this.t('右滑返回令牌'))
           .fontSize(11)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -2128,7 +2128,7 @@ struct Index {
     .height('100%')
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
-    .key(WATCH_FEATURE_FOCUS_KEY)
+    .id(WATCH_FEATURE_FOCUS_KEY)
     .focusable(true)
     .focusOnTouch(true)
     .defaultFocus(true)
@@ -2301,7 +2301,7 @@ struct Index {
             .width('100%')
         }
 
-        Text(this.t('左滑退出'))
+        Text(this.t('右滑退出'))
           .fontSize(11)
           .fontColor(this.secondaryTextColor())
           .textAlign(TextAlign.Center)
@@ -2319,7 +2319,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .key(WATCH_LAN_SYNC_FOCUS_KEY)
+    .id(WATCH_LAN_SYNC_FOCUS_KEY)
     .focusable(true)
     .focusOnTouch(true)
     .gesture(PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
@@ -10457,7 +10457,9 @@ struct Index {
           return await this.applyWearSyncPayload(records);
         },
         (state: LanWatchReceiverState): void => {
-          this.updateLanWatchReceiverState(state);
+          if (this.lanWatchReceiver === receiver) {
+            this.updateLanWatchReceiverState(state);
+          }
         }
       );
       if (this.lanWatchReceiver !== receiver) {
@@ -10484,6 +10486,9 @@ struct Index {
     this.lanWatchReceiver = undefined;
     if (receiver) {
       await receiver.stop();
+    }
+    if (this.lanWatchReceiver !== undefined) {
+      return;
     }
     this.watchLanReceiving = false;
     this.watchLanQrText = '';
