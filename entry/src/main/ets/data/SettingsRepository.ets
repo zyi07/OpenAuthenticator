@@ -3,6 +3,7 @@ import { preferences } from '@kit.ArkData';
 
 const SETTINGS_NAME = 'tool_2fa_settings';
 const BACKGROUND_SETTINGS_VERSION = 2;
+const WATCH_PRIVACY_ACCEPTED_KEY = 'watchPrivacyAccepted';
 
 export interface Settings {
   cloudBackup: boolean;
@@ -89,6 +90,23 @@ async function getPrefs(context: common.UIAbilityContext): Promise<preferences.P
 }
 
 export class SettingsRepository {
+  static async loadWatchPrivacyAccepted(context: common.UIAbilityContext): Promise<boolean> {
+    try {
+      const store = await getPrefs(context);
+      const value = store.getSync(WATCH_PRIVACY_ACCEPTED_KEY, false);
+      return typeof value === 'boolean' ? value : false;
+    } catch (error) {
+      console.error(`Failed to load watch privacy acceptance: ${JSON.stringify(error)}`);
+      return false;
+    }
+  }
+
+  static async saveWatchPrivacyAccepted(context: common.UIAbilityContext): Promise<void> {
+    const store = await getPrefs(context);
+    await store.put(WATCH_PRIVACY_ACCEPTED_KEY, true);
+    await store.flush();
+  }
+
   static async load(context: common.UIAbilityContext): Promise<Settings> {
     try {
       while (settingsSavePromise !== undefined) {

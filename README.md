@@ -5,8 +5,8 @@
   <p>
     <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.0(23)-111111">
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
-    <img alt="Version" src="https://img.shields.io/badge/Version-1.4.3-72A28B">
-    <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Tablet%20%7C%202in1-6F98AE">
+    <img alt="Version" src="https://img.shields.io/badge/Version-1.4.4-72A28B">
+    <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Watch%20%7C%20Tablet%20%7C%202in1-6F98AE">
     <img alt="License" src="https://img.shields.io/badge/License-MIT-4C8BF5">
   </p>
 </div>
@@ -19,17 +19,17 @@ OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模�
 
 ## 下载与侧载
 
-- 当前版本：`1.4.3`（`versionCode 1000043`）
+- 当前版本：`1.4.4`（`versionCode 1000047`）
 - 系统要求：HarmonyOS `6.1.0(23)` 或更高版本
-- 支持设备：手机、平板与 2in1
-- 安装包：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取 `OpenAuthenticator-v1.4.3.hap`
+- 支持设备：手机、手表、平板与 2in1
+- 安装包：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取 `OpenAuthenticator-v1.4.4.hap`
 - 版本说明：[CHANGELOG.md](CHANGELOG.md)
 
 安装前请在设备上开启开发者模式和 USB 调试，在电脑安装并连接 HDC 后执行：
 
 ```bash
 hdc list targets
-hdc app install -r OpenAuthenticator-v1.4.3.hap
+hdc app install -r OpenAuthenticator-v1.4.4.hap
 ```
 
 看到 `successfully` 后即可从桌面启动“开源验证器”。安装包使用 HarmonyOS release / AppGallery 分发证书签名；系统是否允许直接从文件管理器打开 HAP 安装取决于设备版本和安全策略，遇到限制时请使用 HDC。升级安装会保留应用数据，但仍建议先在应用内导出备份。请只从本仓库的 [Releases](https://gitcode.com/mroble/Authenticator/releases) 页面下载安装包，并核对 SHA-256。
@@ -105,11 +105,11 @@ hdc app install -r OpenAuthenticator-v1.4.3.hap
 
 局域网扫码同步不依赖 Wear Engine、AppGallery Connect Client ID 或两端签名一致，但手机与手表都需要安装包含此功能的 OpenAuthenticator。
 
-1. 在手表端打开 OpenAuthenticator，令牌页右侧是“功能”页；向右滑进入后，点击“手机同步”自动生成配对二维码。
+1. 在手表端打开 OpenAuthenticator，在令牌页向左滑进入“功能”页，点击“手机扫码同步”自动生成配对二维码。
 2. 在手机端进入“我的 > 手表端数据同步”，选择令牌后点击“扫码同步到手表”。
 3. 扫描手表上的二维码，等待两端显示同步成功。
 
-手表启动时默认显示左侧令牌列表；功能页向左滑返回令牌，手机同步页向左滑会关闭当前配对会话并返回左侧功能页。在令牌首页继续向左滑会退出应用。
+手表启动时默认显示令牌列表；功能页向右滑返回令牌，手机同步页向右滑会关闭当前配对会话并返回功能页。在令牌页向右滑会退出应用。令牌较多时可旋转表冠滚动浏览。
 
 两端必须处于可互相访问的同一 Wi-Fi；开启 AP 隔离的访客网络无法使用。配对会话两分钟后失效且成功后立即关闭。二维码包含本次会话的一次性 256 位密钥，请勿分享截图。
 
@@ -163,7 +163,7 @@ entry/src/main/ets/
 - HarmonyOS SDK `6.1.0(23)` release API
 - ArkTS Stage 模型
 - Bundle：`com.example.tool_2fa`
-- Version：`1.4.3`（`versionCode 1000043`）
+- Version：`1.4.4`（`versionCode 1000047`）
 - 设备类型：phone、tablet、2in1
 
 DevEco Studio 中可直接构建，也可使用项目约定命令：

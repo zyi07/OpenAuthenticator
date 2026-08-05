@@ -154,10 +154,23 @@ const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
 const CAMLINK_URL: string =
   'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
 const QQ_GROUP_NUMBER: string = '1061983927';
-const APP_VERSION_FALLBACK: string = 'V1.4.3';
-const APP_VERSION_CODE_FALLBACK: string = '1000043';
-const UPDATE_NOTICE_VERSION: string = 'V1.4.3';
+const APP_VERSION_FALLBACK: string = 'V1.4.4';
+const APP_VERSION_CODE_FALLBACK: string = '1000045';
+const UPDATE_NOTICE_VERSION: string = 'V1.4.4';
 const UPDATE_LOGS: UpdateLogEntry[] = [
+  {
+    version: '1.4.4',
+    date: '2026.07.31',
+    summary: '手表端全量功能正式上线',
+    items: [
+      '手表端现已支持独立查看动态令牌、倒计时与发行方信息，并可使用表冠滚动令牌列表。',
+      '在手表令牌页向左滑进入“功能”页，点击“手机扫码同步”即可生成配对二维码。',
+      '在手机端进入“我的 → 手表端数据同步”，选择令牌后点击“扫码同步到手表”。',
+      '手机与手表连接同一 Wi-Fi 后，扫描手表配对码即可完成令牌同步。',
+      '功能页和同步页向右滑返回，令牌页向右滑退出手表应用；配对码两分钟后自动失效。',
+      '同步数据使用 AES-256-GCM 加密传输，仅包含生成验证码所需字段，不传输 Steam 登录凭证。'
+    ]
+  },
   {
     version: '1.4.3',
     date: '2026.07.30',
@@ -292,11 +305,12 @@ const CARD_TOKEN_LIMIT: number = 8;
 const TOKEN_CARD_HEIGHT: number = 75;
 const TOKEN_CARD_RADIUS: number = 15;
 const TOKEN_CARD_PADDING: number = 12;
+const TOKEN_COUNTDOWN_EDGE_PADDING: number = 8;
 const TOKEN_LAYOUT_TRANSITION_DURATION: number = 420;
 const TOKEN_NAME_TEXT_SIZE: number = 14;
 const TOKEN_CODE_TEXT_SIZE: number = 24;
 const TOKEN_TIME_TEXT_SIZE: number = 14;
-const TOKEN_NEXT_CODE_TEXT_SIZE: number = 24;
+const TOKEN_NEXT_CODE_TEXT_SIZE: number = TOKEN_CODE_TEXT_SIZE - 4;
 const TOKEN_DIGIT_HEIGHT_FACTOR: number = 1.35;
 const TOKEN_DIGIT_WIDTH_FACTOR: number = 0.62;
 const TOKEN_STEAM_CHARACTER_WIDTH_FACTOR: number = 0.72;
@@ -360,6 +374,8 @@ const WATCH_SYNC_PATH_SIZE: number = 11;
 const WATCH_SYNC_PATH_MAX_LINES: number = 2;
 const WATCH_LAN_QR_FRAME_SIZE: number = 120;
 const WATCH_LAN_QR_SIZE: number = 112;
+const WATCH_PRIVACY_QR_SIZE: number = 128;
+const WATCH_PRIVACY_BUTTON_HEIGHT: number = 40;
 const WATCH_TOKEN_FOCUS_KEY: string = 'watch-token-scroll';
 const WATCH_FEATURE_FOCUS_KEY: string = 'watch-feature-scroll';
 const WATCH_LAN_SYNC_FOCUS_KEY: string = 'watch-lan-sync-page';
@@ -619,7 +635,7 @@ struct Index {
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
   @State private showUpdateLogSheet: boolean = false;
-  @State private expandedUpdateLogVersion: string = '1.4.3';
+  @State private expandedUpdateLogVersion: string = '1.4.4';
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
@@ -762,6 +778,9 @@ struct Index {
   @State private watchLanExpiresAt: number = 0;
   @State private watchHomePageIndex: WatchHomePage = WatchHomePage.Tokens;
   @State private watchLanSyncPageVisible: boolean = false;
+  @State private watchPrivacyAccepted: boolean = false;
+  @State private watchPrivacyAccepting: boolean = false;
+  @State private watchPrivacyError: string = '';
   @State private steamEnhancedAccess: boolean = false;
   @State private steamGatewayUrl: string = '';
   @State private steamGatewayToken: string = '';
@@ -849,6 +868,7 @@ struct Index {
       return;
     }
     const settings = await SettingsRepository.load(context);
+    this.watchPrivacyAccepted = await SettingsRepository.loadWatchPrivacyAccepted(context);
     this.cloudBackupEnabled = settings.cloudBackup;
     this.smartGripEnabled = settings.smartGrip;
     this.antiPeepEnabled = settings.antiPeep;
@@ -916,6 +936,21 @@ struct Index {
       this.showUpdateNotice = false;
     }
     this.applyColorMode();
+    if (!this.isWatchLayout() || this.watchPrivacyAccepted) {
+      this.startPrivacyGatedServices();
+    }
+    this.settingsLoaded = true;
+    if (migratedExistingUser || backgroundCacheMigrated) {
+      await this.saveSettings();
+      if (migratedExistingUser) {
+        console.info('Skipped onboarding for upgraded user with existing local tokens');
+      }
+    }
+    this.scheduleUpdateNoticePresentation();
+    hilog.info(APPLOCK_DOMAIN, APPLOCK_TAG, 'loadSettings: appLock=%{public}d, isLocked=%{public}d, huaweiLoggedIn=%{public}d', this.appLockEnabled ? 1 : 0, this.isLocked ? 1 : 0, this.isHuaweiLoggedIn ? 1 : 0);
+  }
+
+  private startPrivacyGatedServices(): void {
     if (this.cloudBackupEnabled && this.isHuaweiLoggedIn) {
       this.configureCloudAutoSync(true);
     }
@@ -932,15 +967,6 @@ struct Index {
     if (this.isWatchLayout()) {
       this.registerWearSyncReceivers();
     }
-    this.settingsLoaded = true;
-    if (migratedExistingUser || backgroundCacheMigrated) {
-      await this.saveSettings();
-      if (migratedExistingUser) {
-        console.info('Skipped onboarding for upgraded user with existing local tokens');
-      }
-    }
-    this.scheduleUpdateNoticePresentation();
-    hilog.info(APPLOCK_DOMAIN, APPLOCK_TAG, 'loadSettings: appLock=%{public}d, isLocked=%{public}d, huaweiLoggedIn=%{public}d', this.appLockEnabled ? 1 : 0, this.isLocked ? 1 : 0, this.isHuaweiLoggedIn ? 1 : 0);
   }
 
   private async saveSettings(): Promise<void> {
@@ -1160,7 +1186,11 @@ struct Index {
   private WatchAppRoot() {
     Stack() {
       this.PageBackground()
-      if (this.watchLanSyncPageVisible) {
+      if (!this.settingsLoaded) {
+        this.WatchStartupLoading()
+      } else if (!this.watchPrivacyAccepted || this.watchPrivacyAccepting) {
+        this.WatchPrivacyConsent()
+      } else if (this.watchLanSyncPageVisible) {
         this.WatchLanSyncPageContent()
       } else {
         this.WatchHomePageContent()
@@ -1179,7 +1209,9 @@ struct Index {
     })
     .backgroundColor(this.pageBackgroundColor())
     .onAppear(() => {
-      this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 80);
+      if (this.watchPrivacyAccepted) {
+        this.requestWatchFocus(WATCH_TOKEN_FOCUS_KEY, 80);
+      }
     })
     .onAreaChange((oldValue: Area, newValue: Area) => {
       const nextWidth = this.lengthToNumber(newValue.width, this.pageWidth);
@@ -1191,6 +1223,100 @@ struct Index {
         this.pageHeight = nextHeight;
       }
     })
+  }
+
+  @Builder
+  private WatchStartupLoading() {
+    Column() {
+      LoadingProgress()
+        .width(32)
+        .height(32)
+        .color(this.accentColor())
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.pageBackgroundColor())
+  }
+
+  @Builder
+  private WatchPrivacyConsent() {
+    Scroll() {
+      Column({ space: 10 }) {
+        Text(this.t('隐私保护提示'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+
+        Text(this.t('请使用手机扫描二维码阅读《隐私声明》，同意后方可继续使用。'))
+          .fontSize(12)
+          .lineHeight(17)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+          .maxLines(3)
+          .width('100%')
+
+        Image($rawfile('watch_privacy_qr.png'))
+          .width(WATCH_PRIVACY_QR_SIZE)
+          .height(WATCH_PRIVACY_QR_SIZE)
+          .objectFit(ImageFit.Contain)
+          .borderRadius(8)
+
+        if (this.watchPrivacyError.length > 0) {
+          Text(this.t(this.watchPrivacyError))
+            .fontSize(10)
+            .fontColor(ERROR_RED)
+            .textAlign(TextAlign.Center)
+            .maxLines(2)
+            .width('100%')
+        }
+
+        Row({ space: 10 }) {
+          Button(this.t('不同意'))
+            .height(WATCH_PRIVACY_BUTTON_HEIGHT)
+            .layoutWeight(1)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .backgroundColor(this.isDarkTheme() ? '#2F2F2F' : '#E7E8EA')
+            .borderRadius(WATCH_PRIVACY_BUTTON_HEIGHT / 2)
+            .enabled(!this.watchPrivacyAccepting)
+            .onClick(() => {
+              this.declineWatchPrivacy();
+            })
+
+          Button(this.t(this.watchPrivacyAccepting ? '正在保存' : '同意'))
+            .height(WATCH_PRIVACY_BUTTON_HEIGHT)
+            .layoutWeight(1)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentContrastColor())
+            .backgroundColor(this.accentColor())
+            .borderRadius(WATCH_PRIVACY_BUTTON_HEIGHT / 2)
+            .enabled(!this.watchPrivacyAccepting)
+            .onClick(() => {
+              this.acceptWatchPrivacy();
+            })
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .padding({
+        left: 26,
+        right: 26,
+        top: this.statusBarHeight + 12,
+        bottom: this.naviIndicatorHeight + 16
+      })
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+    .backgroundColor(this.pageBackgroundColor())
   }
 
   @Builder
@@ -3069,21 +3195,21 @@ struct Index {
         Scroll(this.updateNoticeSheetScroller) {
           Column({ space: 12 }) {
             this.UpdateNoticeHero()
-            this.UpdateNoticeItem('1', '账号退出更安全',
-              '华为账号退出使用主题色光感按钮，并在操作前进行二次确认。',
-              '我的 → 华为账号 → 退出')
-            this.UpdateNoticeItem('2', '备份导入更准确',
-              '修复二维码和 JSON 备份重新导入后令牌名称与发行方颠倒的问题。',
-              '我的 → 备份与导入')
-            this.UpdateNoticeItem('3', '远程 Logo 维护',
-              '新增 GitCode 发行方 Logo 维护库，无需重新发布安装包即可补充品牌资源。',
-              '内置 Logo → GitCode → Simple Icons')
-            this.UpdateNoticeItem('4', '品牌显示更统一',
-              '新增 GitCode、Bitget、Bybit、Kimi Logo，并统一 Microsoft 与 GitCode 图标尺寸。',
-              '令牌卡片与新增、编辑页面')
-            this.UpdateNoticeItem('5', '版本信息自动同步',
-              '“关于”页面会直接读取当前安装包的版本名称和版本号。',
-              '我的 → 关于 → 应用版本')
+            this.UpdateNoticeItem('1', '手表查看动态令牌',
+              '手表端可独立显示验证码、倒计时和发行方信息，旋转表冠即可浏览令牌列表。',
+              '手表端 → 令牌列表')
+            this.UpdateNoticeItem('2', '手表生成配对码',
+              '在令牌页向左滑进入功能页，点击“手机扫码同步”生成配对二维码。',
+              '令牌页左滑 → 功能 → 手机扫码同步')
+            this.UpdateNoticeItem('3', '手机选择同步令牌',
+              '在手机端选择要同步的令牌，然后打开扫码同步。',
+              '我的 → 手表端数据同步 → 扫码同步到手表')
+            this.UpdateNoticeItem('4', '扫描并完成同步',
+              '手机与手表连接同一 Wi-Fi，扫描手表配对码，等待两端提示同步成功。',
+              '配对码两分钟内有效')
+            this.UpdateNoticeItem('5', '手表手势与安全',
+              '向右滑可返回或退出；同步内容全程加密，且不包含 Steam 登录凭证。',
+              'AES-256-GCM 加密传输')
           }
           .width('100%')
           .padding({
@@ -3164,12 +3290,12 @@ struct Index {
         .objectFit(ImageFit.Cover)
 
       Column({ space: 4 }) {
-        Text(this.t('账号、备份与品牌体验升级'))
+        Text(this.t('手表端全量功能上线'))
           .fontSize(19)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
 
-        Text(this.t('V1.4.3：账号退出更安全，备份导入更准确，发行方 Logo 可远程维护。'))
+        Text(this.t('V1.4.4：手表可独立查看令牌，并通过手机扫码完成安全同步。'))
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
@@ -4697,7 +4823,7 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28),
       onDisappear: () => {
-        this.expandedUpdateLogVersion = '1.4.3';
+        this.expandedUpdateLogVersion = '1.4.4';
       }
     })
   }
@@ -4814,7 +4940,7 @@ struct Index {
           })
           this.MeCardDivider()
           this.AboutActionRow('更新日志', '', () => {
-            this.expandedUpdateLogVersion = '1.4.3';
+            this.expandedUpdateLogVersion = '1.4.4';
             this.showUpdateLogSheet = true;
           })
           this.MeCardDivider()
@@ -7940,9 +8066,11 @@ struct Index {
   private TokenCodeCharacterAt(token: TokenRecord, nextCode: boolean, index: number, fontSize: number,
     fontColor: ResourceColor, fontWeight: FontWeight) {
     if (this.tokenCodeCharacter(token, nextCode, index) === ' ') {
-      Column()
-        .width(this.tokenDigitSpaceWidth(fontSize))
-        .height(this.tokenDigitHeight(fontSize))
+      if (!this.shouldCompactTokenCode()) {
+        Column()
+          .width(this.tokenDigitSpaceWidth(fontSize))
+          .height(this.tokenDigitHeight(fontSize))
+      }
     } else if (this.isTokenCodeDigit(this.tokenCodeCharacter(token, nextCode, index))) {
       Text(this.tokenCodeCharacter(token, nextCode, index))
         .fontSize(fontSize)
@@ -8012,7 +8140,6 @@ struct Index {
               .fontSize(12)
               .fontColor(this.nexttokenValueColor())
               .fontWeight(FontWeight.Regular)
-              .opacity(0.65)
 
             this.TokenCodeView(token, true, TOKEN_NEXT_CODE_TEXT_SIZE, this.nexttokenValueColor(),
               FontWeight.Medium, 0)
@@ -8029,7 +8156,12 @@ struct Index {
     }
     .width('100%')
     .height(TOKEN_CARD_HEIGHT)
-    .padding(TOKEN_CARD_PADDING)
+    .padding({
+      left: TOKEN_CARD_PADDING,
+      right: TOKEN_COUNTDOWN_EDGE_PADDING,
+      top: TOKEN_CARD_PADDING,
+      bottom: TOKEN_CARD_PADDING
+    })
     .alignItems(VerticalAlign.Center)
     .zIndex(2)
   }
@@ -8752,7 +8884,7 @@ struct Index {
   }
 
   private nexttokenValueColor(): string {
-    return this.isDarkTheme() ? '#747474' : '#747474';
+    return this.isDarkTheme() ? '#B3FFFFFF' : '#B3000000';
   }
 
   private secondaryTextColor(): string {
@@ -9445,6 +9577,13 @@ struct Index {
 
   private tokenDigitSpaceWidth(fontSize: number): number {
     return Math.ceil(fontSize * TOKEN_DIGIT_SPACE_FACTOR);
+  }
+
+  private shouldCompactTokenCode(): boolean {
+    if (this.isWatchLayout()) {
+      return false;
+    }
+    return this.tokenLayoutMode === TOKEN_LAYOUT_DOUBLE || this.showNextToken;
   }
 
   private async copyTokenCode(token: TokenRecord): Promise<void> {
@@ -10502,7 +10641,7 @@ struct Index {
   }
 
   private handleWatchCrown(event: CrownEvent): void {
-    if (event.action !== CrownAction.UPDATE || this.watchLanSyncPageVisible) {
+    if (event.action !== CrownAction.UPDATE || this.watchLanSyncPageVisible || !this.watchPrivacyAccepted) {
       return;
     }
     const scrollDelta = -event.degree * 2;
@@ -10542,6 +10681,37 @@ struct Index {
     if (this.watchLanSyncPageVisible || this.watchHomePageIndex !== WatchHomePage.Tokens) {
       return;
     }
+    await this.terminateWatchApp();
+  }
+
+  private async acceptWatchPrivacy(): Promise<void> {
+    if (this.watchPrivacyAccepting) {
+      return;
+    }
+    const context = this.getAbilityContext();
+    if (!context) {
+      this.watchPrivacyError = '暂时无法保存，请稍后重试';
+      return;
+    }
+    this.watchPrivacyAccepting = true;
+    this.watchPrivacyError = '';
+    try {
+      await SettingsRepository.saveWatchPrivacyAccepted(context);
+      this.watchPrivacyAccepted = true;
+      this.startPrivacyGatedServices();
+    } catch (error) {
+      this.watchPrivacyError = '暂时无法保存，请稍后重试';
+      console.error('Failed to save watch privacy acceptance: ' + JSON.stringify(error));
+    } finally {
+      this.watchPrivacyAccepting = false;
+    }
+  }
+
+  private declineWatchPrivacy(): void {
+    this.terminateWatchApp();
+  }
+
+  private async terminateWatchApp(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
       return;
