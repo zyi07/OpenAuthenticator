@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>形状</title>
+    <g transform="translate(96 0) scale(32)" id="开源验证器" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <path d="M20.6713,12.08 L20.6713,4.29008 L13.2535,0 L0.626953,7.30067 L0.626953,16.922 L5.83571,19.92 L5.83571,27.7099 L13.2535,32 L25.88,24.6993 L25.88,15.078 L20.6713,12.08 Z M14.2074,2.54645 L18.9141,5.25598 L18.9141,11.0639 L14.2074,8.32928 L14.2074,2.54645 Z M12.287,29.4535 L7.58033,26.7315 L7.58033,20.9236 L12.287,23.6582 L12.287,29.4535 Z M13.2535,22.1654 L2.57239,15.9937 L13.2535,9.82203 L23.922,15.9937 L13.2535,22.1654 Z" id="形状" fill="#000000" fill-rule="nonzero"></path>
+    </g>
+</svg>

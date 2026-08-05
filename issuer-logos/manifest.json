@@ -30,6 +30,30 @@
       "aliases": ["BuildDreams Auth", "builddreams", "buildreams auth"],
       "brand": "logos/builddreamsauth.svg",
       "revision": "2"
+    },
+    {
+      "slug": "ticktick",
+      "aliases": ["ticktick", "ticktick.com", "滴答清单", "滴答清單"],
+      "brand": "logos/ticktick.svg",
+      "light": "logos/ticktick-light.svg",
+      "dark": "logos/ticktick-dark.svg",
+      "revision": "1"
+    },
+    {
+      "slug": "fnos",
+      "aliases": ["fnos", "fn os", "飞牛", "飛牛", "飞牛os", "飛牛os"],
+      "brand": "logos/fnos.svg",
+      "light": "logos/fnos-light.svg",
+      "dark": "logos/fnos-dark.svg",
+      "revision": "1"
+    },
+    {
+      "slug": "shapr3d",
+      "aliases": ["shapr3d", "sharp3d", "shapr 3d", "sharp 3d"],
+      "brand": "logos/shapr3d.svg",
+      "light": "logos/shapr3d-light.svg",
+      "dark": "logos/shapr3d-dark.svg",
+      "revision": "1"
     }
   ]
 }
