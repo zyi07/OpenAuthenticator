@@ -54,6 +54,14 @@
       "light": "logos/shapr3d-light.svg",
       "dark": "logos/shapr3d-dark.svg",
       "revision": "1"
+    },
+    {
+      "slug": "pixiv",
+      "aliases": ["pixiv", "pixiv.net", "ピクシブ"],
+      "brand": "logos/pixiv.svg",
+      "light": "logos/pixiv-light.svg",
+      "dark": "logos/pixiv-dark.svg",
+      "revision": "1"
     }
   ]
 }
