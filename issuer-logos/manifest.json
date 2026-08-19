@@ -62,6 +62,14 @@
       "light": "logos/pixiv-light.svg",
       "dark": "logos/pixiv-dark.svg",
       "revision": "1"
+    },
+    {
+      "slug": "nintendo",
+      "aliases": ["nintendo", "任天堂", "nintendo.com"],
+      "brand": "logos/nintendo.svg",
+      "light": "logos/nintendo-light.svg",
+      "dark": "logos/nintendo-dark.svg",
+      "revision": "1"
     }
   ]
 }
