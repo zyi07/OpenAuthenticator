@@ -11,6 +11,8 @@ export interface Settings {
   antiPeep: boolean;
   appLock: boolean;
   showNextToken: boolean;
+  showSteamFeaturePage: boolean;
+  launchHomePage: string;
   issuerLogoColorMode: string;
   tokenLayoutMode: string;
   huaweiLoggedIn: boolean;
@@ -39,6 +41,7 @@ export interface Settings {
   steamEnhancedAccess: boolean;
   steamGatewayUrl: string;
   steamGatewayToken: string;
+  selectedSteamTokenId: string;
 }
 
 const DEFAULTS: Settings = {
@@ -47,6 +50,8 @@ const DEFAULTS: Settings = {
   antiPeep: false,
   appLock: false,
   showNextToken: false,
+  showSteamFeaturePage: true,
+  launchHomePage: '令牌',
   issuerLogoColorMode: '纯色',
   tokenLayoutMode: 'single',
   huaweiLoggedIn: false,
@@ -74,7 +79,8 @@ const DEFAULTS: Settings = {
   watchLastPushTime: 0,
   steamEnhancedAccess: false,
   steamGatewayUrl: '',
-  steamGatewayToken: ''
+  steamGatewayToken: '',
+  selectedSteamTokenId: ''
 };
 
 let prefs: preferences.Preferences | null = null;
@@ -116,6 +122,9 @@ export class SettingsRepository {
       const store = await getPrefs(context);
       const json = store.getSync('settings', '{}');
       const parsed: Record<string, Object> = typeof json === 'string' ? JSON.parse(json) : {};
+      const showSteamFeaturePageValue = parsed['showSteamFeaturePage'];
+      const launchHomePageValue = parsed['launchHomePage'];
+      const selectedSteamTokenIdValue = parsed['selectedSteamTokenId'];
       const globalImmersionValue = store.getSync('globalImmersionEnabled', DEFAULTS.globalImmersionEnabled);
       const backgroundSelectionValue = store.getSync('backgroundSelection', DEFAULTS.backgroundSelection);
       const backgroundSettingsVersionValue = store.getSync('backgroundSettingsVersion', 0);
@@ -131,6 +140,9 @@ export class SettingsRepository {
         antiPeep: parsed['antiPeep'] as boolean ?? DEFAULTS.antiPeep,
         appLock: parsed['appLock'] as boolean ?? DEFAULTS.appLock,
         showNextToken: parsed['showNextToken'] as boolean ?? DEFAULTS.showNextToken,
+        showSteamFeaturePage: typeof showSteamFeaturePageValue === 'boolean' ? showSteamFeaturePageValue :
+          DEFAULTS.showSteamFeaturePage,
+        launchHomePage: launchHomePageValue === 'Steam' ? 'Steam' : DEFAULTS.launchHomePage,
         issuerLogoColorMode: parsed['issuerLogoColorMode'] as string ?? DEFAULTS.issuerLogoColorMode,
         tokenLayoutMode: parsed['tokenLayoutMode'] as string ?? DEFAULTS.tokenLayoutMode,
         huaweiLoggedIn: parsed['huaweiLoggedIn'] as boolean ?? DEFAULTS.huaweiLoggedIn,
@@ -166,7 +178,9 @@ export class SettingsRepository {
         watchLastPushTime: parsed['watchLastPushTime'] as number ?? DEFAULTS.watchLastPushTime,
         steamEnhancedAccess: parsed['steamEnhancedAccess'] as boolean ?? DEFAULTS.steamEnhancedAccess,
         steamGatewayUrl: parsed['steamGatewayUrl'] as string ?? DEFAULTS.steamGatewayUrl,
-        steamGatewayToken: parsed['steamGatewayToken'] as string ?? DEFAULTS.steamGatewayToken
+        steamGatewayToken: parsed['steamGatewayToken'] as string ?? DEFAULTS.steamGatewayToken,
+        selectedSteamTokenId: typeof selectedSteamTokenIdValue === 'string' ? selectedSteamTokenIdValue :
+          DEFAULTS.selectedSteamTokenId
       };
     } catch (error) {
       console.error(`Failed to load settings: ${JSON.stringify(error)}`);

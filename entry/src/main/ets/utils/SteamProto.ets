@@ -46,7 +46,110 @@ export interface SteamTimeResponse {
   serverTime: number;
 }
 
+export interface SteamPendingLoginInfoResponse {
+  version: number;
+  ip: string;
+  city: string;
+  country: string;
+  deviceName: string;
+}
+
 export class SteamProto {
+  static emptyRequest(): Uint8Array {
+    return new Uint8Array();
+  }
+
+  static decodePendingLoginClientIds(data: Uint8Array): string[] {
+    const reader = new ProtoReader(data);
+    const clientIds: string[] = [];
+    while (!reader.finished()) {
+      const tag = reader.tag();
+      if (tag.field === 1 && tag.wire === 0) {
+        clientIds.push(reader.varint().toString());
+      } else if (tag.field === 1 && tag.wire === 2) {
+        const packedReader = new ProtoReader(reader.bytes());
+        while (!packedReader.finished()) {
+          clientIds.push(packedReader.varint().toString());
+        }
+      } else {
+        reader.skip(tag.wire);
+      }
+    }
+    return clientIds;
+  }
+
+  static pendingLoginInfoRequest(clientId: string): Uint8Array {
+    const writer = new ProtoWriter();
+    writer.uint64(1, BigInt(clientId));
+    return writer.finish();
+  }
+
+  static decodePendingLoginInfo(data: Uint8Array): SteamPendingLoginInfoResponse {
+    const reader = new ProtoReader(data);
+    let version = 0;
+    let ip = '';
+    let city = '';
+    let country = '';
+    let deviceName = '';
+    while (!reader.finished()) {
+      const tag = reader.tag();
+      if (tag.field === 1 && tag.wire === 2) {
+        ip = reader.string();
+      } else if (tag.field === 3 && tag.wire === 2) {
+        city = reader.string();
+      } else if (tag.field === 5 && tag.wire === 2) {
+        country = reader.string();
+      } else if (tag.field === 7 && tag.wire === 2) {
+        deviceName = reader.string();
+      } else if (tag.field === 8 && tag.wire === 0) {
+        version = Number(reader.varint());
+      } else {
+        reader.skip(tag.wire);
+      }
+    }
+    return {
+      version: version,
+      ip: ip,
+      city: city,
+      country: country,
+      deviceName: deviceName
+    };
+  }
+
+  static pendingLoginResponseRequest(
+    version: number,
+    clientId: string,
+    steamId: string,
+    signature: Uint8Array,
+    confirm: boolean
+  ): Uint8Array {
+    const writer = new ProtoWriter();
+    writer.uint64(1, BigInt(version));
+    writer.uint64(2, BigInt(clientId));
+    writer.fixed64(3, BigInt(steamId));
+    writer.bytes(4, signature);
+    writer.boolean(5, confirm);
+    writer.uint64(6, 1n);
+    return writer.finish();
+  }
+
+  static decodePendingLoginResponse(data: Uint8Array): boolean {
+    if (data.length === 0) {
+      return true;
+    }
+    const reader = new ProtoReader(data);
+    let success = true;
+    while (!reader.finished()) {
+      const tag = reader.tag();
+      if (tag.field === 1 && tag.wire === 0) {
+        success = reader.varint() !== 0n;
+      } else {
+        reader.skip(tag.wire);
+      }
+    }
+    return success;
+  }
+
   static queryTimeRequest(senderTime: number): Uint8Array {
     const writer = new ProtoWriter();
     writer.uint64(1, BigInt(senderTime));

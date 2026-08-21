@@ -2,7 +2,17 @@ import { abilityAccessCtrl, bundleManager, common, ConfigurationConstant, Permis
 import { authentication } from '@kit.AccountKit';
 import { privacyManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
-import { ButtonModifier, LengthMetrics, SymbolGlyphModifier, display, window } from '@kit.ArkUI';
+import {
+  ButtonModifier,
+  ColorMetrics,
+  LengthMetrics,
+  SegmentButtonV2ItemOptions,
+  SegmentButtonV2Items,
+  SymbolGlyphModifier,
+  TabSegmentButtonV2,
+  display,
+  window
+} from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import deviceInfo from '@ohos.deviceInfo';
 import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
@@ -21,11 +31,16 @@ import { formInfo, formProvider } from '@kit.FormKit';
 import { ImmersionButton, ImmersionSearch } from '@tangs/components';
 import {
   BlurStrategy,
+  HdsAnimationMode,
+  HdsBarStyle,
   HdsNavigation,
   HdsNavigationMenuContentOptions,
   HdsNavigationTitleMode,
   HdsTabs,
   HdsTabsAttribute,
+  HdsTabsBarChangeMode,
+  HdsTabsController,
+  HdsTabsFloatingStyle,
   IconStyleMode,
   ScrollEffectType,
   SystemMaterialParams,
@@ -45,6 +60,19 @@ import {
   SteamGuardCloudRecord,
   SteamGuardCloudRepository
 } from '../data/SteamGuardCloudRepository';
+import { SteamConfirmationHistoryRepository } from '../data/SteamConfirmationHistoryRepository';
+import {
+  SteamPendingConfirmationCacheRecord,
+  SteamPendingLoginCacheRecord,
+  SteamPendingRequestCache,
+  SteamPendingRequestCacheRepository
+} from '../data/SteamPendingRequestCacheRepository';
+import {
+  SteamInventoryCache,
+  SteamInventoryCacheRepository,
+  SteamInventoryCategoryCache
+} from '../data/SteamInventoryCacheRepository';
+import { SteamProfileRepository } from '../data/SteamProfileRepository';
 import { TokenRecord } from '../model/TokenRecord';
 import { Totp } from '../utils/Totp';
 import { Settings, SettingsRepository } from '../data/SettingsRepository';
@@ -65,7 +93,19 @@ import {
   parseSteamGuardData,
   serializeSteamGuardData,
   SteamConfirmation,
-  SteamGuardData
+  SteamConfirmationHistoryRecord,
+  SteamGuardData,
+  SteamInventoryGame,
+  SteamInventoryItem,
+  SteamMarketListing,
+  SteamMarketListingPage,
+  SteamMarketPriceHistory,
+  SteamMarketPricePoint,
+  SteamMarketSaleHistoryItem,
+  SteamMarketSaleHistoryPage,
+  SteamMarketSellResult,
+  SteamPendingLogin,
+  SteamProfile
 } from '../model/SteamGuardData';
 import { SteamMaFile } from '../utils/SteamMaFile';
 import {
@@ -143,6 +183,7 @@ const LANGUAGE_OPTIONS: SelectOption[] = [
   { value: LANGUAGE_EN_GB }
 ];
 const ISSUER_LOGO_COLOR_OPTIONS: SelectOption[] = [{ value: '品牌色' }, { value: '纯色' }];
+const LAUNCH_HOME_PAGE_OPTIONS: SelectOption[] = [{ value: '令牌' }, { value: 'Steam' }];
 const TOKEN_LAYOUT_SINGLE: string = 'single';
 const TOKEN_LAYOUT_DOUBLE: string = 'double';
 const CUSTOM_BACKGROUND_CACHE_PREFIX: string = 'custom_background_render_';
@@ -154,10 +195,21 @@ const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
 const CAMLINK_URL: string =
   'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
 const QQ_GROUP_NUMBER: string = '1061983927';
-const APP_VERSION_FALLBACK: string = 'V1.4.4';
-const APP_VERSION_CODE_FALLBACK: string = '1000045';
-const UPDATE_NOTICE_VERSION: string = 'V1.4.4';
+const APP_VERSION_FALLBACK: string = 'V1.4.5';
+const APP_VERSION_CODE_FALLBACK: string = '1000048';
+const UPDATE_NOTICE_VERSION: string = 'V1.4.5';
 const UPDATE_LOGS: UpdateLogEntry[] = [
+  {
+    version: '1.4.5',
+    date: '2026.08.21',
+    summary: 'Steam 交易与库存管理全面升级',
+    items: [
+      '新增 Steam 交易页，集中展示等待批准、已上架、批准记录与出售记录，并支持分页加载。',
+      '新增 Steam 库存浏览、筛选、多选、物品详情、价格趋势及单个或批量出售功能。',
+      '支持 Steam 账号切换、扫码登录与官方 API 网络延迟检测，并完善确认和库存本地缓存。',
+      '优化 Steam 页面导航、主题样式、列表性能及出售后的页面交互。'
+    ]
+  },
   {
     version: '1.4.4',
     date: '2026.07.31',
@@ -294,6 +346,9 @@ const HOME_SEARCH_COLLAPSE_HIDE_THRESHOLD: number = 0.75;
 const HOME_SEARCH_FADE_DURATION: number = 180;
 const HOME_LIST_CACHE_COUNT: number = 4;
 const HOME_NAV_WIDTH: number = 120;
+const HOME_NAV_WIDTH_WITH_STEAM: number = 208;
+const HOME_NAV_WIDTH_WITHOUT_STEAM: number = 148;
+const HOME_NAV_MINIBAR_GAP: number = 10;
 const HOME_NAV_HEIGHT: number = 52;
 const HOME_NAV_TEXT_SIZE: number = 10;
 const HOME_SEARCH_ICON_SIZE: number = 14;
@@ -348,9 +403,67 @@ const BACKGROUND_BLUR_ROW_HEIGHT: number = 82;
 const BACKGROUND_BRIGHTNESS_ROW_HEIGHT: number = 82;
 const BACKGROUND_BLUR_MAX_RADIUS: number = 50;
 const ADD_BUTTON_SIZE: number = 50;
-const ADD_BUTTON_RIGHT: number = 36;
-const ADD_BUTTON_BOTTOM: number = 142;
 const ADD_BUTTON_ICON_SIZE: number = 24;
+const STEAM_TOP_CONTROL_HEIGHT: number = 40;
+const STEAM_TOP_CONTROL_WIDTH: number = 172;
+const STEAM_TOP_ACTION_WIDTH: number = 68;
+const STEAM_TOP_SELECTION_ACTION_WIDTH: number = 64;
+const STEAM_TOP_INVENTORY_ACTION_WIDTH: number = 58;
+const STEAM_CONFIRMATION_BADGE_SIZE: number = 18;
+const STEAM_CONFIRMATION_BADGE_WIDE_WIDTH: number = 26;
+const STEAM_CONFIRMATION_BADGE_TOP: number = 1;
+const STEAM_CONFIRMATION_BADGE_RIGHT: number = 5;
+const STEAM_CONFIRMATION_CATEGORY_BADGE_SIZE: number = 14;
+const STEAM_CONFIRMATION_CATEGORY_BADGE_WIDE_WIDTH: number = 22;
+const STEAM_ACCOUNT_BAR_HEIGHT: number = 44;
+const STEAM_ACCOUNT_BAR_GAP: number = 10;
+const STEAM_ACCOUNT_AVATAR_SIZE: number = 32;
+const STEAM_ACCOUNT_NAME_MAX_WIDTH: number = 112;
+const STEAM_CONFIRMATION_CARD_HEIGHT: number = TOKEN_CARD_HEIGHT;
+const STEAM_CONFIRMATION_IMAGE_SIZE: number = 60;
+const STEAM_CONFIRMATION_ACTION_SIZE: number = 40;
+const STEAM_CONFIRMATION_SELECTION_SIZE: number = 28;
+const STEAM_CONFIRMATION_SELECTION_ICON_SIZE: number = 14;
+const STEAM_INVENTORY_CARD_HEIGHT: number = 156;
+const STEAM_INVENTORY_MEDIA_HEIGHT: number = 104;
+const STEAM_INVENTORY_CARD_RADIUS: number = 18;
+const STEAM_INVENTORY_CARD_CACHE_COUNT: number = 4;
+const STEAM_INVENTORY_BADGE_HEIGHT: number = 22;
+const STEAM_INVENTORY_MARKET_COLOR: string = '#FF9F0A';
+const STEAM_INVENTORY_SHEET_IMAGE_HEIGHT: number = 184;
+const STEAM_MARKET_TREND_POINT_LIMIT: number = 24;
+const STEAM_MARKET_TREND_HEIGHT: number = 104;
+const STEAM_MARKET_STEAM_FEE_PERCENT: number = 0.05;
+const STEAM_MARKET_DEFAULT_PUBLISHER_FEE_PERCENT: number = 0.10;
+const STEAM_MARKET_FEE_MINIMUM_MINOR: number = 1;
+const STEAM_MARKET_WEEK_RANGE_MS: number = 7 * 24 * 60 * 60 * 1000;
+const STEAM_MARKET_MONTH_RANGE_MS: number = 30 * 24 * 60 * 60 * 1000;
+const STEAM_INVENTORY_GAME_TAB_MIN_WIDTH: number = 72;
+const STEAM_INVENTORY_GAME_TAB_HORIZONTAL_PADDING: number = 36;
+const STEAM_INVENTORY_GAME_TAB_ASCII_WIDTH: number = 8;
+const STEAM_INVENTORY_GAME_TAB_WIDE_WIDTH: number = 14;
+const STEAM_CONFIRMATION_CATEGORY_TAB_MIN_WIDTH: number = 84;
+const STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE: number = 20;
+const STEAM_EMPTY_STATE_MIN_HEIGHT: number = 320;
+const STEAM_BULK_ACTION_HEIGHT: number = 52;
+const STEAM_SECTION_HEADER_HEIGHT: number = 30;
+const STEAM_INVENTORY_LANGUAGE: string = 'schinese';
+const STEAM_REFRESH_TRIGGER_OFFSET: number = 64;
+const STEAM_BOTTOM_CHROME_SCROLL_THRESHOLD: number = 18;
+const STEAM_BOTTOM_CHROME_ANIMATION_DURATION: number = 220;
+const STEAM_INVENTORY_DRAG_SELECT_DELAY_MS: number = 420;
+const STEAM_INVENTORY_SELECTION_SIZE: number = 24;
+const STEAM_INVENTORY_LOAD_MORE_TRIGGER_DISTANCE: number = 56;
+const STEAM_INVENTORY_FILTER_MARKETABLE: string = 'marketable';
+const STEAM_INVENTORY_FILTER_TRADABLE: string = 'tradable';
+const STEAM_INVENTORY_FILTER_NOT_MARKETABLE: string = 'not-marketable';
+const STEAM_INVENTORY_FILTER_NOT_TRADABLE: string = 'not-tradable';
+const STEAM_API_LATENCY_CHECK_INTERVAL_MS: number = 30000;
+const STEAM_API_LATENCY_FAILURE_MS: number = 999;
+const STEAM_API_LATENCY_GOOD_MS: number = 150;
+const STEAM_API_LATENCY_WARNING_MS: number = 400;
+const STEAM_API_LATENCY_GOOD_COLOR: string = '#16A34A';
+const STEAM_API_LATENCY_WARNING_COLOR: string = '#D89B00';
 const LOGO_SAVE_LOOKUP_TIMEOUT_MS: number = 1500;
 const SWIPE_ACTION_SIZE: number = 40;
 const SWIPE_ACTION_ICON_SIZE: number = 20;
@@ -486,7 +599,31 @@ enum PageMode {
 
 enum HomeTab {
   Token,
+  Steam,
   Me
+}
+
+enum SteamFeatureTab {
+  Confirmations,
+  Inventory
+}
+
+enum SteamConfirmationCategory {
+  AwaitingApproval,
+  Listed,
+  ApprovalHistory,
+  SaleHistory
+}
+
+enum SteamMarketTrendRange {
+  Week,
+  Month,
+  Overview
+}
+
+enum SteamLoginPickerMode {
+  Scan,
+  AccountSwitch
 }
 
 enum WatchHomePage {
@@ -506,12 +643,14 @@ enum SettingsSwitchKey {
   AntiPeep,
   AppLock,
   ShowNextToken,
+  ShowSteamFeaturePage,
   GlobalImmersion,
   GlobalBackground
 }
 
 enum SettingsSelectKey {
   Language,
+  LaunchHomePage,
   IssuerLogoColor,
   MaterialType,
   MaterialLevel,
@@ -561,6 +700,20 @@ interface SteamPendingConfirmation {
   confirmation: SteamConfirmation;
 }
 
+interface SteamPendingLoginEntry {
+  tokenId: string;
+  tokenName: string;
+  pending: SteamPendingLogin;
+}
+
+interface SteamInventoryCardBounds {
+  assetId: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 interface ImportFileContent {
   uri: string;
   fileName: string;
@@ -589,9 +742,6 @@ struct Index {
   @State private currentTimeMs: number = Date.now();
   @State private isSaving: boolean = false;
   @State private isAddMenuOpen: boolean = false;
-  @State private addButtonOffsetX: number = 0;
-  @State private addButtonOffsetY: number = 0;
-  @State private addButtonDragging: boolean = false;
   @State private isScanning: boolean = false;
   @State private validationMessage: string = '';
   @State private pageWidth: number = 390;
@@ -612,6 +762,8 @@ struct Index {
   @State private antiPeepEnabled: boolean = false;
   @State private appLockEnabled: boolean = false;
   @State private showNextToken: boolean = false;
+  @State private showSteamFeaturePage: boolean = true;
+  @State private launchHomePage: string = '令牌';
   @State private issuerLogoColorMode: string = '纯色';
   @State private tokenLayoutMode: string = TOKEN_LAYOUT_SINGLE;
   @State private logoRenderVersion: number = 0;
@@ -635,7 +787,7 @@ struct Index {
   @State private updateNoticeVersion: string = '';
   @State private showUpdateNotice: boolean = false;
   @State private showUpdateLogSheet: boolean = false;
-  @State private expandedUpdateLogVersion: string = '1.4.4';
+  @State private expandedUpdateLogVersion: string = '1.4.5';
   @State private languageInput: string = LANGUAGE_SYSTEM;
   @State private systemLanguage: string = 'zh-Hans';
   @State private cloudSyncStatus: string = '尚未同步';
@@ -660,10 +812,11 @@ struct Index {
     this.initializeAppData();
     this.timerId = setInterval(() => {
       if (!this.isHomeListScrolling &&
-        (this.selectedHomeTab === HomeTab.Token || this.isWatchLayout())) {
+        (this.selectedHomeTab === HomeTab.Token || this.selectedHomeTab === HomeTab.Steam || this.isWatchLayout())) {
         this.currentTimeMs = Date.now();
       }
       this.checkSteamConfirmationsIfNeeded();
+      this.checkSteamApiLatencyIfNeeded();
     }, 1000);
   }
 
@@ -679,6 +832,8 @@ struct Index {
     this.stopSmartGrip();
     this.stopAntiPeep();
     this.clearLogoLookupTimer();
+    this.clearSteamInventoryDragSelection();
+    this.clearSteamInventoryClickSuppression();
     this.unregisterWearSyncReceivers();
     this.stopLanWatchReceiver();
   }
@@ -694,6 +849,9 @@ struct Index {
   private meWaterFlowSections: WaterFlowSections = new WaterFlowSections();
   private settingsScroller: Scroller = new Scroller();
   private appearanceSettingsScroller: Scroller = new Scroller();
+  private steamFeatureScroller: Scroller = new Scroller();
+  private steamInventoryScroller: Scroller = new Scroller();
+  private steamFeatureTabsController: TabsController = new TabsController();
   private featureSecurityScroller: Scroller = new Scroller();
   private cloudSpaceScroller: Scroller = new Scroller();
   private watchScroller: Scroller = new Scroller();
@@ -712,9 +870,12 @@ struct Index {
   private updateNoticeSheetScroller: Scroller = new Scroller();
   private updateLogSheetScroller: Scroller = new Scroller();
   private steamLoginSheetScroller: Scroller = new Scroller();
+  private steamInventoryFilterSheetScroller: Scroller = new Scroller();
+  private steamInventoryItemSheetScroller: Scroller = new Scroller();
   private steamDecryptSheetScroller: Scroller = new Scroller();
   private steamEnrollmentSheetScroller: Scroller = new Scroller();
   private homePathStack: NavPathStack = new NavPathStack();
+  private homeTabsController: HdsTabsController = new HdsTabsController();
   private addPageScroller: Scroller = new Scroller();
   private onboardingSwiperController: SwiperController = new SwiperController();
   private timerId: number = -1;
@@ -733,8 +894,6 @@ struct Index {
   private logoLookupTimer: number = 0;
   private logoLookupSerial: number = 0;
   private deviceType: string = deviceInfo.deviceType;
-  private addButtonDragStartX: number = 0;
-  private addButtonDragStartY: number = 0;
   private webSheetController: webview.WebviewController = new webview.WebviewController();
   @State private cardSelectedTokenIds: string[] = [];
   @State private pendingCardTokenIds: string[] = [];
@@ -784,6 +943,80 @@ struct Index {
   @State private steamEnhancedAccess: boolean = false;
   @State private steamGatewayUrl: string = '';
   @State private steamGatewayToken: string = '';
+  @State private selectedSteamTokenId: string = '';
+  @State private selectedSteamFeatureTab: SteamFeatureTab = SteamFeatureTab.Confirmations;
+  @State private selectedSteamConfirmationCategory: SteamConfirmationCategory =
+    SteamConfirmationCategory.AwaitingApproval;
+  @State private steamLoginPickerMode: SteamLoginPickerMode = SteamLoginPickerMode.Scan;
+  @State private steamPendingLoginEntries: SteamPendingLoginEntry[] = [];
+  @State private steamSelectedRequestIds: string[] = [];
+  @State private steamSelectionMode: boolean = false;
+  @State private steamSelectedMarketListingIds: string[] = [];
+  @State private steamListingSelectionMode: boolean = false;
+  @State private steamConfirmationHistory: SteamConfirmationHistoryRecord[] = [];
+  @State private steamProfile: SteamProfile = { displayName: '', avatarUrl: '' };
+  @State private homeDestinationVisible: boolean = false;
+  @State private steamInventoryGames: SteamInventoryGame[] = [];
+  @State private steamInventoryItems: SteamInventoryItem[] = [];
+  @State private steamMarketListings: SteamMarketListing[] = [];
+  @State private steamMarketListingsNextStart: number = 0;
+  @State private steamMarketListingsHasMore: boolean = false;
+  @State private steamMarketListingsTotalCount: number = 0;
+  @State private steamMarketListingsLoading: boolean = false;
+  @State private steamMarketSaleHistory: SteamMarketSaleHistoryItem[] = [];
+  @State private steamMarketSaleHistoryNextStart: number = 0;
+  @State private steamMarketSaleHistoryHasMore: boolean = false;
+  @State private steamMarketSaleHistoryLoading: boolean = false;
+  @State private steamAwaitingApprovalVisibleCount: number = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+  @State private steamApprovalHistoryVisibleCount: number = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+  @State private steamRemovingMarketListingId: string = '';
+  @State private selectedSteamInventoryGameKey: string = '';
+  @State private steamInventoryLastAssetId: string = '';
+  @State private steamInventoryHasMore: boolean = false;
+  @State private steamInventoryTotalCount: number = 0;
+  @State private steamInventoryLoading: boolean = false;
+  @State private steamInventoryLoadingMore: boolean = false;
+  @State private steamInventoryLoadMorePullDistance: number = 0;
+  @State private steamInventoryError: string = '';
+  @State private showSteamInventoryFilterSheet: boolean = false;
+  @State private steamInventoryFilterTypes: string[] = [];
+  @State private pendingSteamInventoryFilterTypes: string[] = [];
+  @State private steamInventoryTradeFilters: string[] = [];
+  @State private pendingSteamInventoryTradeFilters: string[] = [];
+  @State private steamInventorySelectionMode: boolean = false;
+  @State private steamSelectedInventoryAssetIds: string[] = [];
+  @State private steamBatchSaleDeltaInput: string = '0.00';
+  @State private steamBatchSelling: boolean = false;
+  @State private showSteamInventoryItemSheet: boolean = false;
+  @State private selectedSteamInventoryItem: SteamInventoryItem = {
+    appId: 0,
+    contextId: '',
+    assetId: '',
+    classId: '',
+    instanceId: '',
+    amount: 1,
+    marketHashName: '',
+    name: '',
+    type: '',
+    iconUrl: '',
+    marketable: false,
+    tradable: false,
+    marketFee: STEAM_MARKET_DEFAULT_PUBLISHER_FEE_PERCENT
+  };
+  @State private steamMarketPriceHistory: SteamMarketPriceHistory = { prefix: '', suffix: '', points: [] };
+  @State private steamMarketPriceLoading: boolean = false;
+  @State private steamMarketPriceError: string = '';
+  @State private steamMarketBuyerPaysInput: string = '';
+  @State private steamMarketSellerReceivesInput: string = '';
+  @State private steamMarketEditingPriceField: string = '';
+  @State private steamMarketTrendRange: SteamMarketTrendRange = SteamMarketTrendRange.Week;
+  @State private steamMarketSelling: boolean = false;
+  @State private steamConfirmationsRefreshing: boolean = false;
+  @State private steamInventoryRefreshing: boolean = false;
+  @State private steamBottomChromeHidden: boolean = false;
+  @State private steamApiLatencyMs: number = 0;
+  @State private steamApiReachable: boolean = false;
+  @State private steamApiLatencyChecking: boolean = false;
   @State private showSteamLoginPicker: boolean = false;
   @State private pendingSteamLoginTokenId: string = '';
   @State private steamLoading: boolean = false;
@@ -814,7 +1047,21 @@ struct Index {
   private steamConfirmationChecking: boolean = false;
   private steamConfirmationDialogVisible: boolean = false;
   private lastSteamConfirmationCheckMs: number = 0;
-  private pendingSteamConfirmations: SteamPendingConfirmation[] = [];
+  private lastSteamApiLatencyCheckMs: number = 0;
+  private steamMarketHistoryLoadSerial: number = 0;
+  private steamMarketSaleRequestActive: boolean = false;
+  private steamInventoryCardBounds: Map<string, SteamInventoryCardBounds> =
+    new Map<string, SteamInventoryCardBounds>();
+  private steamInventoryDragSelecting: boolean = false;
+  private steamInventoryDragSelectionValue: boolean = true;
+  private steamInventoryDragVisitedAssetIds: string[] = [];
+  private steamInventoryLoadMoreTriggered: boolean = false;
+  private steamBottomChromeScrollDistance: number = 0;
+  private steamInventorySuppressNextClick: boolean = false;
+  private steamInventorySuppressClickTimer: number = -1;
+  private steamBatchSaleDialogId: number = -1;
+  private steamInventoryCache: SteamInventoryCache = new SteamInventoryCache();
+  @State private pendingSteamConfirmations: SteamPendingConfirmation[] = [];
   private tokenDragReordered: boolean = false;
   private wearMessageReceivers: WearMessageReceiver[] = [];
   private lanWatchReceiver: LanWatchReceiver | undefined = undefined;
@@ -825,6 +1072,8 @@ struct Index {
     try {
       await this.loadTokens();
       await this.loadSettings();
+      await this.loadSteamConfirmationHistory();
+      this.restoreSteamPendingRequestCache();
       await this.loadCardTokenIds();
       await this.loadAppVersion();
     } catch (error) {
@@ -874,6 +1123,9 @@ struct Index {
     this.antiPeepEnabled = settings.antiPeep;
     this.appLockEnabled = settings.appLock;
     this.showNextToken = settings.showNextToken;
+    this.showSteamFeaturePage = settings.showSteamFeaturePage;
+    this.launchHomePage = settings.launchHomePage === 'Steam' ? 'Steam' : '令牌';
+    this.applyConfiguredLaunchHomePage();
     const logoColorModeChanged = this.issuerLogoColorMode !== settings.issuerLogoColorMode;
     this.issuerLogoColorMode = settings.issuerLogoColorMode;
     if (logoColorModeChanged && this.tokens.length > 0) {
@@ -929,6 +1181,8 @@ struct Index {
     this.steamEnhancedAccess = settings.steamEnhancedAccess;
     this.steamGatewayUrl = settings.steamGatewayUrl;
     this.steamGatewayToken = settings.steamGatewayToken;
+    this.selectedSteamTokenId = settings.selectedSteamTokenId;
+    this.ensureSelectedSteamToken();
     const migratedExistingUser = !settings.onboardingCompleted && this.tokens.length > 0;
     this.onboardingCompleted = settings.onboardingCompleted || migratedExistingUser;
     this.showOnboarding = !this.onboardingCompleted;
@@ -980,6 +1234,8 @@ struct Index {
       antiPeep: this.antiPeepEnabled,
       appLock: this.appLockEnabled,
       showNextToken: this.showNextToken,
+      showSteamFeaturePage: this.showSteamFeaturePage,
+      launchHomePage: this.launchHomePage,
       issuerLogoColorMode: this.issuerLogoColorMode,
       tokenLayoutMode: this.tokenLayoutMode,
       huaweiLoggedIn: this.isHuaweiLoggedIn,
@@ -1007,7 +1263,8 @@ struct Index {
       onboardingCompleted: this.onboardingCompleted,
       steamEnhancedAccess: this.steamEnhancedAccess,
       steamGatewayUrl: this.steamGatewayUrl,
-      steamGatewayToken: this.steamGatewayToken
+      steamGatewayToken: this.steamGatewayToken,
+      selectedSteamTokenId: this.selectedSteamTokenId
     };
     await SettingsRepository.save(context, snapshot);
   }
@@ -1137,14 +1394,22 @@ struct Index {
       .width('100%')
       .height('100%')
 
+      if (this.shouldShowSteamFeatureTopControls()) {
+        this.SteamFeatureTopControls()
+        if (this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations) {
+          this.SteamConfirmationCategorySelector()
+        } else if (this.selectedSteamFeatureTab === SteamFeatureTab.Inventory &&
+          this.steamInventoryGames.length > 0) {
+          this.SteamInventoryGameSelector()
+        }
+      }
+
       this.SteamLoginSheetAnchor()
+      this.SteamInventoryFilterSheetAnchor()
+      this.SteamInventoryItemSheetAnchor()
       this.SteamDecryptSheetAnchor()
       this.SteamEnrollmentSheetAnchor()
       this.QQGroupSheetAnchor()
-      if (this.shouldShowAddFloatingButton()) {
-        this.AddFloatingButton()
-      }
-
       if (!this.isWatchLayout() && this.showOnboarding) {
         this.OnboardingOverlay()
       }
@@ -1439,6 +1704,46 @@ struct Index {
   }
 
   @Builder
+  private SteamPersistentImmersionMaterialLayer(cardHeight: Length, cardRadius: number) {
+    Stack({ alignContent: Alignment.Center }) {
+      HdsTabs() {
+        TabContent() {
+        }
+        .backdropBlur(0)
+        .tabBar(this.ImmersionMaterialContent(cardHeight))
+        .clip(false)
+      }
+      .width(this.immersionExpandedWidth(cardHeight))
+      .height(cardHeight)
+      .barWidth(this.immersionExpandedWidth(cardHeight))
+      .barHeight(this.immersionMaterialBarHeight(cardHeight))
+      .barOverlap(true)
+      .barPosition(BarPosition.End)
+      .barBackgroundStyle({
+        maskColor: '#00000000'
+      })
+      .barBackgroundBlurStyle(BlurStyle.NONE)
+      .barFloatingStyle({
+        barBottomMargin: 0,
+        systemMaterialEffect: this.steamPersistentMaterialEffect(),
+        gradientMask: {
+          maskColor: '#09999999'
+        }
+      })
+      .backgroundColor(Color.Transparent)
+      .hitTestBehavior(HitTestMode.None)
+      .clip(false)
+    }
+    .width('100%')
+    .height(cardHeight)
+    .borderRadius(cardRadius)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(1)
+  }
+
+  @Builder
   private OnboardingImmersionMaterialLayer(cardHeight: Length, cardRadius: number) {
     Stack({ alignContent: Alignment.Center }) {
       HdsTabs() {
@@ -1494,6 +1799,11 @@ struct Index {
   }
 
   @Builder
+  private SteamPersistentImmersionCardSurface(cardHeight: Length, cardRadius: number) {
+    this.SteamPersistentImmersionMaterialLayer(cardHeight, cardRadius)
+  }
+
+  @Builder
   private MeasuredImmersionCardSurface(cardId: string, cardRadius: number) {
     if (this.shouldUseCardMaterial() && this.measuredCardHeight(cardId) > 0) {
       this.ImmersionCardSurface(this.measuredCardHeight(cardId), cardRadius)
@@ -1538,6 +1848,18 @@ struct Index {
 
   private immersionBorderColor(): ResourceColor {
     return this.isDarkTheme() ? '#80FFFFFF' : '#80000000';
+  }
+
+  private floatingNavigationBorderColor(): ResourceColor {
+    return this.isDarkTheme() ? '#33FFFFFF' : '#33000000';
+  }
+
+  private steamChromeBorderColor(): ResourceColor {
+    return this.isDarkTheme() ? this.floatingNavigationBorderColor() : '#FFFFFFFF';
+  }
+
+  private steamSegmentUnselectedTextColor(): string {
+    return this.isDarkTheme() ? '#FFFFFFFF' : '#FF000000';
   }
 
   private backgroundBlurRadius(): number {
@@ -2136,11 +2458,18 @@ struct Index {
       this.WatchHomePageContent()
     } else {
       Stack() {
-        HdsTabs() {
+        HdsTabs({ controller: this.homeTabsController }) {
           TabContent() {
             this.TokenListContent()
           }
           .tabBar(this.tokenTabBarStyle())
+
+          if (this.showSteamFeaturePage) {
+            TabContent() {
+              this.SteamFeaturePageContent()
+            }
+            .tabBar(this.steamTabBarStyle())
+          }
 
           TabContent() {
             this.MePageContent()
@@ -2151,26 +2480,28 @@ struct Index {
         .vertical(false)
         .scrollable(false)
         .barPosition(BarPosition.End)
-        .barWidth(HOME_NAV_WIDTH)
+        .barWidth(this.homeNavigationWidth())
         .barHeight(HOME_NAV_HEIGHT)
-        .barFloatingStyle({
-          barBottomMargin: this.naviIndicatorHeight,
-          barWidth: {
-            smallWidth: HOME_NAV_WIDTH,
-            mediumWidth: HOME_NAV_WIDTH,
-            largeWidth: HOME_NAV_WIDTH
-          },
-          lightColor: this.accentColor(),
-          systemMaterialEffect: {
-            materialType: this.configuredMaterialType(),
-            materialLevel: this.configuredMaterialLevel()
-          }
-        })
+        .barFloatingStyle(this.homeTabsFloatingStyle())
         .onChange((index: number) => {
-          this.selectedHomeTab = index === 0 ? HomeTab.Token : HomeTab.Me;
+          if (index === 0) {
+            this.selectedHomeTab = HomeTab.Token;
+          } else if (this.showSteamFeaturePage && index === 1) {
+            this.selectedHomeTab = HomeTab.Steam;
+          } else {
+            this.selectedHomeTab = HomeTab.Me;
+          }
           this.isHomeListScrolling = false;
-          if (this.selectedHomeTab === HomeTab.Token) {
+          if (this.selectedHomeTab === HomeTab.Token || this.selectedHomeTab === HomeTab.Steam) {
             this.currentTimeMs = Date.now();
+          }
+          if (this.selectedHomeTab === HomeTab.Steam) {
+            this.activateSteamFeaturePage();
+          } else {
+            this.clearSteamSelection();
+            this.clearSteamListingSelection();
+            this.clearSteamInventorySelection();
+            this.showSteamBottomChrome();
           }
         })
         .width('100%')
@@ -2748,8 +3079,12 @@ struct Index {
     .hideTitleBar(true)
     .mode(NavDestinationMode.STANDARD)
     .systemTransition(NavigationSystemTransitionType.DEFAULT)
-    .onHidden((reason: VisibilityChangeReason) => {
-      if (name === 'addToken' && reason === VisibilityChangeReason.TRANSITION) {
+    .onWillShow(() => {
+      this.homeDestinationVisible = true;
+    })
+    .onWillHide(() => {
+      this.homeDestinationVisible = false;
+      if (name === 'addToken') {
         this.clearAddPageNavigationState();
       }
     })
@@ -2817,6 +3152,1817 @@ struct Index {
     .width('100%')
     .height('100%')
     .clip(false)
+  }
+
+  @Builder
+  private SteamFeaturePageContent() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Tabs({
+        barPosition: BarPosition.Start,
+        controller: this.steamFeatureTabsController
+      }) {
+        TabContent() {
+          this.SteamConfirmationsContent()
+        }
+        .tabBar('')
+
+        TabContent() {
+          this.SteamInventoryContent()
+        }
+        .tabBar('')
+      }
+      .width('100%')
+      .height('100%')
+      .vertical(false)
+      .scrollable(true)
+      .barWidth(0)
+      .barHeight(0, true)
+      .barBackgroundColor(Color.Transparent)
+      .divider(null)
+      .edgeEffect(EdgeEffect.None)
+      .animationDuration(280)
+      .onAnimationStart((index: number, targetIndex: number) => {
+        this.onSteamFeatureTabAnimationStart(targetIndex);
+      })
+      .onChange((index: number) => {
+        this.onSteamFeatureTabChanged(index);
+      })
+
+      if (this.steamSelectionMode) {
+        this.SteamBulkActionBar()
+      } else if (this.steamListingSelectionMode) {
+        this.SteamListingBulkActionBar()
+      } else if (this.steamInventorySelectionMode) {
+        this.SteamInventoryBulkActionBar()
+      } else {
+        this.SteamAccountSubNavigation()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .clip(false)
+  }
+
+  @Builder
+  private SteamFeatureTopControls() {
+    Row() {
+      this.SteamTopSegmentedControl()
+
+      Blank()
+
+      if (this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations) {
+        if (this.steamSelectionMode) {
+          Row({ space: 8 }) {
+            this.SteamTopTextAction(this.t(this.allSteamRequestsSelected() ? '取消全选' : '全选'),
+              STEAM_TOP_SELECTION_ACTION_WIDTH, 13,
+              (): void => {
+                this.toggleAllSteamRequests();
+              })
+            this.SteamTopTextAction(this.t('取消'), STEAM_TOP_SELECTION_ACTION_WIDTH, 13, (): void => {
+              this.clearSteamSelection();
+            })
+          }
+          .height(STEAM_TOP_CONTROL_HEIGHT)
+          .alignItems(VerticalAlign.Center)
+        } else if (this.steamListingSelectionMode) {
+          Row({ space: 8 }) {
+            this.SteamTopTextAction(this.t(this.allSteamMarketListingsSelected() ? '取消全选' : '全选'),
+              STEAM_TOP_SELECTION_ACTION_WIDTH, 13,
+              (): void => {
+                this.toggleAllSteamMarketListings();
+              })
+            this.SteamTopTextAction(this.t('取消'), STEAM_TOP_SELECTION_ACTION_WIDTH, 13, (): void => {
+              this.clearSteamListingSelection();
+            })
+          }
+          .height(STEAM_TOP_CONTROL_HEIGHT)
+          .alignItems(VerticalAlign.Center)
+        } else {
+          this.SteamTopTextAction(this.t('多选'), STEAM_TOP_ACTION_WIDTH, 14, (): void => {
+            this.enterSteamConfirmationSelectionMode();
+          })
+        }
+      } else {
+        if (this.steamInventorySelectionMode) {
+          Row({ space: 8 }) {
+            this.SteamTopTextAction(this.t(this.allVisibleSteamInventoryItemsSelected() ? '取消全选' : '全选'),
+              STEAM_TOP_SELECTION_ACTION_WIDTH, 13, (): void => {
+                this.toggleAllVisibleSteamInventoryItems();
+              })
+            this.SteamTopTextAction(this.t('取消'), STEAM_TOP_SELECTION_ACTION_WIDTH, 13, (): void => {
+              this.clearSteamInventorySelection();
+            })
+          }
+          .height(STEAM_TOP_CONTROL_HEIGHT)
+          .alignItems(VerticalAlign.Center)
+        } else {
+          Row({ space: 8 }) {
+            this.SteamTopInventoryFilterAction()
+            this.SteamTopInventoryAction(this.t('多选'), false,
+              this.hasMarketableSteamInventoryItems(), (): void => {
+                this.enterSteamInventorySelectionMode();
+              })
+          }
+          .height(STEAM_TOP_CONTROL_HEIGHT)
+          .alignItems(VerticalAlign.Center)
+        }
+      }
+    }
+    .width('100%')
+    .height(STEAM_TOP_CONTROL_HEIGHT)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.statusBarHeight + HOME_LAYOUT_GAP })
+    .alignItems(VerticalAlign.Center)
+    .zIndex(30)
+  }
+
+  @Builder
+  private SteamTopSegmentedControl() {
+    Stack() {
+      this.SteamPersistentImmersionCardSurface(STEAM_TOP_CONTROL_HEIGHT, STEAM_TOP_CONTROL_HEIGHT / 2)
+
+      TabSegmentButtonV2({
+        items: this.steamFeatureSegmentItems(),
+        selectedIndex: this.steamFeatureTabIndex(),
+        onItemClicked: (index: number): void => {
+          this.switchSteamFeatureTab(this.steamFeatureTabFromIndex(index));
+        },
+        itemFontSize: LengthMetrics.vp(14),
+        itemSelectedFontSize: LengthMetrics.vp(14),
+        itemFontColor: ColorMetrics.resourceColor(this.steamSegmentUnselectedTextColor()),
+        itemSelectedFontColor: ColorMetrics.resourceColor(this.accentColor()),
+        itemFontWeight: FontWeight.Medium,
+        itemSelectedFontWeight: FontWeight.Medium,
+        itemBorderRadius: LengthMetrics.vp((STEAM_TOP_CONTROL_HEIGHT - 4) / 2),
+        itemSelectedBackgroundColor: ColorMetrics.resourceColor(this.accentTintColor()),
+        itemMinHeight: LengthMetrics.vp(STEAM_TOP_CONTROL_HEIGHT - 4),
+        itemSpace: LengthMetrics.vp(0),
+        buttonBackgroundColor: ColorMetrics.resourceColor(Color.Transparent),
+        buttonBorderRadius: LengthMetrics.vp(STEAM_TOP_CONTROL_HEIGHT / 2),
+        buttonMinHeight: LengthMetrics.vp(STEAM_TOP_CONTROL_HEIGHT),
+        buttonPadding: LengthMetrics.vp(2)
+      })
+      .width(STEAM_TOP_CONTROL_WIDTH)
+      .height(STEAM_TOP_CONTROL_HEIGHT)
+      .zIndex(2)
+
+      if (this.steamRequestCount() > 0) {
+        Text(this.steamConfirmationBadgeText())
+          .width(this.steamConfirmationBadgeWidth())
+          .height(STEAM_CONFIRMATION_BADGE_SIZE)
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .backgroundColor(ERROR_RED)
+          .borderRadius(STEAM_CONFIRMATION_BADGE_SIZE / 2)
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+          .position({
+            x: STEAM_TOP_CONTROL_WIDTH / 2 - this.steamConfirmationBadgeWidth() -
+              STEAM_CONFIRMATION_BADGE_RIGHT,
+            y: STEAM_CONFIRMATION_BADGE_TOP
+          })
+          .hitTestBehavior(HitTestMode.None)
+          .zIndex(3)
+      }
+    }
+    .width(STEAM_TOP_CONTROL_WIDTH)
+    .height(STEAM_TOP_CONTROL_HEIGHT)
+    .borderRadius(STEAM_TOP_CONTROL_HEIGHT / 2)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+  }
+
+  @Builder
+  private SteamTopTextAction(label: string, width: number, fontSize: number, action: () => void) {
+    Stack() {
+      this.SteamPersistentImmersionCardSurface(STEAM_TOP_CONTROL_HEIGHT, STEAM_TOP_CONTROL_HEIGHT / 2)
+
+      Button(label)
+        .width(width)
+        .height(STEAM_TOP_CONTROL_HEIGHT)
+        .fontSize(fontSize)
+        .fontColor(this.primaryTextColor())
+        .backgroundColor(Color.Transparent)
+        .borderRadius(STEAM_TOP_CONTROL_HEIGHT / 2)
+        .onClick(action)
+        .zIndex(2)
+    }
+    .width(width)
+    .height(STEAM_TOP_CONTROL_HEIGHT)
+    .borderRadius(STEAM_TOP_CONTROL_HEIGHT / 2)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+  }
+
+  @Builder
+  private SteamTopInventoryAction(label: string, active: boolean, enabled: boolean, action: () => void) {
+    Stack() {
+      this.SteamPersistentImmersionCardSurface(STEAM_TOP_CONTROL_HEIGHT, STEAM_TOP_CONTROL_HEIGHT / 2)
+
+      Button(label)
+        .width(STEAM_TOP_INVENTORY_ACTION_WIDTH)
+        .height(STEAM_TOP_CONTROL_HEIGHT)
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(active ? this.accentColor() : this.primaryTextColor())
+        .backgroundColor(active ? this.accentTintColor() : Color.Transparent)
+        .borderRadius(STEAM_TOP_CONTROL_HEIGHT / 2)
+        .enabled(enabled)
+        .opacity(enabled ? 1 : 0.5)
+        .onClick(action)
+        .zIndex(2)
+    }
+    .width(STEAM_TOP_INVENTORY_ACTION_WIDTH)
+    .height(STEAM_TOP_CONTROL_HEIGHT)
+    .borderRadius(STEAM_TOP_CONTROL_HEIGHT / 2)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+  }
+
+  @Builder
+  private SteamTopInventoryFilterAction() {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      this.SteamTopInventoryAction(this.t('筛选'), this.hasSteamInventoryFilter(),
+        this.steamInventoryItems.length > 0, (): void => {
+          this.openSteamInventoryFilterSheet();
+        })
+
+      if (this.steamInventoryFilterSelectionCount() > 0) {
+        Text(this.steamInventoryFilterBadgeText())
+          .width(this.steamInventoryFilterBadgeWidth())
+          .height(18)
+          .padding({ left: 4, right: 4 })
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .backgroundColor(ERROR_RED)
+          .borderRadius(9)
+          .textAlign(TextAlign.Center)
+          .position({ x: STEAM_TOP_INVENTORY_ACTION_WIDTH - 15, y: -4 })
+          .hitTestBehavior(HitTestMode.None)
+          .zIndex(4)
+      }
+    }
+    .width(STEAM_TOP_INVENTORY_ACTION_WIDTH)
+    .height(STEAM_TOP_CONTROL_HEIGHT)
+    .clip(false)
+  }
+
+  @Builder
+  private SteamConfirmationsContent() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Refresh({
+        refreshing: $$this.steamConfirmationsRefreshing,
+        promptText: '',
+        builder: this.SteamRefreshNativePlaceholder
+      }) {
+        List({ scroller: this.steamFeatureScroller }) {
+          if (this.selectedSteamToken() === undefined) {
+            ListItem() {
+              this.SteamNoAccountState()
+            }
+            .width('100%')
+          } else if ((this.steamLoading || this.steamConfirmationCategoryLoading()) &&
+            this.steamConfirmationCategoryItemCount() === 0) {
+            ListItem() {
+              this.SteamLoadingState('正在获取 Steam 确认信息')
+            }
+            .width('100%')
+          } else if (this.steamConfirmationCategoryItemCount() === 0) {
+            ListItem() {
+              this.SteamEmptyState(this.steamConfirmationCategoryEmptyTitle(),
+                this.steamConfirmationCategoryEmptyDescription())
+            }
+            .width('100%')
+          } else if (this.selectedSteamConfirmationCategory ===
+            SteamConfirmationCategory.AwaitingApproval) {
+            if (this.visibleSteamPendingLogins().length > 0) {
+              ListItem() {
+                this.SteamSectionHeader('登录批准', this.currentSteamPendingLogins().length)
+              }
+              .width('100%')
+
+              ForEach(this.visibleSteamPendingLogins(), (entry: SteamPendingLoginEntry) => {
+                ListItem() {
+                  this.SteamPendingLoginCard(entry)
+                }
+                .width('100%')
+                .margin({ bottom: PAGE_CARD_GAP })
+              }, (entry: SteamPendingLoginEntry) => 'login-' + entry.pending.clientId)
+            }
+
+            if (this.visibleSteamPendingConfirmations().length > 0) {
+              ForEach(this.visibleSteamPendingConfirmations(), (entry: SteamPendingConfirmation) => {
+                ListItem() {
+                  this.SteamConfirmationCard(entry)
+                }
+                .width('100%')
+                .margin({ bottom: PAGE_CARD_GAP })
+              }, (entry: SteamPendingConfirmation) => 'confirmation-' + entry.confirmation.id)
+            }
+          } else if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+            ForEach(this.steamMarketListings, (listing: SteamMarketListing) => {
+              ListItem() {
+                this.SteamMarketListingCard(listing)
+              }
+              .width('100%')
+              .margin({ bottom: PAGE_CARD_GAP })
+            }, (listing: SteamMarketListing) => 'market-listing-' + listing.listingId)
+          } else if (this.selectedSteamConfirmationCategory ===
+            SteamConfirmationCategory.ApprovalHistory) {
+            ForEach(this.visibleSteamApprovalHistory(), (record: SteamConfirmationHistoryRecord) => {
+              ListItem() {
+                this.SteamHistoryCard(record)
+              }
+              .width('100%')
+              .margin({ bottom: PAGE_CARD_GAP })
+            }, (record: SteamConfirmationHistoryRecord) => 'approval-history-' + record.id)
+          } else {
+            ForEach(this.steamMarketSaleHistory, (record: SteamMarketSaleHistoryItem) => {
+              ListItem() {
+                this.SteamMarketSaleHistoryCard(record)
+              }
+              .width('100%')
+              .margin({ bottom: PAGE_CARD_GAP })
+            }, (record: SteamMarketSaleHistoryItem) => 'sale-history-' + record.id)
+          }
+
+          if (this.steamConfirmationCategoryHasMore() || this.steamConfirmationCategoryLoading()) {
+            ListItem() {
+              this.SteamConfirmationCategoryLoadMoreFooter()
+            }
+            .width('100%')
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({
+          left: HOME_HORIZONTAL_PADDING,
+          right: HOME_HORIZONTAL_PADDING,
+          top: this.steamConfirmationContentTopOffset()
+        })
+        .contentEndOffset(this.steamContentBottomOffset())
+        .cachedCount(HOME_LIST_CACHE_COUNT, true)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+        .onReachEnd(() => {
+          this.loadMoreSteamConfirmationCategory();
+        })
+        .onScrollStart(() => {
+          this.resetSteamBottomChromeScrollDistance();
+        })
+        .onScrollFrameBegin((offset: number, _state: ScrollState) => {
+          this.handleSteamBottomChromeScroll(offset);
+          return { offsetRemain: offset };
+        })
+        .onScrollStop(() => {
+          this.resetSteamBottomChromeScrollDistance();
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .refreshOffset(STEAM_REFRESH_TRIGGER_OFFSET)
+      .pullToRefresh(true)
+      .pullUpToCancelRefresh(false)
+      .onRefreshing(() => {
+        this.pullRefreshSteamConfirmations();
+      })
+
+      if (this.steamConfirmationsRefreshing) {
+        this.SteamRefreshStatusOverlay(this.steamConfirmationRefreshOverlayTop())
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .clip(false)
+  }
+
+  @Builder
+  private SteamInventoryContent() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Refresh({
+        refreshing: $$this.steamInventoryRefreshing,
+        promptText: '',
+        builder: this.SteamRefreshNativePlaceholder
+      }) {
+        if (this.selectedSteamToken() === undefined) {
+          List({ scroller: this.steamInventoryScroller }) {
+            ListItem() {
+              this.SteamNoAccountState()
+            }
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: HOME_HORIZONTAL_PADDING,
+            right: HOME_HORIZONTAL_PADDING,
+            top: this.steamContentTopOffset()
+          })
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+        } else if (this.steamInventoryLoading && this.steamInventoryItems.length === 0) {
+          List({ scroller: this.steamInventoryScroller }) {
+            ListItem() {
+              this.SteamLoadingState('正在加载 Steam 库存')
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: HOME_HORIZONTAL_PADDING,
+            right: HOME_HORIZONTAL_PADDING,
+            top: this.steamInventoryEmptyContentTopOffset()
+          })
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+        } else if (this.steamInventoryError.length > 0 && this.steamInventoryItems.length === 0) {
+          List({ scroller: this.steamInventoryScroller }) {
+            ListItem() {
+              this.SteamInventoryErrorState()
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: HOME_HORIZONTAL_PADDING,
+            right: HOME_HORIZONTAL_PADDING,
+            top: this.steamInventoryEmptyContentTopOffset()
+          })
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+        } else if (this.steamInventoryItems.length === 0) {
+          List({ scroller: this.steamInventoryScroller }) {
+            ListItem() {
+              this.SteamEmptyState('库存中暂无可显示物品', '可切换库存分类或下拉刷新重试')
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: HOME_HORIZONTAL_PADDING,
+            right: HOME_HORIZONTAL_PADDING,
+            top: this.steamInventoryEmptyContentTopOffset()
+          })
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+        } else if (this.filteredSteamInventoryItems().length === 0) {
+          List({ scroller: this.steamInventoryScroller }) {
+            ListItem() {
+              this.SteamEmptyState(
+                this.steamInventorySelectionMode ? '暂无可出售物品' : '没有符合筛选条件的物品',
+                this.steamInventorySelectionMode ? '退出多选后可查看全部库存物品' : '请调整物品类型或交易状态筛选条件'
+              )
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: HOME_HORIZONTAL_PADDING,
+            right: HOME_HORIZONTAL_PADDING,
+            top: this.steamInventoryEmptyContentTopOffset()
+          })
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+        } else {
+          WaterFlow({ scroller: this.steamInventoryScroller }) {
+            ForEach(this.filteredSteamInventoryItems(), (item: SteamInventoryItem) => {
+              FlowItem() {
+                this.SteamInventoryItemCard(item)
+              }
+              .width('100%')
+              .height(STEAM_INVENTORY_CARD_HEIGHT)
+            }, (item: SteamInventoryItem): string => this.steamInventoryItemRenderKey(item))
+          }
+          .width('100%')
+          .height('100%')
+          .columnsTemplate(this.steamInventoryColumnsTemplate())
+          .columnsGap(PAGE_CARD_GAP)
+          .rowsGap(PAGE_CARD_GAP)
+          .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+          .contentStartOffset(this.steamInventoryContentTopOffset())
+          .contentEndOffset(this.steamContentBottomOffset())
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+          .cachedCount(STEAM_INVENTORY_CARD_CACHE_COUNT)
+          .syncLoad(false)
+          .clip(false)
+          .onScrollStart(() => {
+            this.steamInventoryLoadMoreTriggered = false;
+            this.steamInventoryLoadMorePullDistance = 0;
+            this.resetSteamBottomChromeScrollDistance();
+          })
+          .onScrollFrameBegin((offset: number, state: ScrollState) => {
+            this.handleSteamBottomChromeScroll(offset);
+            this.handleSteamInventoryLoadMoreScroll(offset, state);
+            return { offsetRemain: offset };
+          })
+          .onScrollStop(() => {
+            this.steamInventoryLoadMoreTriggered = false;
+            this.steamInventoryLoadMorePullDistance = 0;
+            this.resetSteamBottomChromeScrollDistance();
+          })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .refreshOffset(STEAM_REFRESH_TRIGGER_OFFSET)
+      .pullToRefresh(true)
+      .pullUpToCancelRefresh(false)
+      .onRefreshing(() => {
+        this.pullRefreshSteamInventory();
+      })
+
+      if (this.steamInventoryRefreshing) {
+        this.SteamRefreshStatusOverlay(this.steamInventoryRefreshOverlayTop())
+      }
+
+      if (this.steamInventoryLoadingMore || this.steamInventoryLoadMorePullDistance > 0) {
+        this.SteamInventoryLoadMoreOverlay()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .clip(false)
+  }
+
+  @Builder
+  private SteamRefreshNativePlaceholder() {
+    Blank()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  private SteamRefreshStatusOverlay(top: number) {
+    Row({ space: 8 }) {
+      LoadingProgress()
+        .width(20)
+        .height(20)
+        .color(this.accentColor())
+
+      Text(this.t('正在刷新'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+    }
+    .width(132)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .position({ x: Math.max(0, (this.pageWidth - 132) / 2), y: top })
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(36)
+  }
+
+  @Builder
+  private SteamInventoryLoadMoreOverlay() {
+    Row({ space: 8 }) {
+      if (this.steamInventoryLoadingMore) {
+        LoadingProgress()
+          .width(20)
+          .height(20)
+          .color(this.accentColor())
+      } else {
+        SymbolGlyph($r('sys.symbol.arrow_up'))
+          .fontSize(16)
+          .fontColor([this.accentColor()])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      }
+
+      Text(this.t(this.steamInventoryLoadingMore ? '正在加载下一页' : '继续上拉加载下一页'))
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+    }
+    .width(176)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .position({
+      x: Math.max(0, (this.pageWidth - 176) / 2),
+      y: Math.max(0, this.pageHeight - this.steamContentBottomOffset() - 44)
+    })
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(28)
+  }
+
+  @Builder
+  private SteamInventoryGameSelector() {
+    Scroll() {
+      Row({ space: 8 }) {
+        ForEach(this.steamInventoryGames, (game: SteamInventoryGame) => {
+          this.SteamInventoryGameTab(game)
+        }, (game: SteamInventoryGame) => this.steamInventoryGameKey(game))
+      }
+      .height(40)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(40)
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.statusBarHeight + HOME_LAYOUT_GAP + STEAM_TOP_CONTROL_HEIGHT + 8 })
+    .translate({ y: this.steamBottomChromeHidden ? -48 : 0 })
+    .opacity(this.steamBottomChromeHidden ? 0 : 1)
+    .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
+    .hitTestBehavior(this.steamBottomChromeHidden ? HitTestMode.None : HitTestMode.Default)
+    .zIndex(31)
+  }
+
+  @Builder
+  private SteamConfirmationCategorySelector() {
+    Scroll() {
+      Row({ space: 8 }) {
+        this.SteamConfirmationCategoryTab('等待批准', SteamConfirmationCategory.AwaitingApproval)
+        this.SteamConfirmationCategoryTab('已上架', SteamConfirmationCategory.Listed)
+        this.SteamConfirmationCategoryTab('批准记录', SteamConfirmationCategory.ApprovalHistory)
+        this.SteamConfirmationCategoryTab('出售记录', SteamConfirmationCategory.SaleHistory)
+      }
+      .height(40)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(40)
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.statusBarHeight + HOME_LAYOUT_GAP + STEAM_TOP_CONTROL_HEIGHT + 8 })
+    .translate({ y: this.steamBottomChromeHidden ? -48 : 0 })
+    .opacity(this.steamBottomChromeHidden ? 0 : 1)
+    .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
+    .hitTestBehavior(this.steamBottomChromeHidden ? HitTestMode.None : HitTestMode.Default)
+    .zIndex(31)
+  }
+
+  @Builder
+  private SteamConfirmationCategoryTab(label: string, category: SteamConfirmationCategory) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      this.SteamPersistentImmersionCardSurface(34, 17)
+
+      Button(this.t(label))
+        .width('100%')
+        .height(34)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.selectedSteamConfirmationCategory === category ?
+          this.accentColor() : this.primaryTextColor())
+        .backgroundColor(this.selectedSteamConfirmationCategory === category ?
+          this.accentTintColor() : Color.Transparent)
+        .borderRadius(17)
+        .padding({ left: 14, right: 14 })
+        .onClick(() => {
+          this.selectSteamConfirmationCategory(category);
+        })
+        .zIndex(2)
+
+      if (this.steamConfirmationCategoryBadgeCount(category) > 0) {
+        Text(this.steamConfirmationCategoryBadgeText(category))
+          .width(this.steamConfirmationCategoryBadgeWidth(category))
+          .height(STEAM_CONFIRMATION_CATEGORY_BADGE_SIZE)
+          .fontSize(8)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .backgroundColor(ERROR_RED)
+          .borderRadius(STEAM_CONFIRMATION_CATEGORY_BADGE_SIZE / 2)
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+          .position({
+            x: this.steamConfirmationCategoryTabWidth(label, category) -
+              this.steamConfirmationCategoryBadgeWidth(category) - 3,
+            y: 3
+          })
+          .hitTestBehavior(HitTestMode.None)
+          .zIndex(4)
+      }
+    }
+    .width(this.steamConfirmationCategoryTabWidth(label, category))
+    .height(34)
+    .borderRadius(17)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+  }
+
+  @Builder
+  private SteamInventoryGameTab(game: SteamInventoryGame) {
+    Stack() {
+      this.SteamPersistentImmersionCardSurface(34, 17)
+
+      Button(this.steamInventoryGameLabel(game))
+        .width('100%')
+        .height(34)
+        .fontSize(12)
+        .fontColor(this.isSelectedSteamInventoryGame(game) ?
+          this.accentColor() :
+          this.primaryTextColor())
+        .backgroundColor(this.isSelectedSteamInventoryGame(game) ?
+          this.accentTintColor() : Color.Transparent)
+        .borderRadius(17)
+        .padding({ left: 14, right: 14 })
+        .onClick(() => {
+          this.selectSteamInventoryGame(game);
+        })
+        .zIndex(2)
+    }
+    .width(this.steamInventoryGameTabWidth(game))
+    .height(34)
+    .borderRadius(17)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({
+      width: 1,
+      color: this.steamChromeBorderColor()
+    })
+  }
+
+  @Builder
+  private SteamSectionHeader(title: string, count: number) {
+    Row({ space: 6 }) {
+      Text(this.t(title))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+
+      Text(count.toString())
+        .fontSize(11)
+        .fontColor(this.secondaryTextColor())
+    }
+    .width('100%')
+    .height(STEAM_SECTION_HEADER_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private SteamPendingLoginCard(entry: SteamPendingLoginEntry) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(STEAM_CONFIRMATION_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle()
+            .width(TOKEN_LOGO_SIZE)
+            .height(TOKEN_LOGO_SIZE)
+            .fill(this.isDarkTheme() ? '#24382B' : '#E1F5E7')
+          SymbolGlyph($r('sys.symbol.gamecontroller'))
+            .fontSize(22)
+            .fontColor(['#16A34A'])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width(TOKEN_LOGO_SIZE)
+        .height(TOKEN_LOGO_SIZE)
+
+        Column({ space: 3 }) {
+          Text(entry.pending.deviceName.length > 0 ? entry.pending.deviceName : this.t('Steam 登录请求'))
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(this.steamPendingLoginSummary(entry.pending))
+            .fontSize(12)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(this.steamDateTimeText(entry.pending.creationTime))
+            .fontSize(10)
+            .fontColor(this.secondaryTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        this.SteamRequestActions(this.steamPendingLoginSelectionId(entry),
+          () => { this.confirmSteamPendingLoginAction(entry, false); },
+          () => { this.confirmSteamPendingLoginAction(entry, true); })
+      }
+      .width('100%')
+      .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+      .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({
+      width: this.isSteamRequestSelected(this.steamPendingLoginSelectionId(entry)) ?
+        1 : this.cardSurfaceBorderWidth(),
+      color: this.isSteamRequestSelected(this.steamPendingLoginSelectionId(entry)) ?
+        this.accentColor() : this.immersionBorderColor()
+    })
+    .scale({
+      x: this.appCardScale('steam-login-' + entry.pending.clientId),
+      y: this.appCardScale('steam-login-' + entry.pending.clientId)
+    })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-login-' + entry.pending.clientId, event.type);
+    })
+    .onClick(() => {
+      if (this.steamSelectionMode) {
+        this.toggleSteamRequestSelection(this.steamPendingLoginSelectionId(entry));
+      }
+    })
+  }
+
+  @Builder
+  private SteamConfirmationCard(entry: SteamPendingConfirmation) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(STEAM_CONFIRMATION_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+
+      Row({ space: 12 }) {
+        Image(this.steamConfirmationImage(entry.confirmation))
+          .width(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .height(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(10)
+          .backgroundColor(this.sheetControlBackgroundColor())
+
+        Column({ space: 3 }) {
+          Text(this.steamConfirmationHeadline(entry.confirmation))
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.steamConfirmationHeadlineColor(entry.confirmation))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(this.steamConfirmationSummary(entry.confirmation))
+            .fontSize(12)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(this.steamDateTimeText(entry.confirmation.creation_time * 1000))
+            .fontSize(10)
+            .fontColor(this.secondaryTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        this.SteamRequestActions(this.steamConfirmationSelectionId(entry),
+          () => { this.confirmSteamConfirmationAction(entry, false); },
+          () => { this.confirmSteamConfirmationAction(entry, true); })
+      }
+      .width('100%')
+      .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+      .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({
+      width: this.isSteamRequestSelected(this.steamConfirmationSelectionId(entry)) ?
+        1 : this.cardSurfaceBorderWidth(),
+      color: this.isSteamRequestSelected(this.steamConfirmationSelectionId(entry)) ?
+        this.accentColor() : this.immersionBorderColor()
+    })
+    .scale({
+      x: this.appCardScale('steam-confirmation-' + entry.confirmation.id),
+      y: this.appCardScale('steam-confirmation-' + entry.confirmation.id)
+    })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-confirmation-' + entry.confirmation.id, event.type);
+    })
+    .onClick(() => {
+      if (this.steamSelectionMode) {
+        this.toggleSteamRequestSelection(this.steamConfirmationSelectionId(entry));
+      }
+    })
+  }
+
+  @Builder
+  private SteamMarketListingCard(listing: SteamMarketListing) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(STEAM_CONFIRMATION_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+
+      Row({ space: 12 }) {
+        Image(listing.iconUrl.length > 0 ? listing.iconUrl : $r('app.media.ic_steam'))
+          .width(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .height(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(10)
+          .backgroundColor(this.sheetControlBackgroundColor())
+
+        Column({ space: 3 }) {
+          Text(listing.priceText.length > 0 ? '正在出售 ' + listing.priceText : '正在出售')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(ERROR_RED)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(listing.name)
+            .fontSize(12)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(listing.listedDateText.length > 0 ? listing.listedDateText : listing.type)
+            .fontSize(10)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        if (this.steamListingSelectionMode) {
+          Checkbox({ name: 'steam-listing-select-' + listing.listingId })
+            .select(this.isSteamMarketListingSelected(listing.listingId))
+            .selectedColor(this.accentColor())
+            .unselectedColor(this.primaryTextColor())
+            .width(STEAM_CONFIRMATION_SELECTION_SIZE)
+            .height(STEAM_CONFIRMATION_SELECTION_SIZE)
+            .hitTestBehavior(HitTestMode.None)
+        } else {
+          Button() {
+            if (this.steamRemovingMarketListingId === listing.listingId) {
+              LoadingProgress()
+                .width(18)
+                .height(18)
+                .color(this.secondaryTextColor())
+            } else {
+              Row({ space: 4 }) {
+                SymbolGlyph($r('sys.symbol.xmark'))
+                  .fontSize(16)
+                  .fontColor([this.secondaryTextColor()])
+                  .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+
+                Text(this.t('撤下'))
+                  .fontSize(12)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.secondaryTextColor())
+              }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+            }
+          }
+          .width(72)
+          .height(STEAM_CONFIRMATION_ACTION_SIZE)
+          .padding(0)
+          .backgroundColor(this.sheetControlBackgroundColor())
+          .borderRadius(STEAM_CONFIRMATION_ACTION_SIZE / 2)
+          .border({ width: 1, color: this.dividerColor() })
+          .enabled(!this.steamLoading && this.steamRemovingMarketListingId.length === 0)
+          .onClick(() => {
+            this.confirmSteamMarketListingRemoval(listing);
+          })
+        }
+      }
+      .width('100%')
+      .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+      .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({
+      width: this.isSteamMarketListingSelected(listing.listingId) ? 1 : this.cardSurfaceBorderWidth(),
+      color: this.isSteamMarketListingSelected(listing.listingId) ? this.accentColor() : this.immersionBorderColor()
+    })
+    .onClick(() => {
+      if (this.steamListingSelectionMode) {
+        this.toggleSteamMarketListingSelection(listing.listingId);
+      }
+    })
+  }
+
+  @Builder
+  private SteamMarketSaleHistoryCard(record: SteamMarketSaleHistoryItem) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(STEAM_CONFIRMATION_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+
+      Row({ space: 12 }) {
+        Image(record.iconUrl.length > 0 ? record.iconUrl : $r('app.media.ic_steam'))
+          .width(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .height(STEAM_CONFIRMATION_IMAGE_SIZE)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(10)
+          .backgroundColor(this.sheetControlBackgroundColor())
+
+        Column({ space: 3 }) {
+          Text(record.priceText.length > 0 ? this.t('已出售') + ' ' + record.priceText : this.t('已出售'))
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(record.name)
+            .fontSize(12)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(record.dateText.length > 0 ? record.dateText : record.type)
+            .fontSize(10)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+      .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+  }
+
+  @Builder
+  private SteamConfirmationCategoryLoadMoreFooter() {
+    Row({ space: 8 }) {
+      if (this.steamConfirmationCategoryLoading()) {
+        LoadingProgress()
+          .width(18)
+          .height(18)
+          .color(this.accentColor())
+      }
+
+      Text(this.t(this.steamConfirmationCategoryLoading() ? '正在加载下一页' : '上滑加载更多'))
+        .fontSize(12)
+        .fontColor(this.secondaryTextColor())
+    }
+    .width('100%')
+    .height(48)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private SteamRequestActions(selectionId: string, rejectAction: () => void, allowAction: () => void) {
+    if (this.steamSelectionMode) {
+      Button() {
+        if (this.isSteamRequestSelected(selectionId)) {
+          SymbolGlyph($r('sys.symbol.checkmark'))
+            .fontSize(STEAM_CONFIRMATION_SELECTION_ICON_SIZE)
+            .fontColor([this.accentContrastColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+      }
+      .width(STEAM_CONFIRMATION_SELECTION_SIZE)
+      .height(STEAM_CONFIRMATION_SELECTION_SIZE)
+      .backgroundColor(this.isSteamRequestSelected(selectionId) ? this.accentColor() : Color.Transparent)
+      .borderRadius(STEAM_CONFIRMATION_SELECTION_SIZE / 2)
+      .border({ width: 1, color: this.isSteamRequestSelected(selectionId) ?
+        this.accentColor() : this.secondaryTextColor() })
+      .hitTestBehavior(HitTestMode.None)
+    } else {
+      Row({ space: 8 }) {
+        Button() {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(18)
+            .fontColor([this.secondaryTextColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width(STEAM_CONFIRMATION_ACTION_SIZE)
+        .height(STEAM_CONFIRMATION_ACTION_SIZE)
+        .backgroundColor(this.sheetControlBackgroundColor())
+        .borderRadius(STEAM_CONFIRMATION_ACTION_SIZE / 2)
+        .border({ width: 1, color: this.dividerColor() })
+        .onClick(rejectAction)
+
+        Button() {
+          SymbolGlyph($r('sys.symbol.checkmark'))
+            .fontSize(18)
+            .fontColor([this.accentContrastColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width(STEAM_CONFIRMATION_ACTION_SIZE + 8)
+        .height(STEAM_CONFIRMATION_ACTION_SIZE)
+        .backgroundColor(this.accentColor())
+        .borderRadius(STEAM_CONFIRMATION_ACTION_SIZE / 2)
+        .onClick(allowAction)
+      }
+      .alignItems(VerticalAlign.Center)
+    }
+  }
+
+  @Builder
+  private SteamHistoryCard(record: SteamConfirmationHistoryRecord) {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(STEAM_CONFIRMATION_CARD_HEIGHT, TOKEN_CARD_RADIUS)
+      }
+
+      Row({ space: 12 }) {
+        Image(record.iconUrl.length > 0 ? record.iconUrl : $r('app.media.ic_steam'))
+          .width(TOKEN_LOGO_SIZE)
+          .height(TOKEN_LOGO_SIZE)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(10)
+          .opacity(0.72)
+
+        Column({ space: 3 }) {
+          Text(record.headline.length > 0 ? record.headline : this.t(record.requestType))
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(record.summary)
+            .fontSize(12)
+            .fontColor(this.secondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(this.steamDateTimeText(record.handledTime))
+            .fontSize(10)
+            .fontColor(this.secondaryTextColor())
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Row({ space: 5 }) {
+          SymbolGlyph(record.allowed ? $r('sys.symbol.checkmark') : $r('sys.symbol.xmark'))
+            .fontSize(14)
+            .fontColor([record.allowed ? this.accentColor() : this.secondaryTextColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+          Text(this.t(record.allowed ? '已确认' : '已拒绝'))
+            .fontSize(12)
+            .fontColor(record.allowed ? this.accentColor() : this.secondaryTextColor())
+        }
+        .height(34)
+        .padding({ left: 12, right: 12 })
+        .borderRadius(17)
+        .backgroundColor(record.allowed ? this.accentTintColor() : this.sheetControlBackgroundColor())
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+      .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(STEAM_CONFIRMATION_CARD_HEIGHT)
+    .borderRadius(TOKEN_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({
+      x: this.appCardScale('steam-history-' + record.id),
+      y: this.appCardScale('steam-history-' + record.id)
+    })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('steam-history-' + record.id, event.type);
+    })
+  }
+
+  @Builder
+  private SteamInventoryItemCard(item: SteamInventoryItem) {
+    if (this.steamInventorySelectionMode) {
+      this.SteamInventorySelectableItemCard(item)
+    } else {
+      this.SteamInventoryBrowseItemCard(item)
+    }
+  }
+
+  @Builder
+  private SteamInventoryItemCardVisual(item: SteamInventoryItem) {
+    Column() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Image(item.iconUrl.length > 0 ? item.iconUrl : $r('app.media.ic_steam'))
+          .width('100%')
+          .height(STEAM_INVENTORY_MEDIA_HEIGHT)
+          .objectFit(ImageFit.Contain)
+          .draggable(false)
+          .backgroundColor(this.steamInventoryMediaBackgroundColor())
+
+        Row({ space: 6 }) {
+          if (item.type.length > 0) {
+            Text(item.type)
+              .height(STEAM_INVENTORY_BADGE_HEIGHT)
+              .constraintSize({ maxWidth: 104 })
+              .padding({ left: 8, right: 8 })
+              .fontSize(10)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.steamInventoryBadgeTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .borderRadius(STEAM_INVENTORY_BADGE_HEIGHT / 2)
+              .backgroundColor(this.steamInventoryBadgeBackgroundColor())
+          }
+
+          Blank()
+
+          if (item.amount > 1) {
+            Text('×' + item.amount.toString())
+              .height(STEAM_INVENTORY_BADGE_HEIGHT)
+              .padding({ left: 8, right: 8 })
+              .fontSize(10)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.accentContrastColor())
+              .maxLines(1)
+              .borderRadius(STEAM_INVENTORY_BADGE_HEIGHT / 2)
+              .backgroundColor(this.accentColor())
+          }
+        }
+        .width('100%')
+        .height(38)
+        .padding({ left: 8, right: 8, top: 8 })
+        .alignItems(VerticalAlign.Top)
+      }
+      .width('100%')
+      .height(STEAM_INVENTORY_MEDIA_HEIGHT)
+      .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
+      .clip(true)
+      .backgroundColor(this.steamInventoryMediaBackgroundColor())
+
+      Column({ space: 2 }) {
+        Text(item.name.length > 0 ? item.name : this.t('未知物品'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        Text(this.steamInventoryItemStatus(item))
+          .fontSize(12)
+          .fontColor(item.marketable || item.tradable ? this.accentColor() : this.secondaryTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+      }
+      .width('100%')
+      .height(STEAM_INVENTORY_CARD_HEIGHT - STEAM_INVENTORY_MEDIA_HEIGHT)
+      .padding({ left: 10, right: 10, top: 7, bottom: 5 })
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height(STEAM_INVENTORY_CARD_HEIGHT)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  private SteamInventoryBrowseItemCard(item: SteamInventoryItem) {
+    Stack({ alignContent: Alignment.Center }) {
+      this.SteamInventoryItemCardVisual(item)
+    }
+    .width('100%')
+    .height(STEAM_INVENTORY_CARD_HEIGHT)
+    .backgroundColor(this.cardBackgroundColor())
+    .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
+    .clip(true)
+    .border({ width: 0.5, color: this.dividerColor() })
+    .onClick(() => {
+      this.openSteamInventoryItemSheet(item);
+    })
+  }
+
+  @Builder
+  private SteamInventorySelectableItemCard(item: SteamInventoryItem) {
+    Stack({ alignContent: Alignment.Center }) {
+      this.SteamInventoryItemCardVisual(item)
+
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Checkbox({ name: 'steam-inventory-select-' + item.assetId })
+          .select(this.isSteamInventoryItemSelected(item.assetId))
+          .selectedColor(this.accentColor())
+          .unselectedColor(this.primaryTextColor())
+          .width(STEAM_INVENTORY_SELECTION_SIZE)
+          .height(STEAM_INVENTORY_SELECTION_SIZE)
+          .hitTestBehavior(HitTestMode.None)
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ top: 8, right: 8 })
+      .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .height(STEAM_INVENTORY_CARD_HEIGHT)
+    .backgroundColor(this.cardBackgroundColor())
+    .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
+    .clip(true)
+    .border({
+      width: this.isSteamInventoryItemSelected(item.assetId) ? 1 : 0.5,
+      color: this.isSteamInventoryItemSelected(item.assetId) ? this.accentColor() : this.dividerColor()
+    })
+    .onClick(() => {
+      if (this.steamInventorySuppressNextClick) {
+        this.clearSteamInventoryClickSuppression();
+        return;
+      }
+      this.toggleSteamInventoryItemSelection(item.assetId);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateSteamInventoryItemBounds(item.assetId, newValue);
+    })
+    .onDisAppear(() => {
+      this.steamInventoryCardBounds.delete(item.assetId);
+    })
+    .priorityGesture(
+      GestureGroup(GestureMode.Sequence,
+        LongPressGesture({ repeat: false, duration: STEAM_INVENTORY_DRAG_SELECT_DELAY_MS })
+          .onAction(() => {
+            this.startSteamInventoryDragSelection(item);
+          }),
+        PanGesture({ fingers: 1, direction: PanDirection.All, distance: 0 })
+          .onActionUpdate((event: GestureEvent) => {
+            this.updateSteamInventoryDragSelection(event);
+          })
+          .onActionEnd(() => {
+            this.finishSteamInventoryDragSelection();
+          })
+          .onActionCancel(() => {
+            this.finishSteamInventoryDragSelection();
+          })
+      )
+    )
+  }
+
+  @Builder
+  private SteamNoAccountState() {
+    Column({ space: 14 }) {
+      Image($r('app.media.ic_steam'))
+        .width(52)
+        .height(52)
+        .objectFit(ImageFit.Contain)
+
+      Text(this.t('暂无可用的 Steam 账号'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+
+      Button(this.t('点击登录'))
+        .height(40)
+        .fontSize(14)
+        .fontColor(this.primaryTextColor())
+        .backgroundColor(this.cardBackgroundColor())
+        .borderRadius(20)
+        .padding({ left: 22, right: 22 })
+        .onClick(() => {
+          this.openSteamAccountPicker();
+        })
+    }
+    .width('100%')
+    .height(this.steamEmptyStateHeight())
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  private SteamEmptyState(title: string, body: string) {
+    Column({ space: 8 }) {
+      SymbolGlyph($r('sys.symbol.checkmark'))
+        .fontSize(34)
+        .fontColor([this.accentColor()])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      Text(this.t(title))
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+      Text(this.t(body))
+        .fontSize(12)
+        .fontColor(this.secondaryTextColor())
+        .textAlign(TextAlign.Center)
+        .maxLines(2)
+    }
+    .width('100%')
+    .height(this.steamEmptyStateHeight())
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 24, right: 24 })
+  }
+
+  @Builder
+  private SteamLoadingState(label: string) {
+    Column({ space: 12 }) {
+      LoadingProgress()
+        .width(32)
+        .height(32)
+        .color(this.accentColor())
+      Text(this.t(label))
+        .fontSize(13)
+        .fontColor(this.secondaryTextColor())
+    }
+    .width('100%')
+    .height(this.steamEmptyStateHeight())
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  private SteamInventoryErrorState() {
+    Column({ space: 12 }) {
+      Text(this.t('库存加载失败'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
+      Text(this.steamInventoryError)
+        .fontSize(12)
+        .fontColor(this.secondaryTextColor())
+        .maxLines(3)
+        .textAlign(TextAlign.Center)
+      Button(this.t('重试'))
+        .height(38)
+        .fontSize(14)
+        .fontColor(this.accentContrastColor())
+        .backgroundColor(this.accentColor())
+        .borderRadius(19)
+        .onClick(() => {
+          this.refreshSteamInventory();
+        })
+    }
+    .width('100%')
+    .height(this.steamEmptyStateHeight())
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 24, right: 24 })
+  }
+
+  @Builder
+  private SteamAccountSubNavigation() {
+    Stack() {
+      this.SteamPersistentImmersionCardSurface(STEAM_ACCOUNT_BAR_HEIGHT, STEAM_ACCOUNT_BAR_HEIGHT / 2)
+
+      Row({ space: 10 }) {
+        if (this.steamProfile.avatarUrl.length > 0) {
+          Image(this.steamProfile.avatarUrl)
+            .width(STEAM_ACCOUNT_AVATAR_SIZE)
+            .height(STEAM_ACCOUNT_AVATAR_SIZE)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(STEAM_ACCOUNT_AVATAR_SIZE / 2)
+            .onClick(() => {
+              this.openSteamAccountPicker();
+            })
+        } else {
+          Image($r('app.media.ic_steam'))
+            .width(STEAM_ACCOUNT_AVATAR_SIZE)
+            .height(STEAM_ACCOUNT_AVATAR_SIZE)
+            .objectFit(ImageFit.Contain)
+            .onClick(() => {
+              this.openSteamAccountPicker();
+            })
+        }
+
+        Row({ space: 6 }) {
+          Text(this.steamAccountBarName())
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: STEAM_ACCOUNT_NAME_MAX_WIDTH })
+
+          if (this.selectedSteamToken() !== undefined && this.steamApiLatencyChecking &&
+            this.steamApiLatencyMs <= 0) {
+            LoadingProgress()
+              .width(13)
+              .height(13)
+              .color(this.secondaryTextColor())
+          } else if (this.selectedSteamToken() !== undefined && this.steamApiLatencyMs > 0) {
+            Row({ space: 4 }) {
+              Circle()
+                .width(4)
+                .height(4)
+                .fill(this.steamApiLatencyColor())
+
+              Text(this.steamApiLatencyText())
+                .fontSize(12)
+                .fontColor(this.steamApiLatencyColor())
+                .maxLines(1)
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.openSteamAccountPicker();
+        })
+
+        if (this.selectedSteamToken() !== undefined) {
+          Text(this.selectedSteamCode())
+            .fontSize(16)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor())
+            .onClick(() => {
+              this.copySelectedSteamCode();
+            })
+        }
+
+        Button() {
+          SymbolGlyph($r('sys.symbol.barcode_viewfinder'))
+            .fontSize(20)
+            .fontColor([this.primaryTextColor()])
+            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+        }
+        .width(36)
+        .height(36)
+        .backgroundColor(Color.Transparent)
+        .enabled(this.selectedSteamToken() !== undefined)
+        .onClick(() => {
+          this.scanSelectedSteamAccountQr();
+        })
+      }
+      .width('100%')
+      .height(STEAM_ACCOUNT_BAR_HEIGHT)
+      .padding({ left: 10, right: 4 })
+      .alignItems(VerticalAlign.Center)
+      .zIndex(2)
+    }
+    .width(this.steamAccountBarWidth())
+    .height(STEAM_ACCOUNT_BAR_HEIGHT)
+    .borderRadius(STEAM_ACCOUNT_BAR_HEIGHT / 2)
+    .clip(true)
+    .backgroundColor(Color.Transparent)
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+    .position({ x: HOME_HORIZONTAL_PADDING, y: this.steamAccountBarTop() })
+    .translate({ y: this.steamBottomChromeHidden ? STEAM_ACCOUNT_BAR_HEIGHT + STEAM_ACCOUNT_BAR_GAP : 0 })
+    .opacity(this.steamBottomChromeHidden ? 0 : 1)
+    .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
+    .hitTestBehavior(this.steamBottomChromeHidden ? HitTestMode.None : HitTestMode.Default)
+    .zIndex(28)
+  }
+
+  @Builder
+  private SteamBulkActionBar() {
+    Row({ space: 10 }) {
+      this.SteamBulkRejectButton()
+      this.SteamBulkAllowButton()
+    }
+    .width('100%')
+    .height(STEAM_BULK_ACTION_HEIGHT)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.pageHeight - this.naviIndicatorHeight - STEAM_BULK_ACTION_HEIGHT - 12 })
+    .zIndex(60)
+  }
+
+  @Builder
+  private SteamListingBulkActionBar() {
+    Row({ space: 10 }) {
+      this.SteamInventoryBulkActionButton(this.t('取消'), false, true, (): void => {
+        this.clearSteamListingSelection();
+      })
+      this.SteamListingBatchRemoveButton()
+    }
+    .width('100%')
+    .height(STEAM_BULK_ACTION_HEIGHT)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.pageHeight - this.naviIndicatorHeight - STEAM_BULK_ACTION_HEIGHT - 12 })
+    .zIndex(60)
+  }
+
+  @Builder
+  private SteamInventoryBulkActionBar() {
+    Row({ space: 10 }) {
+      this.SteamInventoryBulkActionButton(this.t('取消'), false, true, (): void => {
+        this.clearSteamInventorySelection();
+      })
+      this.SteamInventoryBatchSaleButton()
+    }
+    .width('100%')
+    .height(STEAM_BULK_ACTION_HEIGHT)
+    .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
+    .position({ x: 0, y: this.pageHeight - this.naviIndicatorHeight - STEAM_BULK_ACTION_HEIGHT - 12 })
+    .zIndex(60)
+  }
+
+  @Builder
+  private SteamInventoryBulkActionButton(label: string, primary: boolean, enabled: boolean, action: () => void) {
+    Button(label)
+      .height(STEAM_BULK_ACTION_HEIGHT)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(primary ? this.accentColor() : this.primaryTextColor())
+      .backgroundColor(primary ? this.accentTintColor() : this.sheetControlBackgroundColor())
+      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
+      .enabled(enabled)
+      .opacity(enabled ? 1 : 0.55)
+      .onClick(action)
+      .layoutWeight(primary ? 1.5 : 1)
+      .border({ width: 1, color: primary ? this.accentColor() : this.dividerColor() })
+  }
+
+  @Builder
+  private SteamListingBatchRemoveButton() {
+    Button(this.t('撤下') + '（' + this.steamSelectedMarketListingIds.length.toString() + '）')
+      .height(STEAM_BULK_ACTION_HEIGHT)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.secondaryTextColor())
+      .backgroundColor(this.sheetControlBackgroundColor())
+      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
+      .enabled(this.steamSelectedMarketListingIds.length > 0 && !this.steamLoading)
+      .opacity(this.steamSelectedMarketListingIds.length > 0 && !this.steamLoading ? 1 : 0.55)
+      .onClick(() => {
+        this.confirmSelectedSteamMarketListingsRemoval();
+      })
+      .layoutWeight(1.5)
+      .border({ width: 1, color: this.dividerColor() })
+  }
+
+  @Builder
+  private SteamInventoryBatchSaleButton() {
+    Button(this.t('出售') + '（' + this.steamSelectedInventoryAssetIds.length.toString() + '）')
+      .height(STEAM_BULK_ACTION_HEIGHT)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.accentContrastColor())
+      .backgroundColor(this.accentColor())
+      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
+      .enabled(this.steamSelectedInventoryAssetIds.length > 0 && !this.steamBatchSelling)
+      .opacity(this.steamSelectedInventoryAssetIds.length > 0 && !this.steamBatchSelling ? 1 : 0.55)
+      .onClick(() => {
+        this.openSteamBatchSaleDialog();
+      })
+      .layoutWeight(1.5)
+  }
+
+  @Builder
+  private SteamBatchSaleDialogContent() {
+    Column({ space: 16 }) {
+      Column({ space: 6 }) {
+        Text(this.t('批量出售'))
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Text(this.t('将为已选中的 ') + this.steamSelectedInventoryAssetIds.length.toString() +
+          this.t(' 个物品创建市场订单。'))
+          .fontSize(13)
+          .lineHeight(19)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column({ space: 8 }) {
+        Text(this.t('买家支付价浮动金额'))
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        Row({ space: 8 }) {
+          Text('¥')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor())
+
+          TextInput({ text: this.steamBatchSaleDeltaInput, placeholder: '+0.00 / -0.00' })
+            .type(InputType.Normal)
+            .layoutWeight(1)
+            .height(46)
+            .fontSize(17)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.secondaryTextColor())
+            .backgroundColor(this.pageBackgroundColor())
+            .borderRadius(12)
+            .padding({ left: 12, right: 12 })
+            .maxLength(13)
+            .onChange((value: string) => {
+              this.steamBatchSaleDeltaInput = this.normalizeSteamBatchSaleDeltaInput(value);
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(this.t('每个物品将按“最新市场买家支付价 + 浮动金额”计算，再自动换算为您收款金额后下单；买家支付金额必须大于 0。'))
+          .fontSize(11)
+          .lineHeight(17)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(16)
+      .backgroundColor(this.sheetControlBackgroundColor())
+      .alignItems(HorizontalAlign.Start)
+
+      Row({ space: 10 }) {
+        Button(this.t('取消'))
+          .layoutWeight(1)
+          .height(44)
+          .fontSize(15)
+          .fontColor(this.primaryTextColor())
+          .backgroundColor(this.sheetControlBackgroundColor())
+          .borderRadius(22)
+          .enabled(!this.steamBatchSelling)
+          .onClick(() => {
+            this.closeSteamBatchSaleDialog();
+          })
+
+        Button() {
+          Row({ space: 6 }) {
+            if (this.steamBatchSelling) {
+              LoadingProgress()
+                .width(16)
+                .height(16)
+                .color(this.accentContrastColor())
+            }
+            Text(this.t('确认出售'))
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.accentContrastColor())
+          }
+          .justifyContent(FlexAlign.Center)
+        }
+        .layoutWeight(1)
+        .height(44)
+        .backgroundColor(this.accentColor())
+        .borderRadius(22)
+        .enabled(this.canSubmitSteamBatchSale())
+        .opacity(this.canSubmitSteamBatchSale() ? 1 : 0.55)
+        .onClick(() => {
+          this.sellSelectedSteamInventoryItems();
+        })
+      }
+      .width('100%')
+    }
+    .width('88%')
+    .constraintSize({ maxWidth: 430 })
+    .padding(20)
+    .borderRadius(24)
+    .backgroundColor(this.cardBackgroundColor())
+    .border({ width: 1, color: this.steamChromeBorderColor() })
+  }
+
+  @Builder
+  private SteamBulkRejectButton() {
+    Button(this.t('拒绝') + '（' + this.steamSelectedRequestIds.length.toString() + '）')
+      .height(STEAM_BULK_ACTION_HEIGHT)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.primaryTextColor())
+      .backgroundColor(this.sheetControlBackgroundColor())
+      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
+      .enabled(this.steamSelectedRequestIds.length > 0 && !this.steamLoading)
+      .onClick(() => {
+        this.confirmSelectedSteamRequests(false);
+      })
+      .layoutWeight(1)
+      .border({ width: 1, color: this.dividerColor() })
+  }
+
+  @Builder
+  private SteamBulkAllowButton() {
+    Button(this.t('同意') + '（' + this.steamSelectedRequestIds.length.toString() + '）')
+      .height(STEAM_BULK_ACTION_HEIGHT)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.accentColor())
+      .backgroundColor(this.accentTintColor())
+      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
+      .enabled(this.steamSelectedRequestIds.length > 0 && !this.steamLoading)
+      .onClick(() => {
+        this.confirmSelectedSteamRequests(true);
+      })
+      .layoutWeight(1.5)
+      .border({ width: 1, color: this.accentColor() })
   }
 
   @Builder
@@ -3122,6 +5268,49 @@ struct Index {
   }
 
   @Builder
+  private SteamInventoryFilterSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showSteamInventoryFilterSheet, this.SteamInventoryFilterSheet(), {
+        height: SheetSize.MEDIUM,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28),
+        onDisappear: () => {
+          this.pendingSteamInventoryFilterTypes = this.steamInventoryFilterTypes.slice();
+          this.pendingSteamInventoryTradeFilters = this.steamInventoryTradeFilters.slice();
+        }
+      })
+  }
+
+  @Builder
+  private SteamInventoryItemSheetAnchor() {
+    Column()
+      .width(1)
+      .height(1)
+      .opacity(0)
+      .hitTestBehavior(HitTestMode.None)
+      .bindSheet($$this.showSteamInventoryItemSheet, this.SteamInventoryItemSheet(), {
+        height: SheetSize.LARGE,
+        dragBar: true,
+        showClose: false,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: this.sheetSurfaceBackgroundColor(),
+        blurStyle: this.sheetSurfaceBlurStyle(),
+        radius: LengthMetrics.vp(28),
+        onDisappear: () => {
+          this.clearSteamInventoryItemSheetState();
+        }
+      })
+  }
+
+  @Builder
   private QQGroupSheetAnchor() {
     Column()
       .width(1)
@@ -3195,21 +5384,18 @@ struct Index {
         Scroll(this.updateNoticeSheetScroller) {
           Column({ space: 12 }) {
             this.UpdateNoticeHero()
-            this.UpdateNoticeItem('1', '手表查看动态令牌',
-              '手表端可独立显示验证码、倒计时和发行方信息，旋转表冠即可浏览令牌列表。',
-              '手表端 → 令牌列表')
-            this.UpdateNoticeItem('2', '手表生成配对码',
-              '在令牌页向左滑进入功能页，点击“手机扫码同步”生成配对二维码。',
-              '令牌页左滑 → 功能 → 手机扫码同步')
-            this.UpdateNoticeItem('3', '手机选择同步令牌',
-              '在手机端选择要同步的令牌，然后打开扫码同步。',
-              '我的 → 手表端数据同步 → 扫码同步到手表')
-            this.UpdateNoticeItem('4', '扫描并完成同步',
-              '手机与手表连接同一 Wi-Fi，扫描手表配对码，等待两端提示同步成功。',
-              '配对码两分钟内有效')
-            this.UpdateNoticeItem('5', '手表手势与安全',
-              '向右滑可返回或退出；同步内容全程加密，且不包含 Steam 登录凭证。',
-              'AES-256-GCM 加密传输')
+            this.UpdateNoticeItem('1', 'Steam 交易集中管理',
+              '等待批准、已上架、批准记录与出售记录分类展示，并支持独立分页刷新。',
+              'Steam → 交易')
+            this.UpdateNoticeItem('2', 'Steam 库存与出售',
+              '支持库存筛选、多选、物品详情、价格趋势及单个或批量出售。',
+              'Steam → 库存')
+            this.UpdateNoticeItem('3', '账号与网络状态',
+              '账号选择和登录弹窗会显示 Steam 官方 API 网络延迟，连接状态更直观。',
+              'Steam → 账号栏')
+            this.UpdateNoticeItem('4', '缓存与交互优化',
+              '完善交易和库存缓存、列表性能、主题样式及出售后的页面交互。',
+              '更快、更稳定')
           }
           .width('100%')
           .padding({
@@ -3290,12 +5476,12 @@ struct Index {
         .objectFit(ImageFit.Cover)
 
       Column({ space: 4 }) {
-        Text(this.t('手表端全量功能上线'))
+        Text(this.t('Steam 交易与库存全面升级'))
           .fontSize(19)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
 
-        Text(this.t('V1.4.4：手表可独立查看令牌，并通过手机扫码完成安全同步。'))
+        Text(this.t('V1.4.5：交易确认、市场上架与库存管理集中到一个页面。'))
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
@@ -3385,10 +5571,647 @@ struct Index {
   }
 
   @Builder
+  private SteamInventoryFilterSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Scroll(this.steamInventoryFilterSheetScroller) {
+          Column({ space: 16 }) {
+            Column({ space: 10 }) {
+              Text(this.t('交易状态'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .width('100%')
+
+              Column() {
+                ForEach(this.steamInventoryTradeFilterOptions(), (value: string, index: number) => {
+                  Row({ space: 12 }) {
+                    Text(this.steamInventoryTradeFilterLabel(value))
+                      .fontSize(15)
+                      .fontColor(this.primaryTextColor())
+                      .layoutWeight(1)
+
+                    Checkbox({
+                      name: 'steam-inventory-trade-' + index.toString() + '-' +
+                        this.sheetSelectionRevision.toString()
+                    })
+                      .select(this.pendingSteamInventoryTradeFilters.includes(value))
+                      .selectedColor(this.accentColor())
+                      .onChange((selected: boolean) => {
+                        this.togglePendingSteamInventoryTradeFilter(value, selected);
+                      })
+                  }
+                  .width('100%')
+                  .height(48)
+                  .padding({ left: 14, right: 12 })
+                  .alignItems(VerticalAlign.Center)
+
+                  if (index < this.steamInventoryTradeFilterOptions().length - 1) {
+                    Divider()
+                      .strokeWidth(0.5)
+                      .color(this.dividerColor())
+                      .margin({ left: 14, right: 14 })
+                  }
+                }, (value: string) => value)
+              }
+              .width('100%')
+              .borderRadius(SHEET_OPTION_CARD_RADIUS)
+              .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+              .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+
+            Column({ space: 10 }) {
+              Text(this.t('物品类型'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .width('100%')
+
+              if (this.availableSteamInventoryTypes().length === 0) {
+                Text(this.t('暂无可筛选的物品类型'))
+                  .fontSize(13)
+                  .fontColor(this.secondaryTextColor())
+                  .width('100%')
+                  .padding({ top: 10, bottom: 10 })
+              } else {
+                Column() {
+                  ForEach(this.availableSteamInventoryTypes(), (type: string, index: number) => {
+                    Row({ space: 12 }) {
+                      Text(type)
+                        .fontSize(15)
+                        .fontColor(this.primaryTextColor())
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+
+                      Checkbox({
+                        name: 'steam-inventory-type-' + index.toString() + '-' +
+                          this.sheetSelectionRevision.toString()
+                      })
+                        .select(this.pendingSteamInventoryFilterTypes.includes(type))
+                        .selectedColor(this.accentColor())
+                        .onChange((selected: boolean) => {
+                          this.togglePendingSteamInventoryType(type, selected);
+                        })
+                    }
+                    .width('100%')
+                    .height(48)
+                    .padding({ left: 14, right: 12 })
+                    .alignItems(VerticalAlign.Center)
+
+                    if (index < this.availableSteamInventoryTypes().length - 1) {
+                      Divider()
+                        .strokeWidth(0.5)
+                        .color(this.dividerColor())
+                        .margin({ left: 14, right: 14 })
+                    }
+                  }, (type: string) => type)
+                }
+                .width('100%')
+                .borderRadius(SHEET_OPTION_CARD_RADIUS)
+                .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+                .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+              }
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .padding({
+            left: SHEET_HORIZONTAL_PADDING,
+            right: SHEET_HORIZONTAL_PADDING,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
+          })
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('重置'),
+          secondaryAction: () => {
+            this.resetPendingSteamInventoryFilter();
+          },
+          primaryLabel: this.t('筛选'),
+          primaryEnabled: true,
+          primaryLoading: false,
+          primaryAction: () => {
+            this.applySteamInventoryFilter();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('筛选库存') },
+        menu: this.sheetCloseMenu(() => {
+          this.showSteamInventoryFilterSheet = false;
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.steamInventoryFilterSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private SteamInventoryItemSheet() {
+    HdsNavigation() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Scroll(this.steamInventoryItemSheetScroller) {
+          Column({ space: 14 }) {
+            this.SteamInventoryItemSheetHero()
+            this.SteamInventoryItemDetailSection()
+            this.SteamMarketTrendSection()
+            this.SteamMarketSaleSection()
+          }
+          .width('100%')
+          .padding({
+            left: SHEET_HORIZONTAL_PADDING,
+            right: SHEET_HORIZONTAL_PADDING,
+            top: SHEET_CONTENT_TOP_PADDING,
+            bottom: this.sheetListBottomPadding()
+          })
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .clip(false)
+
+        this.SheetFloatingActions({
+          secondaryLabel: this.t('关闭'),
+          secondaryAction: () => {
+            this.showSteamInventoryItemSheet = false;
+          },
+          primaryLabel: this.t(this.selectedSteamInventoryItem.marketable ? '出售' : '不可出售'),
+          primaryEnabled: this.canSellSelectedSteamInventoryItem(),
+          primaryLoading: this.steamMarketSelling,
+          primaryAction: () => {
+            this.confirmSellSelectedSteamInventoryItem();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .clip(false)
+    }
+    .titleMode(HdsNavigationTitleMode.MODAL)
+    .titleBar({
+      content: {
+        title: { mainTitle: this.t('物品详情') },
+        menu: this.sheetCloseMenu(() => {
+          if (!this.steamMarketSelling) {
+            this.showSteamInventoryItemSheet = false;
+          }
+        })
+      },
+      style: this.sheetTitleBarStyle(),
+      enableComponentSafeArea: true
+    })
+    .bindToScrollable([this.steamInventoryItemSheetScroller])
+    .hideBackButton(true)
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.sheetSurfaceBackgroundColor())
+    .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private SteamInventoryItemSheetHero() {
+    Column({ space: 12 }) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Image(this.selectedSteamInventoryItem.iconUrl.length > 0 ?
+          this.selectedSteamInventoryItem.iconUrl : $r('app.media.ic_steam'))
+          .width('100%')
+          .height(STEAM_INVENTORY_SHEET_IMAGE_HEIGHT)
+          .objectFit(ImageFit.Contain)
+          .backgroundColor(this.steamInventoryMediaBackgroundColor())
+
+        Row() {
+          if (this.selectedSteamInventoryItem.type.length > 0) {
+            Text(this.selectedSteamInventoryItem.type)
+              .height(28)
+              .constraintSize({ maxWidth: 220 })
+              .padding({ left: 10, right: 10 })
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.steamInventoryBadgeTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .borderRadius(14)
+              .backgroundColor(this.steamInventoryBadgeBackgroundColor())
+          }
+
+          Blank()
+
+          if (this.selectedSteamInventoryItem.amount > 1) {
+            Text('×' + this.selectedSteamInventoryItem.amount.toString())
+              .height(28)
+              .padding({ left: 10, right: 10 })
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.accentContrastColor())
+              .borderRadius(14)
+              .backgroundColor(this.accentColor())
+          }
+        }
+        .width('100%')
+        .padding(12)
+        .alignItems(VerticalAlign.Top)
+        .zIndex(2)
+      }
+      .width('100%')
+      .height(STEAM_INVENTORY_SHEET_IMAGE_HEIGHT)
+      .borderRadius(SHEET_OPTION_CARD_RADIUS)
+      .clip(true)
+      .border({ width: 0.5, color: this.dividerColor() })
+
+      Column({ space: 4 }) {
+        Text(this.selectedSteamInventoryItem.name.length > 0 ?
+          this.selectedSteamInventoryItem.name : this.t('未知物品'))
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+
+        Text(this.selectedSteamInventoryItem.marketHashName.length > 0 ?
+          this.selectedSteamInventoryItem.marketHashName : this.selectedSteamInventoryItem.type)
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private SteamInventoryItemDetailSection() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-inventory-detail-sheet', SHEET_OPTION_CARD_RADIUS)
+
+      Column() {
+        Text(this.t('物品信息'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+          .margin({ bottom: 6 })
+
+        this.SteamInventoryDetailRow(
+          this.t('类型'),
+          this.selectedSteamInventoryItem.type.length > 0 ? this.selectedSteamInventoryItem.type : this.t('未知'),
+          this.primaryTextColor()
+        )
+        Divider().color(this.dividerColor()).strokeWidth(0.5)
+        this.SteamInventoryDetailRow(
+          this.t('交易状态'),
+          this.steamInventoryItemStatus(this.selectedSteamInventoryItem),
+          this.selectedSteamInventoryItem.marketable || this.selectedSteamInventoryItem.tradable ?
+            STEAM_INVENTORY_MARKET_COLOR : this.secondaryTextColor()
+        )
+        Divider().color(this.dividerColor()).strokeWidth(0.5)
+        this.SteamInventoryDetailRow(
+          this.t('库存数量'),
+          this.selectedSteamInventoryItem.amount.toString(),
+          this.primaryTextColor()
+        )
+      }
+      .width('100%')
+      .padding(16)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.steamInventoryDetailCardBackgroundColor())
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-inventory-detail-sheet', newValue);
+    })
+  }
+
+  @Builder
+  private SteamInventoryDetailRow(label: string, value: string, valueColor: ResourceColor) {
+    Row({ space: 12 }) {
+      Text(label)
+        .fontSize(14)
+        .fontColor(this.secondaryTextColor())
+        .layoutWeight(1)
+
+      Text(value)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(valueColor)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(42)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private SteamMarketTrendSection() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-market-trend-sheet', SHEET_OPTION_CARD_RADIUS)
+
+      Column({ space: 12 }) {
+        Row() {
+          Column({ space: 2 }) {
+            Text(this.t('价格趋势'))
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+            Text(this.t('最近市场价格记录'))
+              .fontSize(11)
+              .fontColor(this.secondaryTextColor())
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          if (this.steamMarketPriceHistory.points.length > 0) {
+            Text(this.steamMarketLatestPriceText())
+              .fontSize(17)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.accentColor())
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        TabSegmentButtonV2({
+          items: this.steamMarketTrendSegmentItems(),
+          selectedIndex: this.steamMarketTrendRangeIndex(),
+          onItemClicked: (index: number): void => {
+            this.steamMarketTrendRange = this.steamMarketTrendRangeFromIndex(index);
+          },
+          itemFontSize: LengthMetrics.vp(12),
+          itemSelectedFontSize: LengthMetrics.vp(12),
+          itemFontColor: ColorMetrics.resourceColor(this.secondaryTextColor()),
+          itemSelectedFontColor: ColorMetrics.resourceColor(this.accentColor()),
+          itemFontWeight: FontWeight.Medium,
+          itemSelectedFontWeight: FontWeight.Medium,
+          itemBorderRadius: LengthMetrics.vp(15),
+          itemSelectedBackgroundColor: ColorMetrics.resourceColor(this.accentTintColor()),
+          itemMinHeight: LengthMetrics.vp(30),
+          itemSpace: LengthMetrics.vp(0),
+          buttonBackgroundColor: ColorMetrics.resourceColor(this.sheetControlBackgroundColor()),
+          buttonBorderRadius: LengthMetrics.vp(16),
+          buttonMinHeight: LengthMetrics.vp(32),
+          buttonPadding: LengthMetrics.vp(1)
+        })
+          .width(174)
+          .height(32)
+
+        if (this.steamMarketPriceLoading) {
+          Column({ space: 10 }) {
+            LoadingProgress()
+              .width(28)
+              .height(28)
+              .color(this.accentColor())
+            Text(this.t('正在获取 Steam 市场价格'))
+              .fontSize(13)
+              .fontColor(this.secondaryTextColor())
+          }
+          .width('100%')
+          .height(STEAM_MARKET_TREND_HEIGHT)
+          .justifyContent(FlexAlign.Center)
+        } else if (this.steamMarketPriceError.length > 0) {
+          Column({ space: 10 }) {
+            Text(this.steamMarketPriceError)
+              .fontSize(12)
+              .lineHeight(18)
+              .fontColor(this.secondaryTextColor())
+              .textAlign(TextAlign.Center)
+              .maxLines(3)
+
+            Button(this.t('重试'))
+              .height(34)
+              .padding({ left: 18, right: 18 })
+              .fontSize(13)
+              .fontColor(this.accentColor())
+              .backgroundColor(this.accentTintColor())
+              .borderRadius(17)
+              .onClick(() => {
+                this.loadSelectedSteamMarketPriceHistory();
+              })
+          }
+          .width('100%')
+          .height(STEAM_MARKET_TREND_HEIGHT)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (this.steamMarketPriceHistory.points.length === 0) {
+          Text(this.t('暂无可用的市场价格记录'))
+            .width('100%')
+            .height(STEAM_MARKET_TREND_HEIGHT)
+            .fontSize(13)
+            .fontColor(this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+        } else {
+          Stack() {
+            Polyline({ width: '100%', height: STEAM_MARKET_TREND_HEIGHT })
+              .points(this.steamMarketTrendPolylinePoints())
+              .fill(Color.Transparent)
+              .stroke(this.accentColor())
+              .strokeWidth(3)
+          }
+          .width('100%')
+          .height(STEAM_MARKET_TREND_HEIGHT)
+
+          Row() {
+            Text(this.steamMarketFirstDateText())
+              .fontSize(10)
+              .fontColor(this.secondaryTextColor())
+            Blank()
+            Text(this.steamMarketLastDateText())
+              .fontSize(10)
+              .fontColor(this.secondaryTextColor())
+          }
+          .width('100%')
+
+          Row() {
+            Text(this.t('最低') + ' ' + this.steamMarketMinimumPriceText())
+              .fontSize(11)
+              .fontColor(this.secondaryTextColor())
+            Blank()
+            Text(this.t('最高') + ' ' + this.steamMarketMaximumPriceText())
+              .fontSize(11)
+              .fontColor(this.secondaryTextColor())
+          }
+          .width('100%')
+        }
+      }
+      .width('100%')
+      .padding(16)
+      .alignItems(HorizontalAlign.Start)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.steamInventoryDetailCardBackgroundColor())
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-market-trend-sheet', newValue);
+    })
+  }
+
+  @Builder
+  private SteamMarketSaleSection() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('steam-market-sale-sheet', SHEET_OPTION_CARD_RADIUS)
+
+      Column({ space: 12 }) {
+        Text(this.t('出售设置'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+
+        if (this.selectedSteamInventoryItem.marketable) {
+          Row({ space: 8 }) {
+            Column({ space: 6 }) {
+              Text(this.t('您收款'))
+                .fontSize(12)
+                .fontColor(this.secondaryTextColor())
+                .width('100%')
+
+              Row({ space: 4 }) {
+                if (this.steamMarketPriceHistory.prefix.length > 0) {
+                  Text(this.steamMarketPriceHistory.prefix)
+                    .fontSize(15)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.primaryTextColor())
+                }
+
+                TextInput({ text: this.steamMarketSellerReceivesInput, placeholder: '0.00' })
+                  .type(InputType.Normal)
+                  .layoutWeight(1)
+                  .height(46)
+                  .fontSize(15)
+                  .fontColor(this.primaryTextColor())
+                  .placeholderColor(this.secondaryTextColor())
+                  .backgroundColor(this.pageBackgroundColor())
+                  .borderRadius(12)
+                  .padding({ left: 10, right: 10 })
+                  .maxLength(12)
+                  .onChange((value: string) => {
+                    this.editSteamMarketPriceFromSellerReceives(value);
+                  })
+                  .onEditChange((isEditing: boolean) => {
+                    this.onSteamMarketPriceEditChanged('seller', isEditing);
+                  })
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Column({ space: 6 }) {
+              Text(this.t('买家支付（含手续费）'))
+                .fontSize(12)
+                .fontColor(this.secondaryTextColor())
+                .width('100%')
+
+              Row({ space: 4 }) {
+                if (this.steamMarketPriceHistory.prefix.length > 0) {
+                  Text(this.steamMarketPriceHistory.prefix)
+                    .fontSize(15)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.primaryTextColor())
+                }
+
+                TextInput({ text: this.steamMarketBuyerPaysInput, placeholder: '0.00' })
+                  .type(InputType.Normal)
+                  .layoutWeight(1)
+                  .height(46)
+                  .fontSize(15)
+                  .fontColor(this.primaryTextColor())
+                  .placeholderColor(this.secondaryTextColor())
+                  .backgroundColor(this.pageBackgroundColor())
+                  .borderRadius(12)
+                  .padding({ left: 10, right: 10 })
+                  .maxLength(12)
+                  .onChange((value: string) => {
+                    this.editSteamMarketPriceFromBuyerPays(value);
+                  })
+                  .onEditChange((isEditing: boolean) => {
+                    this.onSteamMarketPriceEditChanged('buyer', isEditing);
+                  })
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Bottom)
+
+          Text(this.t('两个金额会按 Steam 市场手续费自动联动；提交给 Steam 的是“您收款”金额。'))
+            .fontSize(11)
+            .lineHeight(17)
+            .fontColor(this.secondaryTextColor())
+            .width('100%')
+        } else {
+          Text(this.t('该物品不支持在 Steam 社区市场出售。'))
+            .fontSize(13)
+            .lineHeight(19)
+            .fontColor(this.secondaryTextColor())
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .padding(16)
+      .alignItems(HorizontalAlign.Start)
+      .zIndex(2)
+    }
+    .width('100%')
+    .borderRadius(SHEET_OPTION_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.steamInventoryDetailCardBackgroundColor())
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('steam-market-sale-sheet', newValue);
+    })
+  }
+
+  @Builder
   private SteamLoginPickerSheet() {
     HdsNavigation() {
       Stack({ alignContent: Alignment.Bottom }) {
         List({ scroller: this.steamLoginSheetScroller }) {
+          ListItem() {
+            this.SteamApiLatencyStatusRow()
+          }
+
           ListItem() {
             this.SheetMetaRow(
               this.t('仅显示已通过登录凭据完整性校验的 Steam 令牌'),
@@ -3401,8 +6224,10 @@ struct Index {
               this.SteamLoginEmptyState()
             }
           } else {
-            ListItem() {
-              this.SteamAccountSourceActions()
+            if (this.steamLoginPickerMode === SteamLoginPickerMode.Scan) {
+              ListItem() {
+                this.SteamAccountSourceActions()
+              }
             }
 
             ForEach(this.steamLoginTokens(), (token: TokenRecord) => {
@@ -3473,6 +6298,20 @@ struct Index {
               this.importSteamTokenFromLoginSheet();
             }
           })
+        } else if (this.steamLoginPickerMode === SteamLoginPickerMode.AccountSwitch) {
+          this.SheetFloatingActions({
+            secondaryLabel: this.t('登录 Steam 账号'),
+            secondaryIsPrimary: true,
+            secondaryAction: () => {
+              this.openSteamEnrollmentFromPicker();
+            },
+            primaryLabel: this.t('导入 Steam maFile'),
+            primaryEnabled: true,
+            primaryLoading: false,
+            primaryAction: () => {
+              this.importSteamTokenFromLoginSheet();
+            }
+          })
         } else {
           this.SheetFloatingActions({
             secondaryLabel: this.t('取消'),
@@ -3495,7 +6334,8 @@ struct Index {
     .titleMode(HdsNavigationTitleMode.MODAL)
     .titleBar({
       content: {
-        title: { mainTitle: this.t('选择 Steam 登录账号') },
+        title: { mainTitle: this.t(this.steamLoginPickerMode === SteamLoginPickerMode.AccountSwitch ?
+          'Steam 账号' : '选择 Steam 登录账号') },
         menu: this.sheetCloseMenu(() => {
           this.showSteamLoginPicker = false;
         })
@@ -3518,6 +6358,8 @@ struct Index {
         Stack({ alignContent: Alignment.TopStart }) {
           Scroll(this.steamEnrollmentSheetScroller) {
             Column({ space: 16 }) {
+              this.SteamApiLatencyStatusRow()
+
               if (this.steamEnrollmentStage === STEAM_ENROLLMENT_RISK) {
                 this.SteamEnrollmentRiskContent()
               } else if (this.steamEnrollmentStage === STEAM_ENROLLMENT_CREDENTIALS) {
@@ -3573,6 +6415,41 @@ struct Index {
     .height('100%')
     .backgroundColor(this.sheetSurfaceBackgroundColor())
     .backgroundBlurStyle(this.sheetSurfaceBlurStyle())
+  }
+
+  @Builder
+  private SteamApiLatencyStatusRow() {
+    Row({ space: 8 }) {
+      Text(this.t('Steam 官方 API'))
+        .fontSize(13)
+        .fontColor(this.secondaryTextColor())
+        .layoutWeight(1)
+
+      if (this.steamApiLatencyChecking) {
+        LoadingProgress()
+          .width(14)
+          .height(14)
+          .color(this.secondaryTextColor())
+
+        Text(this.t('检测中'))
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+      } else {
+        Circle()
+          .width(6)
+          .height(6)
+          .fill(this.steamApiLatencyStatusColor())
+
+        Text(this.steamApiLatencyStatusText())
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.steamApiLatencyStatusColor())
+      }
+    }
+    .width('100%')
+    .height(40)
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING })
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -4823,7 +7700,7 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28),
       onDisappear: () => {
-        this.expandedUpdateLogVersion = '1.4.4';
+        this.expandedUpdateLogVersion = '1.4.5';
       }
     })
   }
@@ -4940,7 +7817,7 @@ struct Index {
           })
           this.MeCardDivider()
           this.AboutActionRow('更新日志', '', () => {
-            this.expandedUpdateLogVersion = '1.4.4';
+            this.expandedUpdateLogVersion = '1.4.5';
             this.showUpdateLogSheet = true;
           })
           this.MeCardDivider()
@@ -5305,6 +8182,14 @@ struct Index {
     WaterFlow({ scroller: this.appearanceSettingsScroller }) {
       FlowItem() {
         Column() {
+          this.SettingsSectionTitle(this.t('Steam功能页'))
+          this.SettingsSteamFeatureCard()
+        }
+        .width('100%')
+      }
+      .width('100%')
+      FlowItem() {
+        Column() {
           this.SettingsSectionTitle(this.t('令牌外观'))
           this.SettingsAppearanceTokenCard()
         }
@@ -5424,6 +8309,12 @@ struct Index {
   @Builder
   private SettingsAppearanceSection() {
     Column({ space: PAGE_CARD_GAP }) {
+      Column() {
+        this.SettingsSectionTitle(this.t('Steam功能页'))
+        this.SettingsSteamFeatureCard()
+      }
+      .width('100%')
+
       Column() {
         this.SettingsSectionTitle(this.t('令牌外观'))
         this.SettingsAppearanceTokenCard()
@@ -6854,6 +9745,9 @@ struct Index {
     if (key === SettingsSwitchKey.ShowNextToken) {
       return this.showNextToken;
     }
+    if (key === SettingsSwitchKey.ShowSteamFeaturePage) {
+      return this.showSteamFeaturePage;
+    }
     if (key === SettingsSwitchKey.GlobalImmersion) {
       return this.globalImmersionEnabled;
     }
@@ -6884,6 +9778,18 @@ struct Index {
     }
     if (key === SettingsSwitchKey.ShowNextToken) {
       this.showNextToken = checked;
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSwitchKey.ShowSteamFeaturePage) {
+      this.showSteamFeaturePage = checked;
+      if (!checked) {
+        this.launchHomePage = '令牌';
+        if (this.selectedHomeTab === HomeTab.Steam) {
+          this.selectedHomeTab = HomeTab.Token;
+          this.homeTabsController.changeIndex(0);
+        }
+      }
       this.saveSettings();
       return;
     }
@@ -6933,6 +9839,40 @@ struct Index {
     .height(ME_ROW_HEIGHT * 2 + 1)
     .padding({ left: 20, right: 18 })
     .zIndex(2)
+  }
+
+  @Builder
+  private SettingsSteamFeatureCard() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.shouldUseCardMaterial()) {
+        this.ImmersionCardSurface(ME_ROW_HEIGHT * 2 + 1, ME_CARD_RADIUS)
+      }
+      Column() {
+        this.SettingsSwitchRow(SettingsSwitchKey.ShowSteamFeaturePage, '是否显示Steam功能页')
+        this.MeCardDivider()
+        this.SettingsSelectRow(
+          SettingsSelectKey.LaunchHomePage,
+          '启动应用的主页',
+          LAUNCH_HOME_PAGE_OPTIONS,
+          false
+        )
+      }
+      .width('100%')
+      .height(ME_ROW_HEIGHT * 2 + 1)
+      .padding({ left: 20, right: 18 })
+      .zIndex(2)
+    }
+    .width('100%')
+    .height(ME_ROW_HEIGHT * 2 + 1)
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('appearance-steam'), y: this.appCardScale('appearance-steam') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('appearance-steam', event.type);
+    })
   }
 
   @Builder
@@ -7245,6 +10185,9 @@ struct Index {
     if (key === SettingsSelectKey.Language) {
       return this.languageInput;
     }
+    if (key === SettingsSelectKey.LaunchHomePage) {
+      return this.launchHomePage;
+    }
     if (key === SettingsSelectKey.IssuerLogoColor) {
       return this.issuerLogoColorMode;
     }
@@ -7264,6 +10207,11 @@ struct Index {
     if (key === SettingsSelectKey.Language) {
       this.languageInput = normalizeSelectedLanguage(value);
       this.refreshSystemLanguage();
+      this.saveSettings();
+      return;
+    }
+    if (key === SettingsSelectKey.LaunchHomePage) {
+      this.launchHomePage = value === 'Steam' ? 'Steam' : '令牌';
       this.saveSettings();
       return;
     }
@@ -7700,6 +10648,19 @@ struct Index {
       });
   }
 
+  private steamTabBarStyle(): BottomTabBarStyle {
+    return new BottomTabBarStyle($r('app.media.ic_steam'), 'Steam')
+      .iconStyle({
+        unselectedColor: this.primaryTextColor(),
+        selectedColor: this.accentColor()
+      })
+      .labelStyle({
+        font: { size: HOME_NAV_TEXT_SIZE },
+        unselectedColor: this.primaryTextColor(),
+        selectedColor: this.accentColor()
+      });
+  }
+
   private meTabBarStyle(): BottomTabBarStyle {
     return new BottomTabBarStyle({
       normal: new SymbolGlyphModifier($r('sys.symbol.person_fill'))
@@ -7716,56 +10677,75 @@ struct Index {
       });
   }
 
+  private homeNavigationWidth(): number {
+    if (!this.showSteamFeaturePage) {
+      return HOME_NAV_WIDTH_WITHOUT_STEAM;
+    }
+    return Math.max(HOME_NAV_WIDTH_WITH_STEAM,
+      this.steamAccountBarWidth() - HOME_NAV_MINIBAR_GAP - ADD_BUTTON_SIZE);
+  }
+
+  private homeNavigationSideMargin(): number {
+    const groupWidth = this.homeNavigationWidth() + HOME_NAV_MINIBAR_GAP + ADD_BUTTON_SIZE;
+    return Math.max(HOME_HORIZONTAL_PADDING, (this.pageWidth - groupWidth) / 2);
+  }
+
+  private homeTabsFloatingStyle(): HdsTabsFloatingStyle {
+    const style: HdsTabsFloatingStyle = {
+      barBottomMargin: this.naviIndicatorHeight,
+      barSideMargin: this.shouldShowHomeMiniBar() ?
+        this.homeNavigationSideMargin() : HOME_HORIZONTAL_PADDING,
+      barWidth: {
+        smallWidth: this.homeNavigationWidth(),
+        mediumWidth: this.homeNavigationWidth(),
+        largeWidth: this.homeNavigationWidth()
+      },
+      lightColor: this.accentColor(),
+      systemMaterialEffect: this.configuredMaterialEffect()
+    };
+    if (this.shouldShowHomeMiniBar()) {
+      style.miniBar = {
+        miniBarBuilder: (): void => {
+          this.AddFloatingButton();
+        },
+        miniBarWidth: {
+          smallWidth: ADD_BUTTON_SIZE,
+          mediumWidth: ADD_BUTTON_SIZE,
+          largeWidth: ADD_BUTTON_SIZE
+        },
+        miniBarStyle: HdsBarStyle.COLLAPSE,
+        enableMiniBarBackground: true,
+        enableMiniBarClip: true,
+        onBarStyleChange: (miniBarStyle: HdsBarStyle, _tabBarStyle: HdsBarStyle,
+          _miniBarWidth: number, _tabBarWidth: number, _mode: HdsTabsBarChangeMode): void => {
+          if (miniBarStyle === HdsBarStyle.EXPAND) {
+            this.homeTabsController.applyMiniBarStyle(HdsBarStyle.COLLAPSE);
+          }
+        }
+      };
+    }
+    return style;
+  }
+
   @Builder
   private AddFloatingButton() {
     Stack({ alignContent: Alignment.Center }) {
-      ImmersionButton({
-          systemMaterialEffect: this.configuredMaterialEffect(),
-        buttonModify: new ActionButtonModifier(
-          ADD_BUTTON_SIZE, ADD_BUTTON_SIZE, this.primaryActionFillColor(), this.accentColor()),
-        click: (): void => {
-          if (!this.addButtonDragging) {
-            this.isAddMenuOpen = true;
-          }
-        }
-      }) {
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph($r('sys.symbol.plus'))
-            .fontSize(ADD_BUTTON_ICON_SIZE)
-            .fontColor([this.accentColor()])
-        }
-        .width(ADD_BUTTON_SIZE)
-        .height(ADD_BUTTON_SIZE)
+      Button() {
+        SymbolGlyph($r('sys.symbol.plus'))
+          .fontSize(ADD_BUTTON_ICON_SIZE)
+          .fontColor([this.isDarkTheme() ? '#FFFFFFFF' : '#FF000000'])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
       }
+      .width(ADD_BUTTON_SIZE)
+      .height(ADD_BUTTON_SIZE)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        this.isAddMenuOpen = true;
+      })
     }
     .width(ADD_BUTTON_SIZE)
     .height(ADD_BUTTON_SIZE)
     .clip(false)
-    .margin({
-      left: this.isLeftHanded() ? ADD_BUTTON_RIGHT : 0,
-      right: this.isLeftHanded() ? 0 : ADD_BUTTON_RIGHT,
-      bottom: ADD_BUTTON_BOTTOM
-    })
-    .translate({ x: this.addButtonOffsetX, y: this.addButtonOffsetY })
-    .gesture(PanGesture({ direction: PanDirection.All, distance: 4 })
-      .onActionStart(() => {
-        this.addButtonDragging = false;
-        this.addButtonDragStartX = this.addButtonOffsetX;
-        this.addButtonDragStartY = this.addButtonOffsetY;
-      })
-      .onActionUpdate((event: GestureEvent) => {
-        if (Math.abs(event.offsetX) > 3 || Math.abs(event.offsetY) > 3) {
-          this.addButtonDragging = true;
-        }
-        this.addButtonOffsetX = this.clampAddButtonOffsetX(this.addButtonDragStartX + event.offsetX);
-        this.addButtonOffsetY = this.clampAddButtonOffsetY(this.addButtonDragStartY + event.offsetY);
-      })
-      .onActionEnd(() => {
-        this.addButtonOffsetX = this.snapAddButtonOffsetX(this.addButtonOffsetX);
-        setTimeout(() => {
-          this.addButtonDragging = false;
-        }, 80);
-      }))
     .bindSheet($$this.isAddMenuOpen, this.AddMethodSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
@@ -7775,29 +10755,6 @@ struct Index {
       blurStyle: this.sheetSurfaceBlurStyle(),
       radius: LengthMetrics.vp(28)
     })
-    .zIndex(20)
-  }
-
-  private clampAddButtonOffsetX(value: number): number {
-    const baseX = this.isLeftHanded() ? ADD_BUTTON_RIGHT : this.pageWidth - ADD_BUTTON_RIGHT - ADD_BUTTON_SIZE;
-    const minX = -baseX;
-    const maxX = this.pageWidth - ADD_BUTTON_SIZE - baseX;
-    return Math.max(minX, Math.min(maxX, value));
-  }
-
-  private snapAddButtonOffsetX(value: number): number {
-    const baseX = this.isLeftHanded() ? ADD_BUTTON_RIGHT : this.pageWidth - ADD_BUTTON_RIGHT - ADD_BUTTON_SIZE;
-    const currentCenterX = baseX + value + ADD_BUTTON_SIZE / 2;
-    const targetX = currentCenterX < this.pageWidth / 2 ?
-      ADD_BUTTON_RIGHT : this.pageWidth - ADD_BUTTON_RIGHT - ADD_BUTTON_SIZE;
-    return this.clampAddButtonOffsetX(targetX - baseX);
-  }
-
-  private clampAddButtonOffsetY(value: number): number {
-    const baseY = this.pageHeight - ADD_BUTTON_BOTTOM - ADD_BUTTON_SIZE;
-    const minY = -baseY;
-    const maxY = this.pageHeight - ADD_BUTTON_SIZE - baseY;
-    return Math.max(minY, Math.min(maxY, value));
   }
 
   private isLeftHanded(): boolean {
@@ -7831,6 +10788,7 @@ struct Index {
               setTimeout(() => {
                 this.resetSteamEnrollment();
                 this.showSteamEnrollmentSheet = true;
+                this.refreshSteamApiLatency(true);
               }, 180);
             }, true)
           }
@@ -8490,11 +11448,6 @@ struct Index {
     .clip(true)
     .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
     .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
-    .scale({ x: this.appCardScale('add-token-basic'), y: this.appCardScale('add-token-basic') })
-    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
-    .onTouch((event: TouchEvent) => {
-      this.handleAppCardTouch('add-token-basic', event.type);
-    })
   }
 
   @Builder
@@ -8929,7 +11882,13 @@ struct Index {
     if (this.isWatchLayout()) {
       return this.t('令牌');
     }
-    return this.selectedHomeTab === HomeTab.Token ? this.t('令牌') : this.t('我的');
+    if (this.selectedHomeTab === HomeTab.Token) {
+      return this.t('令牌');
+    }
+    if (this.selectedHomeTab === HomeTab.Steam) {
+      return '';
+    }
+    return this.t('我的');
   }
 
   private isWatchLayout(): boolean {
@@ -8938,16 +11897,29 @@ struct Index {
       (this.pageWidth <= WATCH_LAYOUT_MAX_WIDTH && this.pageHeight <= WATCH_LAYOUT_MAX_HEIGHT);
   }
 
-  private shouldShowAddFloatingButton(): boolean {
-    return !this.isWatchLayout() && this.selectedHomeTab === HomeTab.Token &&
-      this.pageMode === PageMode.Home && this.homePathStack.size() === 0;
+  private shouldShowHomeMiniBar(): boolean {
+    return !this.isWatchLayout() && this.pageMode === PageMode.Home && !this.homeDestinationVisible &&
+      !(this.selectedHomeTab === HomeTab.Steam &&
+        (this.steamSelectionMode || this.steamListingSelectionMode || this.steamInventorySelectionMode));
+  }
+
+  private shouldShowSteamFeatureTopControls(): boolean {
+    return !this.isWatchLayout() && this.pageMode === PageMode.Home && !this.homeDestinationVisible &&
+      this.showSteamFeaturePage && this.selectedHomeTab === HomeTab.Steam;
   }
 
   private homeNavigationScrollers(): Scroller[] {
     if (this.isWatchLayout()) {
       return [this.watchScroller];
     }
-    return this.selectedHomeTab === HomeTab.Token ? [this.homeScroller] : [this.meScroller];
+    if (this.selectedHomeTab === HomeTab.Token) {
+      return [this.homeScroller];
+    }
+    if (this.selectedHomeTab === HomeTab.Steam) {
+      return this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations ?
+        [this.steamFeatureScroller] : [this.steamInventoryScroller];
+    }
+    return [this.meScroller];
   }
 
   private navigationDestinationTitle(name: string): string {
@@ -9100,6 +12072,13 @@ struct Index {
     };
   }
 
+  private steamPersistentMaterialEffect(): SystemMaterialParams {
+    return {
+      materialType: hdsMaterial.MaterialType.IMMERSIVE,
+      materialLevel: this.configuredMaterialLevel()
+    };
+  }
+
   private onboardingMaterialEffect(): SystemMaterialParams {
     return {
       materialType: hdsMaterial.MaterialType.IMMERSIVE,
@@ -9159,6 +12138,10 @@ struct Index {
 
   private sheetControlBackgroundColor(): string {
     return this.isDarkTheme() ? '#F23A3A3A' : '#F2F3F5';
+  }
+
+  private steamInventoryDetailCardBackgroundColor(): string {
+    return this.isDarkTheme() ? '#191919' : '#E9EBEF';
   }
 
   private sheetFloatingShadowColor(): string {
@@ -12666,6 +15649,2700 @@ struct Index {
     }
   }
 
+  private async loadSteamConfirmationHistory(): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    this.steamConfirmationHistory = await SteamConfirmationHistoryRepository.load(context);
+  }
+
+  private restoreSteamPendingRequestCache(): void {
+    const context = this.getAbilityContext();
+    if (context === undefined) {
+      return;
+    }
+    const cache = SteamPendingRequestCacheRepository.load(context);
+    this.pendingSteamConfirmations = cache.confirmations.filter(
+      (record: SteamPendingConfirmationCacheRecord): boolean => this.tokens.some(
+        (token: TokenRecord): boolean => token.id === record.tokenId
+      )
+    ).map((record: SteamPendingConfirmationCacheRecord): SteamPendingConfirmation => {
+      return {
+        tokenId: record.tokenId,
+        tokenName: record.tokenName,
+        confirmation: record.confirmation
+      };
+    });
+    this.steamPendingLoginEntries = cache.pendingLogins.filter(
+      (record: SteamPendingLoginCacheRecord): boolean => this.tokens.some(
+        (token: TokenRecord): boolean => token.id === record.tokenId
+      )
+    ).map((record: SteamPendingLoginCacheRecord): SteamPendingLoginEntry => {
+      return {
+        tokenId: record.tokenId,
+        tokenName: record.tokenName,
+        pending: record.pending
+      };
+    });
+  }
+
+  private persistSteamPendingRequestCache(): void {
+    const context = this.getAbilityContext();
+    if (context === undefined) {
+      return;
+    }
+    const cache = new SteamPendingRequestCache();
+    cache.confirmations = this.pendingSteamConfirmations.map(
+      (entry: SteamPendingConfirmation): SteamPendingConfirmationCacheRecord => {
+        return {
+          tokenId: entry.tokenId,
+          tokenName: entry.tokenName,
+          confirmation: entry.confirmation
+        };
+      }
+    );
+    cache.pendingLogins = this.steamPendingLoginEntries.map(
+      (entry: SteamPendingLoginEntry): SteamPendingLoginCacheRecord => {
+        return {
+          tokenId: entry.tokenId,
+          tokenName: entry.tokenName,
+          pending: entry.pending
+        };
+      }
+    );
+    SteamPendingRequestCacheRepository.save(context, cache);
+  }
+
+  private replaceSteamPendingConfirmations(tokenId: string, entries: SteamPendingConfirmation[]): void {
+    this.pendingSteamConfirmations = this.pendingSteamConfirmations.filter(
+      (entry: SteamPendingConfirmation): boolean => entry.tokenId !== tokenId
+    ).concat(entries);
+  }
+
+  private replaceSteamPendingLogins(tokenId: string, entries: SteamPendingLoginEntry[]): void {
+    this.steamPendingLoginEntries = this.steamPendingLoginEntries.filter(
+      (entry: SteamPendingLoginEntry): boolean => entry.tokenId !== tokenId
+    ).concat(entries);
+  }
+
+  private steamFeatureTokens(): TokenRecord[] {
+    return this.steamLoginTokens().filter((token: TokenRecord): boolean => {
+      return parseSteamGuardData(token.steamData || '').fullyEnrolled;
+    });
+  }
+
+  private ensureSelectedSteamToken(): void {
+    const available = this.steamFeatureTokens();
+    const selected = available.find((token: TokenRecord): boolean => token.id === this.selectedSteamTokenId);
+    if (selected !== undefined) {
+      return;
+    }
+    this.selectedSteamTokenId = available.length > 0 ? available[0].id : '';
+  }
+
+  private selectedSteamToken(): TokenRecord | undefined {
+    this.ensureSelectedSteamToken();
+    return this.steamFeatureTokens().find((token: TokenRecord): boolean => token.id === this.selectedSteamTokenId);
+  }
+
+  private selectSteamFeatureAccount(tokenId: string): void {
+    if (this.selectedSteamTokenId === tokenId) {
+      return;
+    }
+    this.selectedSteamTokenId = tokenId;
+    this.pendingSteamLoginTokenId = tokenId;
+    this.steamInventoryGames = [];
+    this.steamInventoryItems = [];
+    this.steamMarketListings = [];
+    this.steamMarketListingsNextStart = 0;
+    this.steamMarketListingsHasMore = false;
+    this.steamMarketListingsTotalCount = 0;
+    this.steamMarketListingsLoading = false;
+    this.steamMarketSaleHistory = [];
+    this.steamMarketSaleHistoryNextStart = 0;
+    this.steamMarketSaleHistoryHasMore = false;
+    this.steamMarketSaleHistoryLoading = false;
+    this.steamAwaitingApprovalVisibleCount = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+    this.steamApprovalHistoryVisibleCount = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+    this.steamRemovingMarketListingId = '';
+    this.selectedSteamInventoryGameKey = '';
+    this.steamInventoryCache = new SteamInventoryCache();
+    this.steamInventoryError = '';
+    this.steamProfile = { displayName: '', avatarUrl: '' };
+    this.steamApiLatencyMs = 0;
+    this.steamApiReachable = false;
+    this.lastSteamApiLatencyCheckMs = 0;
+    this.clearSteamSelection();
+    this.clearSteamListingSelection();
+    this.clearSteamInventorySelection();
+    this.clearSteamInventoryFilter();
+    this.saveSettings();
+    this.activateSteamFeaturePage();
+  }
+
+  private activateSteamFeaturePage(): void {
+    this.ensureSelectedSteamToken();
+    if (this.selectedSteamToken() === undefined) {
+      return;
+    }
+    const token = this.selectedSteamToken();
+    if (token === undefined) {
+      return;
+    }
+    this.refreshSelectedSteamProfile();
+    if (this.steamInventoryCache.tokenId !== token.id) {
+      this.restoreSteamInventoryCache(token.id);
+    }
+    this.refreshSteamApiLatency(true);
+    if (this.selectedSteamFeatureTab === SteamFeatureTab.Inventory) {
+      this.refreshSteamInventory();
+    } else {
+      this.refreshSteamConfirmationCategory();
+      if (this.selectedSteamConfirmationCategory !== SteamConfirmationCategory.Listed &&
+        this.steamMarketListings.length === 0 && this.steamMarketListingsTotalCount === 0) {
+        this.refreshSteamMarketListings(true);
+      }
+    }
+  }
+
+  private async refreshSelectedSteamProfile(): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined) {
+      this.steamProfile = { displayName: '', avatarUrl: '' };
+      return;
+    }
+    const data = parseSteamGuardData(token.steamData || '');
+    const context = this.getAbilityContext();
+    let cachedProfile: SteamProfile = { displayName: data.accountName, avatarUrl: '' };
+    if (context !== undefined) {
+      cachedProfile = await SteamProfileRepository.load(context, token.id);
+      if (cachedProfile.displayName.length === 0) {
+        cachedProfile.displayName = data.accountName;
+      }
+    }
+    if (this.selectedSteamTokenId === token.id) {
+      this.steamProfile = cachedProfile;
+    }
+    try {
+      let profile = await this.steamService().profile(data);
+      if (context !== undefined) {
+        profile = await SteamProfileRepository.save(context, token.id, profile);
+      }
+      if (this.selectedSteamTokenId === token.id) {
+        this.steamProfile = profile;
+      }
+      await this.persistSteamGuardData(token, data);
+    } catch (error) {
+      if (this.selectedSteamTokenId === token.id) {
+        this.steamProfile = cachedProfile;
+      }
+      console.error('Failed to load Steam profile: ' + this.errorMessage(error));
+    }
+  }
+
+  private steamFeatureSegmentItems(): SegmentButtonV2Items {
+    const confirmationsItem: SegmentButtonV2ItemOptions = {
+      text: this.steamConfirmationTabLabel()
+    };
+    const inventoryItem: SegmentButtonV2ItemOptions = {
+      text: this.t('库存')
+    };
+    return new SegmentButtonV2Items([confirmationsItem, inventoryItem]);
+  }
+
+  private steamFeatureTabIndex(): number {
+    return this.selectedSteamFeatureTab === SteamFeatureTab.Inventory ? 1 : 0;
+  }
+
+  private steamFeatureTabFromIndex(index: number): SteamFeatureTab {
+    return index === 1 ? SteamFeatureTab.Inventory : SteamFeatureTab.Confirmations;
+  }
+
+  private onSteamFeatureTabChanged(index: number): void {
+    this.applySteamFeatureTab(this.steamFeatureTabFromIndex(index));
+  }
+
+  private onSteamFeatureTabAnimationStart(targetIndex: number): void {
+    this.applySteamFeatureTab(this.steamFeatureTabFromIndex(targetIndex));
+  }
+
+  private switchSteamFeatureTab(tab: SteamFeatureTab): void {
+    if (this.selectedSteamFeatureTab === tab) {
+      return;
+    }
+    this.applySteamFeatureTab(tab);
+    this.steamFeatureTabsController.changeIndex(this.steamFeatureTabIndex());
+  }
+
+  private applySteamFeatureTab(tab: SteamFeatureTab): void {
+    if (this.selectedSteamFeatureTab === tab) {
+      return;
+    }
+    this.selectedSteamFeatureTab = tab;
+    this.clearSteamSelection();
+    this.clearSteamListingSelection();
+    this.clearSteamInventorySelection();
+    this.showSteamBottomChrome();
+    if (tab === SteamFeatureTab.Inventory && this.steamInventoryItems.length === 0) {
+      this.activateSteamFeaturePage();
+    } else if (tab === SteamFeatureTab.Confirmations) {
+      this.refreshSteamConfirmationCategory();
+    }
+  }
+
+  private refreshCurrentSteamFeature(): void {
+    if (this.selectedSteamFeatureTab === SteamFeatureTab.Inventory) {
+      this.refreshSteamInventory();
+    } else {
+      this.refreshSteamConfirmationCategory();
+    }
+  }
+
+  private async refreshSteamFeatureRequests(silent: boolean, showSuccessToast: boolean = false): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamConfirmationChecking || this.steamLoading) {
+      return;
+    }
+    this.steamConfirmationChecking = true;
+    if (!silent) {
+      this.steamLoading = true;
+    }
+    const data = parseSteamGuardData(token.steamData || '');
+    let confirmations: SteamConfirmation[] = [];
+    let pendingLogins: SteamPendingLogin[] = [];
+    let confirmationError = '';
+    let pendingLoginError = '';
+    let confirmationsLoaded = false;
+    let pendingLoginsLoaded = false;
+    try {
+      try {
+        confirmations = await this.steamService().confirmations(data);
+        confirmationsLoaded = true;
+      } catch (error) {
+        confirmationError = this.errorMessage(error);
+      }
+      try {
+        pendingLogins = await this.steamService().pendingLogins(data);
+        pendingLoginsLoaded = true;
+      } catch (error) {
+        pendingLoginError = this.errorMessage(error);
+        console.error('Failed to load pending Steam logins: ' + pendingLoginError);
+      }
+      if (this.selectedSteamTokenId !== token.id) {
+        return;
+      }
+      const nextConfirmations: SteamPendingConfirmation[] = [];
+      for (let index = 0; index < confirmations.length; index++) {
+        nextConfirmations.push({
+          tokenId: token.id,
+          tokenName: this.tokenDisplayName(token),
+          confirmation: confirmations[index]
+        });
+      }
+      const nextLogins: SteamPendingLoginEntry[] = [];
+      for (let index = 0; index < pendingLogins.length; index++) {
+        nextLogins.push({
+          tokenId: token.id,
+          tokenName: this.tokenDisplayName(token),
+          pending: pendingLogins[index]
+        });
+      }
+      if (confirmationsLoaded) {
+        this.replaceSteamPendingConfirmations(token.id, nextConfirmations);
+      }
+      if (pendingLoginsLoaded) {
+        this.replaceSteamPendingLogins(token.id, nextLogins);
+      }
+      if (confirmationsLoaded || pendingLoginsLoaded) {
+        this.persistSteamPendingRequestCache();
+      }
+      this.lastSteamConfirmationCheckMs = Date.now();
+      await this.persistSteamGuardData(token, data);
+      if (showSuccessToast && (confirmationsLoaded || pendingLoginsLoaded)) {
+        const loadedCount = this.steamRequestCount();
+        this.showToast(this.tf('加载成功{0}条', [loadedCount.toString()]));
+      } else if (showSuccessToast && confirmationError.length > 0) {
+        this.showToast('Steam 确认刷新失败：' + confirmationError);
+      } else if (showSuccessToast && pendingLoginError.length > 0) {
+        this.showToast('Steam 登录请求刷新失败：' + pendingLoginError);
+      } else if (!silent && confirmationError.length > 0 && nextLogins.length === 0) {
+        this.showToast('Steam 确认刷新失败：' + confirmationError);
+      }
+    } finally {
+      this.steamConfirmationChecking = false;
+      if (!silent) {
+        this.steamLoading = false;
+      }
+      this.resumeSteamFeatureAfterAccountChange(token.id);
+    }
+  }
+
+  private async refreshSteamMarketListings(reset: boolean, showSuccessToast: boolean = false): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamMarketListingsLoading) {
+      return;
+    }
+    this.steamMarketListingsLoading = true;
+    const data = parseSteamGuardData(token.steamData || '');
+    const start = reset ? 0 : this.steamMarketListingsNextStart;
+    try {
+      const page: SteamMarketListingPage = await this.steamService().marketListingsPage(
+        data, start, STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE);
+      if (this.selectedSteamTokenId !== token.id) {
+        return;
+      }
+      if (reset) {
+        this.steamMarketListings = page.items;
+      } else {
+        this.steamMarketListings = this.appendUniqueSteamMarketListings(this.steamMarketListings, page.items);
+      }
+      this.steamMarketListingsNextStart = page.nextStart;
+      this.steamMarketListingsHasMore = page.hasMore;
+      this.steamMarketListingsTotalCount = page.totalCount;
+      this.steamSelectedMarketListingIds = this.steamSelectedMarketListingIds.filter(
+        (listingId: string): boolean => this.steamMarketListings.some(
+          (listing: SteamMarketListing): boolean => listing.listingId === listingId
+        )
+      );
+      await this.persistSteamGuardData(token, data);
+      if (showSuccessToast) {
+        this.showToast(this.tf('加载成功{0}条', [page.items.length.toString()]));
+      }
+    } catch (error) {
+      this.showToast('Steam 上架列表刷新失败：' + this.errorMessage(error));
+    } finally {
+      this.steamMarketListingsLoading = false;
+    }
+  }
+
+  private appendUniqueSteamMarketListings(
+    existing: SteamMarketListing[],
+    incoming: SteamMarketListing[]
+  ): SteamMarketListing[] {
+    const result = existing.slice();
+    for (let index = 0; index < incoming.length; index++) {
+      const listing = incoming[index];
+      const duplicated = result.some((current: SteamMarketListing): boolean => {
+        return current.listingId === listing.listingId;
+      });
+      if (!duplicated) {
+        result.push(listing);
+      }
+    }
+    return result;
+  }
+
+  private async refreshSteamMarketSaleHistory(reset: boolean, showSuccessToast: boolean = false): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamMarketSaleHistoryLoading) {
+      return;
+    }
+    this.steamMarketSaleHistoryLoading = true;
+    const data = parseSteamGuardData(token.steamData || '');
+    const start = reset ? 0 : this.steamMarketSaleHistoryNextStart;
+    try {
+      const page: SteamMarketSaleHistoryPage = await this.steamService().marketSaleHistoryPage(
+        data, start, STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE);
+      if (this.selectedSteamTokenId !== token.id) {
+        return;
+      }
+      if (reset) {
+        this.steamMarketSaleHistory = page.items;
+      } else {
+        this.steamMarketSaleHistory = this.appendUniqueSteamMarketSaleHistory(
+          this.steamMarketSaleHistory, page.items);
+      }
+      this.steamMarketSaleHistoryNextStart = page.nextStart;
+      this.steamMarketSaleHistoryHasMore = page.hasMore;
+      await this.persistSteamGuardData(token, data);
+      if (showSuccessToast) {
+        this.showToast(this.tf('加载成功{0}条', [page.items.length.toString()]));
+      }
+    } catch (error) {
+      this.showToast('Steam 出售记录刷新失败：' + this.errorMessage(error));
+    } finally {
+      this.steamMarketSaleHistoryLoading = false;
+    }
+  }
+
+  private appendUniqueSteamMarketSaleHistory(
+    existing: SteamMarketSaleHistoryItem[],
+    incoming: SteamMarketSaleHistoryItem[]
+  ): SteamMarketSaleHistoryItem[] {
+    const result = existing.slice();
+    for (let index = 0; index < incoming.length; index++) {
+      const item = incoming[index];
+      const duplicated = result.some((current: SteamMarketSaleHistoryItem): boolean => {
+        return current.id === item.id;
+      });
+      if (!duplicated) {
+        result.push(item);
+      }
+    }
+    return result;
+  }
+
+  private async refreshSteamConfirmationCategory(showSuccessToast: boolean = false): Promise<void> {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      this.steamAwaitingApprovalVisibleCount = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+      await this.refreshSteamFeatureRequests(true, showSuccessToast);
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      await this.refreshSteamMarketListings(true, showSuccessToast);
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      this.steamApprovalHistoryVisibleCount = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
+      if (showSuccessToast) {
+        const count = Math.min(this.currentSteamHistory().length, STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE);
+        this.showToast(this.tf('加载成功{0}条', [count.toString()]));
+      }
+      return;
+    }
+    await this.refreshSteamMarketSaleHistory(true, showSuccessToast);
+  }
+
+  private loadMoreSteamConfirmationCategory(): void {
+    if (this.steamConfirmationCategoryLoading() || this.steamConfirmationsRefreshing) {
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      this.steamAwaitingApprovalVisibleCount = Math.min(this.steamRequestCount(),
+        this.steamAwaitingApprovalVisibleCount + STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE);
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      if (this.steamMarketListingsHasMore) {
+        this.refreshSteamMarketListings(false);
+      }
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      this.steamApprovalHistoryVisibleCount = Math.min(this.currentSteamHistory().length,
+        this.steamApprovalHistoryVisibleCount + STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE);
+      return;
+    }
+    if (this.steamMarketSaleHistoryHasMore) {
+      this.refreshSteamMarketSaleHistory(false);
+    }
+  }
+
+  private currentSteamPendingConfirmations(): SteamPendingConfirmation[] {
+    const entries: SteamPendingConfirmation[] = [];
+    const confirmationIds: string[] = [];
+    for (let index = 0; index < this.pendingSteamConfirmations.length; index++) {
+      const entry = this.pendingSteamConfirmations[index];
+      if (entry.tokenId !== this.selectedSteamTokenId) {
+        continue;
+      }
+      const confirmationId = entry.confirmation.id.trim();
+      if (confirmationId.length > 0 && confirmationIds.includes(confirmationId)) {
+        continue;
+      }
+      if (confirmationId.length > 0) {
+        confirmationIds.push(confirmationId);
+      }
+      entries.push(entry);
+    }
+    return entries;
+  }
+
+  private currentSteamPendingLogins(): SteamPendingLoginEntry[] {
+    return this.steamPendingLoginEntries.filter((entry: SteamPendingLoginEntry): boolean => {
+      return entry.tokenId === this.selectedSteamTokenId;
+    });
+  }
+
+  private currentSteamHistory(): SteamConfirmationHistoryRecord[] {
+    return this.steamConfirmationHistory.filter((record: SteamConfirmationHistoryRecord): boolean => {
+      return record.tokenId === this.selectedSteamTokenId;
+    });
+  }
+
+  private visibleSteamPendingLogins(): SteamPendingLoginEntry[] {
+    return this.currentSteamPendingLogins().slice(0, this.steamAwaitingApprovalVisibleCount);
+  }
+
+  private visibleSteamPendingConfirmations(): SteamPendingConfirmation[] {
+    const loginCount = Math.min(this.currentSteamPendingLogins().length,
+      this.steamAwaitingApprovalVisibleCount);
+    const confirmationCount = Math.max(0, this.steamAwaitingApprovalVisibleCount - loginCount);
+    return this.currentSteamPendingConfirmations().slice(0, confirmationCount);
+  }
+
+  private currentSteamApprovalHistory(): SteamConfirmationHistoryRecord[] {
+    return this.currentSteamHistory();
+  }
+
+  private visibleSteamApprovalHistory(): SteamConfirmationHistoryRecord[] {
+    return this.currentSteamApprovalHistory().slice(0, this.steamApprovalHistoryVisibleCount);
+  }
+
+  private steamConfirmationCategoryItemCount(): number {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      return this.steamRequestCount();
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return this.steamMarketListings.length;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      return this.currentSteamApprovalHistory().length;
+    }
+    return this.steamMarketSaleHistory.length;
+  }
+
+  private steamConfirmationCategoryBadgeCount(category: SteamConfirmationCategory): number {
+    if (category === SteamConfirmationCategory.AwaitingApproval) {
+      return this.steamRequestCount();
+    }
+    if (category === SteamConfirmationCategory.Listed) {
+      return this.steamMarketListingsTotalCount;
+    }
+    return 0;
+  }
+
+  private steamConfirmationCategoryBadgeText(category: SteamConfirmationCategory): string {
+    const count = this.steamConfirmationCategoryBadgeCount(category);
+    return count > 99 ? '99+' : count.toString();
+  }
+
+  private steamConfirmationCategoryBadgeWidth(category: SteamConfirmationCategory): number {
+    return this.steamConfirmationCategoryBadgeCount(category) > 99 ?
+      STEAM_CONFIRMATION_CATEGORY_BADGE_WIDE_WIDTH : STEAM_CONFIRMATION_CATEGORY_BADGE_SIZE;
+  }
+
+  private enterSteamConfirmationSelectionMode(): void {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      this.enterSteamListingSelectionMode();
+      return;
+    }
+    if (this.selectedSteamConfirmationCategory !== SteamConfirmationCategory.AwaitingApproval) {
+      this.selectSteamConfirmationCategory(SteamConfirmationCategory.AwaitingApproval);
+    }
+    if (this.steamRequestCount() > 0) {
+      this.toggleSteamSelectionMode();
+    }
+  }
+
+  private applyConfiguredLaunchHomePage(): void {
+    const launchSteam = this.showSteamFeaturePage && this.launchHomePage === 'Steam';
+    this.selectedHomeTab = launchSteam ? HomeTab.Steam : HomeTab.Token;
+    setTimeout(() => {
+      this.homeTabsController.changeIndex(launchSteam ? 1 : 0);
+      if (launchSteam) {
+        this.activateSteamFeaturePage();
+      }
+    }, 0);
+  }
+
+  private steamConfirmationCategoryHasMore(): boolean {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      return this.steamAwaitingApprovalVisibleCount < this.steamRequestCount();
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return this.steamMarketListingsHasMore;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      return this.steamApprovalHistoryVisibleCount < this.currentSteamHistory().length;
+    }
+    return this.steamMarketSaleHistoryHasMore;
+  }
+
+  private steamConfirmationCategoryLoading(): boolean {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return this.steamMarketListingsLoading;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.SaleHistory) {
+      return this.steamMarketSaleHistoryLoading;
+    }
+    return false;
+  }
+
+  private steamConfirmationCategoryEmptyTitle(): string {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      return '暂无待确认请求';
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return '暂无已上架物品';
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      return '暂无批准记录';
+    }
+    return '暂无出售记录';
+  }
+
+  private steamConfirmationCategoryEmptyDescription(): string {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      return '下拉刷新检查新的交易与登录请求';
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return '当前账户没有正在 Steam 市场出售的物品';
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      return '同意或拒绝请求后将在这里显示';
+    }
+    return '完成 Steam 市场出售确认后将在这里显示';
+  }
+
+  private selectSteamConfirmationCategory(category: SteamConfirmationCategory): void {
+    if (this.selectedSteamConfirmationCategory === category) {
+      return;
+    }
+    this.clearSteamSelection();
+    this.clearSteamListingSelection();
+    this.selectedSteamConfirmationCategory = category;
+    this.resetSteamBottomChromeScrollDistance();
+    if (category === SteamConfirmationCategory.Listed && this.steamMarketListings.length === 0) {
+      this.refreshSteamMarketListings(true);
+    } else if (category === SteamConfirmationCategory.SaleHistory && this.steamMarketSaleHistory.length === 0) {
+      this.refreshSteamMarketSaleHistory(true);
+    }
+  }
+
+  private steamRequestCount(): number {
+    return this.currentSteamPendingConfirmations().length + this.currentSteamPendingLogins().length;
+  }
+
+  private steamConfirmationTabLabel(): string {
+    return this.t('交易');
+  }
+
+  private steamConfirmationBadgeText(): string {
+    const count = this.steamRequestCount();
+    return count > 99 ? '99+' : count.toString();
+  }
+
+  private steamConfirmationBadgeWidth(): number {
+    return this.steamRequestCount() > 99 ? STEAM_CONFIRMATION_BADGE_WIDE_WIDTH : STEAM_CONFIRMATION_BADGE_SIZE;
+  }
+
+  private resetSteamBottomChromeScrollDistance(): void {
+    this.steamBottomChromeScrollDistance = 0;
+  }
+
+  private handleSteamBottomChromeScroll(offset: number): void {
+    if (this.selectedHomeTab !== HomeTab.Steam || this.steamSelectionMode || this.steamListingSelectionMode ||
+      this.steamInventorySelectionMode || Math.abs(offset) < 0.5) {
+      return;
+    }
+    if (offset > 0) {
+      if (this.steamBottomChromeScrollDistance < 0) {
+        this.steamBottomChromeScrollDistance = 0;
+      }
+      this.steamBottomChromeScrollDistance += offset;
+      if (this.steamBottomChromeScrollDistance >= STEAM_BOTTOM_CHROME_SCROLL_THRESHOLD) {
+        this.hideSteamBottomChrome();
+        this.resetSteamBottomChromeScrollDistance();
+      }
+      return;
+    }
+    if (this.steamBottomChromeScrollDistance > 0) {
+      this.steamBottomChromeScrollDistance = 0;
+    }
+    this.steamBottomChromeScrollDistance += offset;
+    if (this.steamBottomChromeScrollDistance <= -STEAM_BOTTOM_CHROME_SCROLL_THRESHOLD) {
+      this.showSteamBottomChrome();
+      this.resetSteamBottomChromeScrollDistance();
+    }
+  }
+
+  private hideSteamBottomChrome(): void {
+    if (this.steamBottomChromeHidden) {
+      return;
+    }
+    this.steamBottomChromeHidden = true;
+    this.homeTabsController.applyHideAnimation(HdsAnimationMode.CLICK_ANIMATION);
+  }
+
+  private showSteamBottomChrome(): void {
+    this.resetSteamBottomChromeScrollDistance();
+    if (!this.steamBottomChromeHidden) {
+      return;
+    }
+    this.steamBottomChromeHidden = false;
+    this.homeTabsController.applyShowAnimation(HdsAnimationMode.CLICK_ANIMATION);
+  }
+
+  private toggleSteamSelectionMode(): void {
+    if (this.steamSelectionMode) {
+      this.clearSteamSelection();
+      return;
+    }
+    this.steamSelectionMode = true;
+    this.steamSelectedRequestIds = [];
+    this.homeTabsController.applyHideAnimation(HdsAnimationMode.CLICK_ANIMATION);
+  }
+
+  private clearSteamSelection(): void {
+    const shouldRestoreHomeTabs = this.steamSelectionMode;
+    this.steamSelectionMode = false;
+    this.steamSelectedRequestIds = [];
+    if (shouldRestoreHomeTabs && !this.steamBottomChromeHidden) {
+      this.homeTabsController.applyShowAnimation(HdsAnimationMode.CLICK_ANIMATION);
+    }
+  }
+
+  private enterSteamListingSelectionMode(): void {
+    if (this.steamListingSelectionMode || this.steamMarketListings.length === 0) {
+      return;
+    }
+    this.steamListingSelectionMode = true;
+    this.steamSelectedMarketListingIds = [];
+    this.homeTabsController.applyHideAnimation(HdsAnimationMode.CLICK_ANIMATION);
+  }
+
+  private clearSteamListingSelection(): void {
+    const shouldRestoreHomeTabs = this.steamListingSelectionMode;
+    this.steamListingSelectionMode = false;
+    this.steamSelectedMarketListingIds = [];
+    if (shouldRestoreHomeTabs && !this.steamBottomChromeHidden) {
+      this.homeTabsController.applyShowAnimation(HdsAnimationMode.CLICK_ANIMATION);
+    }
+  }
+
+  private isSteamMarketListingSelected(listingId: string): boolean {
+    return this.steamSelectedMarketListingIds.includes(listingId);
+  }
+
+  private toggleSteamMarketListingSelection(listingId: string): void {
+    if (this.isSteamMarketListingSelected(listingId)) {
+      this.steamSelectedMarketListingIds = this.steamSelectedMarketListingIds.filter(
+        (currentId: string): boolean => currentId !== listingId
+      );
+      return;
+    }
+    this.steamSelectedMarketListingIds = this.steamSelectedMarketListingIds.concat([listingId]);
+  }
+
+  private allSteamMarketListingsSelected(): boolean {
+    return this.steamMarketListings.length > 0 &&
+      this.steamMarketListings.every((listing: SteamMarketListing): boolean => {
+        return this.isSteamMarketListingSelected(listing.listingId);
+      });
+  }
+
+  private toggleAllSteamMarketListings(): void {
+    if (this.allSteamMarketListingsSelected()) {
+      this.steamSelectedMarketListingIds = [];
+      return;
+    }
+    this.steamSelectedMarketListingIds = this.steamMarketListings.map(
+      (listing: SteamMarketListing): string => listing.listingId
+    );
+  }
+
+  private enterSteamInventorySelectionMode(): void {
+    if (this.steamInventorySelectionMode || !this.hasMarketableSteamInventoryItems()) {
+      return;
+    }
+    this.steamInventorySelectionMode = true;
+    this.steamSelectedInventoryAssetIds = [];
+    this.clearSteamInventoryDragSelection();
+    this.clearSteamInventoryClickSuppression();
+    this.homeTabsController.applyHideAnimation(HdsAnimationMode.CLICK_ANIMATION);
+  }
+
+  private clearSteamInventorySelection(): void {
+    const shouldRestoreHomeTabs = this.steamInventorySelectionMode;
+    this.steamInventorySelectionMode = false;
+    this.steamSelectedInventoryAssetIds = [];
+    this.clearSteamInventoryDragSelection();
+    this.clearSteamInventoryClickSuppression();
+    if (shouldRestoreHomeTabs && !this.steamBottomChromeHidden) {
+      this.homeTabsController.applyShowAnimation(HdsAnimationMode.CLICK_ANIMATION);
+    }
+  }
+
+  private isSteamInventoryItemSelected(assetId: string): boolean {
+    return this.steamSelectedInventoryAssetIds.includes(assetId);
+  }
+
+  private toggleSteamInventoryItemSelection(assetId: string): void {
+    this.setSteamInventoryItemSelected(assetId, !this.isSteamInventoryItemSelected(assetId));
+  }
+
+  private setSteamInventoryItemSelected(assetId: string, selected: boolean): void {
+    const item = this.steamInventoryItems.find((current: SteamInventoryItem): boolean => {
+      return current.assetId === assetId;
+    });
+    if (item === undefined || !item.marketable) {
+      return;
+    }
+    if (selected && !this.steamSelectedInventoryAssetIds.includes(assetId)) {
+      this.steamSelectedInventoryAssetIds = this.steamSelectedInventoryAssetIds.concat([assetId]);
+    } else if (!selected && this.steamSelectedInventoryAssetIds.includes(assetId)) {
+      this.steamSelectedInventoryAssetIds = this.steamSelectedInventoryAssetIds.filter(
+        (currentAssetId: string): boolean => currentAssetId !== assetId
+      );
+    }
+  }
+
+  private allVisibleSteamInventoryItemsSelected(): boolean {
+    const items = this.filteredSteamInventoryItems();
+    if (items.length === 0) {
+      return false;
+    }
+    return items.every((item: SteamInventoryItem): boolean => {
+      return this.steamSelectedInventoryAssetIds.includes(item.assetId);
+    });
+  }
+
+  private toggleAllVisibleSteamInventoryItems(): void {
+    const items = this.filteredSteamInventoryItems();
+    if (this.allVisibleSteamInventoryItemsSelected()) {
+      const visibleAssetIds = items.map((item: SteamInventoryItem): string => item.assetId);
+      this.steamSelectedInventoryAssetIds = this.steamSelectedInventoryAssetIds.filter(
+        (assetId: string): boolean => !visibleAssetIds.includes(assetId)
+      );
+      return;
+    }
+    const nextAssetIds = this.steamSelectedInventoryAssetIds.slice();
+    for (let index = 0; index < items.length; index++) {
+      if (!nextAssetIds.includes(items[index].assetId)) {
+        nextAssetIds.push(items[index].assetId);
+      }
+    }
+    this.steamSelectedInventoryAssetIds = nextAssetIds;
+  }
+
+  private allSteamRequestsSelected(): boolean {
+    return this.steamRequestCount() > 0 && this.steamSelectedRequestIds.length === this.steamRequestCount();
+  }
+
+  private toggleAllSteamRequests(): void {
+    if (this.allSteamRequestsSelected()) {
+      this.steamSelectedRequestIds = [];
+      return;
+    }
+    const selectedIds: string[] = [];
+    const confirmations = this.currentSteamPendingConfirmations();
+    for (let index = 0; index < confirmations.length; index++) {
+      selectedIds.push(this.steamConfirmationSelectionId(confirmations[index]));
+    }
+    const pendingLogins = this.currentSteamPendingLogins();
+    for (let index = 0; index < pendingLogins.length; index++) {
+      selectedIds.push(this.steamPendingLoginSelectionId(pendingLogins[index]));
+    }
+    this.steamSelectedRequestIds = selectedIds;
+  }
+
+  private steamConfirmationSelectionId(entry: SteamPendingConfirmation): string {
+    return 'confirmation:' + entry.confirmation.id;
+  }
+
+  private steamPendingLoginSelectionId(entry: SteamPendingLoginEntry): string {
+    return 'login:' + entry.pending.clientId;
+  }
+
+  private isSteamRequestSelected(selectionId: string): boolean {
+    return this.steamSelectedRequestIds.includes(selectionId);
+  }
+
+  private toggleSteamRequestSelection(selectionId: string): void {
+    if (this.steamSelectedRequestIds.includes(selectionId)) {
+      this.steamSelectedRequestIds = this.steamSelectedRequestIds.filter((id: string): boolean => {
+        return id !== selectionId;
+      });
+    } else {
+      this.steamSelectedRequestIds = this.steamSelectedRequestIds.concat([selectionId]);
+    }
+  }
+
+  private confirmSteamMarketListingRemoval(listing: SteamMarketListing): void {
+    if (this.steamLoading || this.steamRemovingMarketListingId.length > 0) {
+      return;
+    }
+    const priceDetail = listing.priceText.length > 0 ? '\n' + this.t('当前售价') + '：' + listing.priceText : '';
+    this.getUIContext().showAlertDialog({
+      title: this.t('确认撤下该物品？'),
+      message: '“' + listing.name + '”' + this.t('将从 Steam 社区市场撤下并返回库存。') + priceDetail,
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t('撤下'),
+        fontColor: this.secondaryTextColor(),
+        action: () => {
+          this.removeSteamMarketListing(listing);
+        }
+      }
+    });
+  }
+
+  private async removeSteamMarketListing(listing: SteamMarketListing): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamLoading || this.steamRemovingMarketListingId.length > 0) {
+      return;
+    }
+    this.steamLoading = true;
+    this.steamRemovingMarketListingId = listing.listingId;
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      await this.steamService().removeMarketListing(data, listing.listingId);
+      await this.persistSteamGuardData(token, data);
+      if (this.selectedSteamTokenId === token.id) {
+        this.steamMarketListings = this.steamMarketListings.filter(
+          (current: SteamMarketListing): boolean => current.listingId !== listing.listingId
+        );
+        this.steamMarketListingsTotalCount = Math.max(0, this.steamMarketListingsTotalCount - 1);
+        this.invalidateSteamInventoryCache(token.id);
+      }
+      this.showToast(this.t('物品已撤下'));
+    } catch (error) {
+      const failureMessage = this.errorMessage(error);
+      console.error('Failed to remove Steam market listing ' + listing.listingId + ': ' + failureMessage);
+      this.showToast('Steam 物品撤下失败：' + failureMessage);
+    } finally {
+      this.steamRemovingMarketListingId = '';
+      this.steamLoading = false;
+    }
+  }
+
+  private selectedSteamMarketListings(): SteamMarketListing[] {
+    return this.steamMarketListings.filter((listing: SteamMarketListing): boolean => {
+      return this.isSteamMarketListingSelected(listing.listingId);
+    });
+  }
+
+  private confirmSelectedSteamMarketListingsRemoval(): void {
+    const selectedListings = this.selectedSteamMarketListings();
+    if (selectedListings.length === 0 || this.steamLoading) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t('确认批量撤下物品？'),
+      message: this.t('将从 Steam 社区市场撤下已选择的 ') + selectedListings.length.toString() +
+        this.t(' 个物品并返回库存。'),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t('撤下'),
+        fontColor: this.secondaryTextColor(),
+        action: () => {
+          this.removeSelectedSteamMarketListings();
+        }
+      }
+    });
+  }
+
+  private async removeSelectedSteamMarketListings(): Promise<void> {
+    const token = this.selectedSteamToken();
+    const selectedListings = this.selectedSteamMarketListings();
+    if (token === undefined || selectedListings.length === 0 || this.steamLoading) {
+      return;
+    }
+    this.steamLoading = true;
+    this.steamRemovingMarketListingId = 'batch';
+    const data = parseSteamGuardData(token.steamData || '');
+    const removedIds: string[] = [];
+    let failedCount = 0;
+    try {
+      for (let index = 0; index < selectedListings.length; index++) {
+        const listing = selectedListings[index];
+        try {
+          await this.steamService().removeMarketListing(data, listing.listingId);
+          removedIds.push(listing.listingId);
+        } catch (error) {
+          failedCount++;
+          console.error('Failed to remove Steam market listing ' + listing.listingId + ': ' +
+            this.errorMessage(error));
+        }
+      }
+      await this.persistSteamGuardData(token, data);
+      if (this.selectedSteamTokenId === token.id && removedIds.length > 0) {
+        this.steamMarketListings = this.steamMarketListings.filter(
+          (listing: SteamMarketListing): boolean => !removedIds.includes(listing.listingId)
+        );
+        this.steamMarketListingsTotalCount = Math.max(0,
+          this.steamMarketListingsTotalCount - removedIds.length);
+        this.invalidateSteamInventoryCache(token.id);
+      }
+      if (failedCount === 0) {
+        this.showToast(this.t('已撤下 ') + removedIds.length.toString() + this.t(' 个物品'));
+      } else {
+        this.showToast(this.t('已撤下 ') + removedIds.length.toString() + this.t(' 个物品，失败 ') +
+          failedCount.toString() + this.t(' 个'));
+      }
+    } finally {
+      this.steamRemovingMarketListingId = '';
+      this.steamLoading = false;
+      this.clearSteamListingSelection();
+    }
+  }
+
+  private confirmSteamConfirmationAction(entry: SteamPendingConfirmation, allow: boolean): void {
+    if (this.steamLoading) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t(allow ? '确认同意该订单？' : '确认拒绝该订单？'),
+      message: this.steamConfirmationDialogMessage(entry),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t(allow ? '同意' : '拒绝'),
+        fontColor: allow ? this.accentColor() : ERROR_RED,
+        action: () => {
+          this.respondSteamConfirmationFromPage(entry, allow);
+        }
+      }
+    });
+  }
+
+  private confirmSteamPendingLoginAction(entry: SteamPendingLoginEntry, allow: boolean): void {
+    if (this.steamLoading) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t(allow ? '确认同意登录请求？' : '确认拒绝登录请求？'),
+      message: this.t('账号') + '：' + entry.tokenName + '\n\n' + this.steamPendingLoginSummary(entry.pending),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t(allow ? '同意' : '拒绝'),
+        fontColor: allow ? this.accentColor() : ERROR_RED,
+        action: () => {
+          this.respondSteamPendingLoginEntry(entry, allow);
+        }
+      }
+    });
+  }
+
+  private confirmSelectedSteamRequests(allow: boolean): void {
+    const count = this.steamSelectedRequestIds.length;
+    if (count === 0 || this.steamLoading) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.t(allow ? '确认批量同意？' : '确认批量拒绝？'),
+      message: this.t('将处理已选择的 ') + count.toString() + this.t(' 个 Steam 请求。'),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t(allow ? '同意' : '拒绝'),
+        fontColor: allow ? this.accentColor() : ERROR_RED,
+        action: () => {
+          this.respondSelectedSteamRequests(allow);
+        }
+      }
+    });
+  }
+
+  private async respondSteamConfirmationFromPage(
+    entry: SteamPendingConfirmation,
+    allow: boolean
+  ): Promise<void> {
+    const token = this.tokens.find((current: TokenRecord): boolean => current.id === entry.tokenId);
+    if (token === undefined || this.steamLoading) {
+      return;
+    }
+    this.steamLoading = true;
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      await this.steamService().respond(data, [entry.confirmation], allow);
+      await this.persistSteamGuardData(token, data);
+      await this.recordSteamConfirmation(entry, data.steamId, allow);
+      this.pendingSteamConfirmations = this.pendingSteamConfirmations.filter(
+        (current: SteamPendingConfirmation): boolean => current.tokenId !== entry.tokenId ||
+          current.confirmation.id !== entry.confirmation.id
+      );
+      this.persistSteamPendingRequestCache();
+      this.showToast(allow ? '已确认' : '已拒绝');
+    } catch (error) {
+      this.showToast((allow ? '确认失败：' : '拒绝失败：') + this.errorMessage(error));
+    } finally {
+      this.steamLoading = false;
+    }
+  }
+
+  private async respondSteamPendingLoginEntry(entry: SteamPendingLoginEntry, allow: boolean): Promise<void> {
+    const token = this.tokens.find((current: TokenRecord): boolean => current.id === entry.tokenId);
+    if (token === undefined || this.steamLoading) {
+      return;
+    }
+    this.steamLoading = true;
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      await this.steamService().respondPendingLogin(data, entry.pending, allow);
+      await this.persistSteamGuardData(token, data);
+      await this.recordSteamPendingLogin(entry, data.steamId, allow);
+      this.steamPendingLoginEntries = this.steamPendingLoginEntries.filter(
+        (current: SteamPendingLoginEntry): boolean => current.tokenId !== entry.tokenId ||
+          current.pending.clientId !== entry.pending.clientId
+      );
+      this.persistSteamPendingRequestCache();
+      this.showToast(allow ? 'Steam 登录已确认' : 'Steam 登录已拒绝');
+    } catch (error) {
+      this.showToast((allow ? 'Steam 登录确认失败：' : 'Steam 登录拒绝失败：') + this.errorMessage(error));
+    } finally {
+      this.steamLoading = false;
+    }
+  }
+
+  private async respondSelectedSteamRequests(allow: boolean): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamSelectedRequestIds.length === 0 || this.steamLoading) {
+      return;
+    }
+    const selectedConfirmations = this.currentSteamPendingConfirmations().filter(
+      (entry: SteamPendingConfirmation): boolean =>
+        this.steamSelectedRequestIds.includes(this.steamConfirmationSelectionId(entry))
+    );
+    const selectedLogins = this.currentSteamPendingLogins().filter((entry: SteamPendingLoginEntry): boolean =>
+      this.steamSelectedRequestIds.includes(this.steamPendingLoginSelectionId(entry))
+    );
+    const data = parseSteamGuardData(token.steamData || '');
+    let succeeded = 0;
+    let failed = 0;
+    this.steamLoading = true;
+    try {
+      if (selectedConfirmations.length > 0) {
+        const confirmations: SteamConfirmation[] = selectedConfirmations.map(
+          (entry: SteamPendingConfirmation): SteamConfirmation => entry.confirmation
+        );
+        try {
+          await this.steamService().respond(data, confirmations, allow);
+          for (let index = 0; index < selectedConfirmations.length; index++) {
+            await this.recordSteamConfirmation(selectedConfirmations[index], data.steamId, allow);
+          }
+          this.pendingSteamConfirmations = this.pendingSteamConfirmations.filter(
+            (entry: SteamPendingConfirmation): boolean =>
+              !this.steamSelectedRequestIds.includes(this.steamConfirmationSelectionId(entry))
+          );
+          succeeded += selectedConfirmations.length;
+        } catch (error) {
+          failed += selectedConfirmations.length;
+        }
+      }
+      for (let index = 0; index < selectedLogins.length; index++) {
+        try {
+          await this.steamService().respondPendingLogin(data, selectedLogins[index].pending, allow);
+          await this.recordSteamPendingLogin(selectedLogins[index], data.steamId, allow);
+          const handledLoginId = this.steamPendingLoginSelectionId(selectedLogins[index]);
+          this.steamPendingLoginEntries = this.steamPendingLoginEntries.filter(
+            (entry: SteamPendingLoginEntry): boolean =>
+              this.steamPendingLoginSelectionId(entry) !== handledLoginId
+          );
+          succeeded++;
+        } catch (error) {
+          failed++;
+        }
+      }
+      await this.persistSteamGuardData(token, data);
+      this.persistSteamPendingRequestCache();
+      this.clearSteamSelection();
+      this.showToast('Steam 批量操作完成：成功 ' + succeeded.toString() + '，失败 ' + failed.toString());
+    } finally {
+      this.steamLoading = false;
+    }
+    await this.refreshSteamFeatureRequests(true);
+  }
+
+  private async recordSteamConfirmation(
+    entry: SteamPendingConfirmation,
+    steamId: string,
+    allow: boolean
+  ): Promise<void> {
+    const confirmation = entry.confirmation;
+    const record: SteamConfirmationHistoryRecord = {
+      id: util.generateRandomUUID(),
+      tokenId: entry.tokenId,
+      steamId: steamId,
+      requestId: confirmation.id,
+      requestType: this.steamConfirmationType(confirmation.type),
+      headline: this.steamConfirmationHeadline(confirmation),
+      summary: this.steamConfirmationSummary(confirmation),
+      iconUrl: this.steamConfirmationIconUrl(confirmation),
+      creationTime: confirmation.creation_time * 1000,
+      handledTime: Date.now(),
+      allowed: allow
+    };
+    await this.appendSteamHistory(record);
+  }
+
+  private async recordSteamPendingLogin(
+    entry: SteamPendingLoginEntry,
+    steamId: string,
+    allow: boolean
+  ): Promise<void> {
+    const record: SteamConfirmationHistoryRecord = {
+      id: util.generateRandomUUID(),
+      tokenId: entry.tokenId,
+      steamId: steamId,
+      requestId: entry.pending.clientId,
+      requestType: 'Steam 登录批准',
+      headline: entry.pending.deviceName.length > 0 ? entry.pending.deviceName : 'Steam 登录请求',
+      summary: this.steamPendingLoginSummary(entry.pending),
+      iconUrl: '',
+      creationTime: entry.pending.creationTime,
+      handledTime: Date.now(),
+      allowed: allow
+    };
+    await this.appendSteamHistory(record);
+  }
+
+  private async appendSteamHistory(record: SteamConfirmationHistoryRecord): Promise<void> {
+    this.steamConfirmationHistory = [record].concat(this.steamConfirmationHistory.filter(
+      (current: SteamConfirmationHistoryRecord): boolean => current.requestId !== record.requestId ||
+        current.requestType !== record.requestType
+    )).slice(0, 200);
+    const context = this.getAbilityContext();
+    if (context) {
+      await SteamConfirmationHistoryRepository.save(context, this.steamConfirmationHistory);
+    }
+  }
+
+  private async pullRefreshSteamConfirmations(): Promise<void> {
+    this.steamConfirmationsRefreshing = true;
+    this.refreshSteamApiLatency(true);
+    try {
+      await this.refreshSteamConfirmationCategory(true);
+    } finally {
+      this.steamConfirmationsRefreshing = false;
+    }
+  }
+
+  private async pullRefreshSteamInventory(): Promise<void> {
+    this.steamInventoryRefreshing = true;
+    this.refreshSteamApiLatency(true);
+    try {
+      await this.refreshSteamInventory(true);
+    } finally {
+      this.steamInventoryRefreshing = false;
+    }
+  }
+
+  private async refreshSteamInventory(showSuccessToast: boolean = false): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamInventoryLoading || this.steamInventoryLoadingMore) {
+      return;
+    }
+    this.steamInventoryLoading = true;
+    this.steamInventoryError = '';
+    const data = parseSteamGuardData(token.steamData || '');
+    try {
+      const service = this.steamService();
+      const overview = await service.inventoryOverview(data);
+      if (this.selectedSteamTokenId !== token.id) {
+        return;
+      }
+      this.steamInventoryGames = overview.games;
+      let selectedGame = overview.games.find((game: SteamInventoryGame): boolean => {
+        return this.steamInventoryGameKey(game) === this.selectedSteamInventoryGameKey;
+      });
+      if (selectedGame === undefined && overview.games.length > 0) {
+        selectedGame = overview.games[0];
+      }
+      if (selectedGame === undefined) {
+        this.selectedSteamInventoryGameKey = '';
+        this.steamInventoryItems = [];
+        this.steamInventoryLastAssetId = '';
+        this.steamInventoryHasMore = false;
+        this.steamInventoryTotalCount = 0;
+      } else {
+        this.selectedSteamInventoryGameKey = this.steamInventoryGameKey(selectedGame);
+        const page = await service.inventoryItems(data, selectedGame, STEAM_INVENTORY_LANGUAGE);
+        if (this.selectedSteamTokenId !== token.id) {
+          return;
+        }
+        this.steamInventoryItems = page.items;
+        this.reconcileSteamInventorySelection();
+        this.steamInventoryLastAssetId = page.lastAssetId;
+        this.steamInventoryHasMore = page.hasMore;
+        this.steamInventoryTotalCount = page.totalCount;
+      }
+      this.persistSteamInventoryCache(token.id);
+      await this.persistSteamGuardData(token, data);
+      if (showSuccessToast) {
+        this.showToast(this.tf('加载成功{0}条', [this.steamInventoryItems.length.toString()]));
+      }
+    } catch (error) {
+      this.steamInventoryError = this.errorMessage(error);
+      if (showSuccessToast) {
+        this.showToast('Steam 库存刷新失败：' + this.steamInventoryError);
+      }
+    } finally {
+      this.steamInventoryLoading = false;
+      this.resumeSteamFeatureAfterAccountChange(token.id);
+    }
+  }
+
+  private selectSteamInventoryGame(game: SteamInventoryGame): void {
+    const key = this.steamInventoryGameKey(game);
+    if (key === this.selectedSteamInventoryGameKey || this.steamInventoryLoading) {
+      return;
+    }
+    this.clearSteamInventorySelection();
+    this.clearSteamInventoryFilter();
+    this.selectedSteamInventoryGameKey = key;
+    this.applyCachedSteamInventoryCategory(key);
+    this.loadSteamInventoryGame(game);
+  }
+
+  private async loadSteamInventoryGame(game: SteamInventoryGame): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || this.steamInventoryLoading) {
+      return;
+    }
+    this.steamInventoryLoading = true;
+    this.steamInventoryError = '';
+    const data = parseSteamGuardData(token.steamData || '');
+    try {
+      const page = await this.steamService().inventoryItems(data, game, STEAM_INVENTORY_LANGUAGE);
+      if (this.selectedSteamTokenId !== token.id ||
+        this.selectedSteamInventoryGameKey !== this.steamInventoryGameKey(game)) {
+        return;
+      }
+      this.steamInventoryItems = page.items;
+      this.reconcileSteamInventorySelection();
+      this.steamInventoryLastAssetId = page.lastAssetId;
+      this.steamInventoryHasMore = page.hasMore;
+      this.steamInventoryTotalCount = page.totalCount;
+      this.persistSteamInventoryCache(token.id);
+      await this.persistSteamGuardData(token, data);
+    } catch (error) {
+      this.steamInventoryError = this.errorMessage(error);
+    } finally {
+      this.steamInventoryLoading = false;
+      this.resumeSteamFeatureAfterAccountChange(token.id);
+    }
+  }
+
+  private async loadMoreSteamInventory(): Promise<void> {
+    if (!this.steamInventoryHasMore || this.steamInventoryLastAssetId.length === 0 ||
+      this.steamInventoryLoading || this.steamInventoryLoadingMore) {
+      return;
+    }
+    const token = this.selectedSteamToken();
+    const game = this.steamInventoryGames.find((current: SteamInventoryGame): boolean => {
+      return this.steamInventoryGameKey(current) === this.selectedSteamInventoryGameKey;
+    });
+    if (token === undefined || game === undefined) {
+      return;
+    }
+    this.steamInventoryLoadMorePullDistance = 0;
+    this.steamInventoryLoadingMore = true;
+    const data = parseSteamGuardData(token.steamData || '');
+    try {
+      const page = await this.steamService().inventoryItems(
+        data,
+        game,
+        STEAM_INVENTORY_LANGUAGE,
+        this.steamInventoryLastAssetId
+      );
+      if (this.selectedSteamTokenId !== token.id ||
+        this.selectedSteamInventoryGameKey !== this.steamInventoryGameKey(game)) {
+        return;
+      }
+      this.steamInventoryItems = this.steamInventoryItems.concat(page.items);
+      this.reconcileSteamInventorySelection();
+      this.steamInventoryLastAssetId = page.lastAssetId;
+      this.steamInventoryHasMore = page.hasMore;
+      this.steamInventoryTotalCount = page.totalCount;
+      this.persistSteamInventoryCache(token.id);
+      await this.persistSteamGuardData(token, data);
+      this.showToast(this.tf('加载成功{0}条', [page.items.length.toString()]));
+    } catch (error) {
+      this.steamInventoryError = this.errorMessage(error);
+      this.showToast('Steam 库存下一页加载失败：' + this.steamInventoryError);
+    } finally {
+      this.steamInventoryLoadingMore = false;
+      this.steamInventoryLoadMorePullDistance = 0;
+      this.resumeSteamFeatureAfterAccountChange(token.id);
+    }
+  }
+
+  private handleSteamInventoryLoadMoreScroll(offset: number, state: ScrollState): void {
+    if (!this.steamInventoryHasMore || this.steamInventoryLoading || this.steamInventoryLoadingMore ||
+      this.steamInventoryLoadMoreTriggered || state !== ScrollState.Scroll) {
+      return;
+    }
+    if (!this.steamInventoryScroller.isAtEnd()) {
+      this.steamInventoryLoadMorePullDistance = 0;
+      return;
+    }
+    if (offset <= 0) {
+      this.steamInventoryLoadMorePullDistance = 0;
+      return;
+    }
+    const distance = offset;
+    this.steamInventoryLoadMorePullDistance = Math.min(
+      STEAM_INVENTORY_LOAD_MORE_TRIGGER_DISTANCE,
+      this.steamInventoryLoadMorePullDistance + distance
+    );
+    if (this.steamInventoryLoadMorePullDistance >= STEAM_INVENTORY_LOAD_MORE_TRIGGER_DISTANCE) {
+      this.steamInventoryLoadMoreTriggered = true;
+      this.steamInventoryLoadMorePullDistance = 0;
+      this.loadMoreSteamInventory();
+    }
+  }
+
+  private openSteamInventoryItemSheet(item: SteamInventoryItem): void {
+    if (this.steamMarketSaleRequestActive) {
+      this.showToast(this.t('正在提交 Steam 出售请求'));
+      return;
+    }
+    this.selectedSteamInventoryItem = item;
+    this.steamMarketPriceHistory = { prefix: '', suffix: '', points: [] };
+    this.steamMarketPriceError = '';
+    this.steamMarketBuyerPaysInput = '';
+    this.steamMarketSellerReceivesInput = '';
+    this.steamMarketEditingPriceField = '';
+    this.steamMarketTrendRange = SteamMarketTrendRange.Week;
+    this.steamMarketSelling = false;
+    this.showSteamInventoryItemSheet = true;
+    this.loadSelectedSteamMarketPriceHistory();
+  }
+
+  private clearSteamInventoryItemSheetState(): void {
+    this.steamMarketHistoryLoadSerial++;
+    this.steamMarketPriceLoading = false;
+    this.steamMarketPriceError = '';
+    this.steamMarketPriceHistory = { prefix: '', suffix: '', points: [] };
+    this.steamMarketBuyerPaysInput = '';
+    this.steamMarketSellerReceivesInput = '';
+    this.steamMarketEditingPriceField = '';
+    this.steamMarketTrendRange = SteamMarketTrendRange.Week;
+    this.steamMarketSelling = false;
+    this.selectedSteamInventoryItem = {
+      appId: 0,
+      contextId: '',
+      assetId: '',
+      classId: '',
+      instanceId: '',
+      amount: 1,
+      marketHashName: '',
+      name: '',
+      type: '',
+      iconUrl: '',
+      marketable: false,
+      tradable: false,
+      marketFee: STEAM_MARKET_DEFAULT_PUBLISHER_FEE_PERCENT
+    };
+  }
+
+  private async loadSelectedSteamMarketPriceHistory(): Promise<void> {
+    const token = this.selectedSteamToken();
+    const item = this.selectedSteamInventoryItem;
+    if (token === undefined || item.assetId.length === 0 || item.marketHashName.length === 0) {
+      this.steamMarketPriceLoading = false;
+      this.steamMarketPriceError = this.t('该物品暂无可用的市场价格信息');
+      return;
+    }
+    const serial = ++this.steamMarketHistoryLoadSerial;
+    const tokenId = token.id;
+    const assetId = item.assetId;
+    this.steamMarketPriceLoading = true;
+    this.steamMarketPriceError = '';
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      const history = await this.steamService().marketPriceHistory(data, item);
+      if (serial !== this.steamMarketHistoryLoadSerial || !this.showSteamInventoryItemSheet ||
+        this.selectedSteamTokenId !== tokenId || this.selectedSteamInventoryItem.assetId !== assetId) {
+        return;
+      }
+      this.steamMarketPriceHistory = {
+        prefix: history.prefix,
+        suffix: history.suffix,
+        points: history.points.slice()
+      };
+      if (this.steamMarketBuyerPaysInput.length === 0 && this.steamMarketPriceHistory.points.length > 0) {
+        const latest = this.steamMarketPriceHistory.points[this.steamMarketPriceHistory.points.length - 1];
+        this.updateSteamMarketPriceFromBuyerPays(latest.price.toFixed(2));
+      }
+      await this.persistSteamGuardData(token, data);
+    } catch (error) {
+      if (serial === this.steamMarketHistoryLoadSerial && this.showSteamInventoryItemSheet &&
+        this.selectedSteamInventoryItem.assetId === assetId) {
+        this.steamMarketPriceError = this.errorMessage(error);
+      }
+    } finally {
+      if (serial === this.steamMarketHistoryLoadSerial) {
+        this.steamMarketPriceLoading = false;
+      }
+    }
+  }
+
+  private async openSteamBatchSaleDialog(): Promise<void> {
+    if (this.steamSelectedInventoryAssetIds.length === 0 || this.steamBatchSelling ||
+      this.steamBatchSaleDialogId >= 0) {
+      return;
+    }
+    this.steamBatchSaleDeltaInput = '0.00';
+    try {
+      this.steamBatchSaleDialogId = await this.getUIContext().getPromptAction().openCustomDialog({
+        builder: (): void => {
+          this.SteamBatchSaleDialogContent();
+        },
+        autoCancel: false,
+        alignment: DialogAlignment.Center,
+        maskColor: this.isDarkTheme() ? '#99000000' : '#66F2F3F5',
+        backgroundColor: Color.Transparent,
+        cornerRadius: 24,
+        onDidDisappear: () => {
+          this.steamBatchSaleDialogId = -1;
+          if (!this.steamBatchSelling) {
+            this.steamBatchSaleDeltaInput = '0.00';
+          }
+        }
+      });
+    } catch (error) {
+      this.steamBatchSaleDialogId = -1;
+      this.showToast(this.t('无法打开批量出售确认弹窗：') + this.errorMessage(error));
+    }
+  }
+
+  private closeSteamBatchSaleDialog(): void {
+    if (this.steamBatchSaleDialogId < 0 || this.steamBatchSelling) {
+      return;
+    }
+    this.getUIContext().getPromptAction().closeCustomDialog(this.steamBatchSaleDialogId);
+    this.steamBatchSaleDialogId = -1;
+    this.steamBatchSaleDeltaInput = '0.00';
+  }
+
+  private normalizeSteamBatchSaleDeltaInput(value: string): string {
+    const normalizedSource = value.replace(',', '.').trim();
+    let sign = '';
+    let startIndex = 0;
+    if (normalizedSource.startsWith('+') || normalizedSource.startsWith('-')) {
+      sign = normalizedSource.charAt(0);
+      startIndex = 1;
+    }
+    let integerPart = '';
+    let decimalPart = '';
+    let decimalFound = false;
+    for (let index = startIndex; index < normalizedSource.length; index++) {
+      const character = normalizedSource.charAt(index);
+      if (character === '.' && !decimalFound) {
+        decimalFound = true;
+        continue;
+      }
+      if (character >= '0' && character <= '9') {
+        if (decimalFound) {
+          if (decimalPart.length < 2) {
+            decimalPart += character;
+          }
+        } else if (integerPart.length < 9) {
+          integerPart += character;
+        }
+      }
+    }
+    if (integerPart.length === 0 && decimalFound) {
+      integerPart = '0';
+    }
+    if (integerPart.length === 0 && !decimalFound) {
+      return sign;
+    }
+    return sign + integerPart + (decimalFound ? '.' + decimalPart : '');
+  }
+
+  private steamBatchSaleDelta(): number | undefined {
+    if (this.steamBatchSaleDeltaInput.length === 0 || this.steamBatchSaleDeltaInput === '+' ||
+      this.steamBatchSaleDeltaInput === '-') {
+      return undefined;
+    }
+    const delta = Number(this.steamBatchSaleDeltaInput);
+    return Number.isFinite(delta) ? delta : undefined;
+  }
+
+  private canSubmitSteamBatchSale(): boolean {
+    return this.steamSelectedInventoryAssetIds.length > 0 &&
+      this.steamBatchSaleDelta() !== undefined && !this.steamBatchSelling &&
+      !this.steamMarketSaleRequestActive;
+  }
+
+  private selectedSteamInventoryItems(): SteamInventoryItem[] {
+    return this.steamInventoryItems.filter((item: SteamInventoryItem): boolean => {
+      return item.marketable && this.steamSelectedInventoryAssetIds.includes(item.assetId);
+    });
+  }
+
+  private async sellSelectedSteamInventoryItems(): Promise<void> {
+    const token = this.selectedSteamToken();
+    const items = this.selectedSteamInventoryItems();
+    const delta = this.steamBatchSaleDelta();
+    if (token === undefined || items.length === 0 || delta === undefined ||
+      this.steamBatchSelling || this.steamMarketSaleRequestActive) {
+      return;
+    }
+    this.steamBatchSelling = true;
+    this.steamMarketSaleRequestActive = true;
+    let succeeded = 0;
+    let failed = 0;
+    let requiresConfirmation = false;
+    let firstFailureMessage = '';
+    const latestPriceByName = new Map<string, number>();
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      const service = this.steamService();
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        try {
+          if (item.marketHashName.length === 0) {
+            failed++;
+            continue;
+          }
+          const priceKey = item.appId.toString() + ':' + item.marketHashName;
+          let latestPrice = latestPriceByName.get(priceKey);
+          if (latestPrice === undefined) {
+            const history = await service.marketPriceHistory(data, item);
+            if (history.points.length === 0) {
+              failed++;
+              continue;
+            }
+            latestPrice = history.points[history.points.length - 1].price;
+            latestPriceByName.set(priceKey, latestPrice);
+          }
+          const buyerPaysMinorUnits = Math.round((latestPrice + delta) * 100);
+          const sellerReceivesMinorUnits = this.steamMarketSellerReceivesForBuyerPays(
+            buyerPaysMinorUnits,
+            item
+          );
+          if (buyerPaysMinorUnits <= 0 || sellerReceivesMinorUnits <= 0) {
+            failed++;
+            continue;
+          }
+          const result = await service.sellMarketItem(data, item, sellerReceivesMinorUnits);
+          succeeded++;
+          requiresConfirmation = requiresConfirmation || result.requiresConfirmation;
+        } catch (error) {
+          failed++;
+          const failureMessage = this.errorMessage(error);
+          if (firstFailureMessage.length === 0) {
+            firstFailureMessage = failureMessage;
+          }
+          console.error('Failed to batch sell Steam inventory item ' + item.assetId + ': ' + failureMessage);
+        }
+      }
+      await this.persistSteamGuardData(token, data);
+      if (this.steamBatchSaleDialogId >= 0) {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.steamBatchSaleDialogId);
+      }
+      this.steamBatchSaleDialogId = -1;
+      this.steamBatchSaleDeltaInput = '0.00';
+      this.clearSteamInventorySelection();
+      if (succeeded === 0 && firstFailureMessage.length > 0) {
+        this.showToast('Steam 批量出售失败：' + firstFailureMessage);
+      } else {
+        this.showToast('Steam 批量出售完成：成功 ' + succeeded.toString() +
+          '，失败 ' + failed.toString());
+      }
+      if (succeeded > 0 && requiresConfirmation) {
+        this.lastSteamConfirmationCheckMs = 0;
+        await this.refreshSteamFeatureRequests(false);
+      }
+      if (succeeded > 0) {
+        await this.refreshSteamInventory(false);
+      }
+    } catch (error) {
+      this.showToast('Steam 批量出售失败：' + this.errorMessage(error));
+    } finally {
+      this.steamBatchSelling = false;
+      this.steamMarketSaleRequestActive = false;
+    }
+  }
+
+  private normalizeSteamMarketPriceInput(value: string): string {
+    let normalized = value.replace(',', '.').replace(/[^0-9.]/g, '');
+    const decimalIndex = normalized.indexOf('.');
+    if (decimalIndex >= 0) {
+      const integerPart = normalized.substring(0, decimalIndex).substring(0, 9);
+      const decimalPart = normalized.substring(decimalIndex + 1).replace(/\./g, '').substring(0, 2);
+      normalized = (integerPart.length > 0 ? integerPart : '0') + '.' + decimalPart;
+    } else {
+      normalized = normalized.substring(0, 9);
+    }
+    return normalized;
+  }
+
+  private steamMarketPriceInputMinorUnits(input: string): number {
+    const value = Number(input);
+    if (!Number.isFinite(value) || value <= 0) {
+      return 0;
+    }
+    return Math.round(value * 100);
+  }
+
+  private updateSteamMarketPriceFromBuyerPays(value: string): void {
+    this.steamMarketBuyerPaysInput = this.normalizeSteamMarketPriceInput(value);
+    const buyerPaysMinorUnits = this.steamMarketPriceInputMinorUnits(this.steamMarketBuyerPaysInput);
+    const sellerReceivesMinorUnits = this.steamMarketSellerReceivesForBuyerPays(
+      buyerPaysMinorUnits,
+      this.selectedSteamInventoryItem
+    );
+    this.steamMarketSellerReceivesInput = sellerReceivesMinorUnits > 0 ?
+      (sellerReceivesMinorUnits / 100).toFixed(2) : '';
+  }
+
+  private editSteamMarketPriceFromBuyerPays(value: string): void {
+    if (this.steamMarketEditingPriceField !== 'buyer') {
+      return;
+    }
+    this.updateSteamMarketPriceFromBuyerPays(value);
+  }
+
+  private updateSteamMarketPriceFromSellerReceives(value: string): void {
+    this.steamMarketSellerReceivesInput = this.normalizeSteamMarketPriceInput(value);
+    const sellerReceivesMinorUnits = this.steamMarketPriceInputMinorUnits(this.steamMarketSellerReceivesInput);
+    const buyerPaysMinorUnits = this.steamMarketBuyerPaysForSellerReceives(
+      sellerReceivesMinorUnits,
+      this.selectedSteamInventoryItem
+    );
+    this.steamMarketBuyerPaysInput = buyerPaysMinorUnits > 0 ? (buyerPaysMinorUnits / 100).toFixed(2) : '';
+  }
+
+  private editSteamMarketPriceFromSellerReceives(value: string): void {
+    if (this.steamMarketEditingPriceField !== 'seller') {
+      return;
+    }
+    this.updateSteamMarketPriceFromSellerReceives(value);
+  }
+
+  private onSteamMarketPriceEditChanged(field: string, isEditing: boolean): void {
+    if (isEditing) {
+      this.steamMarketEditingPriceField = field;
+      return;
+    }
+    if (this.steamMarketEditingPriceField !== field) {
+      return;
+    }
+    if (field === 'buyer') {
+      const buyerPaysMinorUnits = this.steamMarketPriceInputMinorUnits(this.steamMarketBuyerPaysInput);
+      this.steamMarketBuyerPaysInput = buyerPaysMinorUnits > 0 ?
+        (buyerPaysMinorUnits / 100).toFixed(2) : '';
+    } else {
+      const sellerReceivesMinorUnits = this.steamMarketPriceInputMinorUnits(this.steamMarketSellerReceivesInput);
+      this.steamMarketSellerReceivesInput = sellerReceivesMinorUnits > 0 ?
+        (sellerReceivesMinorUnits / 100).toFixed(2) : '';
+    }
+    this.steamMarketEditingPriceField = '';
+  }
+
+  private steamMarketPublisherFeePercent(item: SteamInventoryItem): number {
+    if (Number.isFinite(item.marketFee) && item.marketFee >= 0 && item.marketFee <= 1) {
+      return item.marketFee;
+    }
+    return STEAM_MARKET_DEFAULT_PUBLISHER_FEE_PERCENT;
+  }
+
+  private steamMarketBuyerPaysForSellerReceives(sellerReceivesMinorUnits: number,
+    item: SteamInventoryItem): number {
+    if (!Number.isInteger(sellerReceivesMinorUnits) || sellerReceivesMinorUnits <= 0) {
+      return 0;
+    }
+    const steamFee = Math.floor(Math.max(
+      sellerReceivesMinorUnits * STEAM_MARKET_STEAM_FEE_PERCENT,
+      STEAM_MARKET_FEE_MINIMUM_MINOR
+    ));
+    const publisherFeePercent = this.steamMarketPublisherFeePercent(item);
+    const publisherFee = publisherFeePercent > 0 ? Math.floor(Math.max(
+      sellerReceivesMinorUnits * publisherFeePercent,
+      STEAM_MARKET_FEE_MINIMUM_MINOR
+    )) : 0;
+    return sellerReceivesMinorUnits + steamFee + publisherFee;
+  }
+
+  private steamMarketSellerReceivesForBuyerPays(buyerPaysMinorUnits: number, item: SteamInventoryItem): number {
+    if (!Number.isInteger(buyerPaysMinorUnits) || buyerPaysMinorUnits <= 0) {
+      return 0;
+    }
+    const minimumBuyerPays = this.steamMarketBuyerPaysForSellerReceives(1, item);
+    if (buyerPaysMinorUnits < minimumBuyerPays) {
+      return 0;
+    }
+    const combinedFeePercent = 1 + STEAM_MARKET_STEAM_FEE_PERCENT +
+      this.steamMarketPublisherFeePercent(item);
+    let sellerReceives = Math.max(1, Math.floor(buyerPaysMinorUnits / combinedFeePercent));
+    for (let index = 0; index < 20; index++) {
+      const buyerPays = this.steamMarketBuyerPaysForSellerReceives(sellerReceives, item);
+      if (buyerPays > buyerPaysMinorUnits && sellerReceives > 1) {
+        sellerReceives--;
+        continue;
+      }
+      const nextBuyerPays = this.steamMarketBuyerPaysForSellerReceives(sellerReceives + 1, item);
+      if (nextBuyerPays <= buyerPaysMinorUnits) {
+        sellerReceives++;
+        continue;
+      }
+      break;
+    }
+    return sellerReceives;
+  }
+
+  private steamMarketBuyerPaysMinorUnits(): number {
+    return this.steamMarketPriceInputMinorUnits(this.steamMarketBuyerPaysInput);
+  }
+
+  private steamMarketSellerReceivesMinorUnits(): number {
+    return this.steamMarketPriceInputMinorUnits(this.steamMarketSellerReceivesInput);
+  }
+
+  private canSellSelectedSteamInventoryItem(): boolean {
+    return this.selectedSteamInventoryItem.assetId.length > 0 &&
+      this.selectedSteamInventoryItem.marketable &&
+      this.steamMarketBuyerPaysMinorUnits() > 0 &&
+      this.steamMarketSellerReceivesMinorUnits() > 0 &&
+      !this.steamMarketSelling && !this.steamMarketSaleRequestActive;
+  }
+
+  private confirmSellSelectedSteamInventoryItem(): void {
+    if (!this.canSellSelectedSteamInventoryItem()) {
+      return;
+    }
+    const item = this.selectedSteamInventoryItem;
+    const buyerPaysMinorUnits = this.steamMarketBuyerPaysMinorUnits();
+    const sellerReceivesMinorUnits = this.steamMarketSellerReceivesMinorUnits();
+    const itemName = item.name.length > 0 ? item.name : this.t('该物品');
+    const buyerPaysText = this.steamMarketFormatPrice(buyerPaysMinorUnits / 100);
+    const sellerReceivesText = this.steamMarketFormatPrice(sellerReceivesMinorUnits / 100);
+    this.getUIContext().showAlertDialog({
+      title: this.t('确认出售'),
+      message: this.t('确定上架“') + itemName + this.t('”吗？买家支付 ') + buyerPaysText +
+        this.t('，您收款 ') + sellerReceivesText + this.t('。提交后可能需要在 Steam 交易页完成确认。'),
+      autoCancel: true,
+      primaryButton: {
+        value: this.t('取消'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: this.t('确认出售'),
+        fontColor: this.accentColor(),
+        action: () => {
+          this.sellSelectedSteamInventoryItem(item, sellerReceivesMinorUnits);
+        }
+      }
+    });
+  }
+
+  private async sellSelectedSteamInventoryItem(
+    item: SteamInventoryItem,
+    sellerReceivesMinorUnits: number
+  ): Promise<void> {
+    const token = this.selectedSteamToken();
+    if (token === undefined || item.assetId.length === 0 || !item.marketable ||
+      sellerReceivesMinorUnits <= 0 || this.steamMarketSelling || this.steamMarketSaleRequestActive) {
+      return;
+    }
+    this.steamMarketSaleRequestActive = true;
+    this.steamMarketSelling = true;
+    try {
+      const data = parseSteamGuardData(token.steamData || '');
+      const result: SteamMarketSellResult = await this.steamService().sellMarketItem(
+        data,
+        item,
+        sellerReceivesMinorUnits
+      );
+      await this.persistSteamGuardData(token, data);
+      this.showSteamInventoryItemSheet = false;
+      if (result.requiresConfirmation) {
+        this.lastSteamConfirmationCheckMs = 0;
+        if (result.emailConfirmation) {
+          this.showToast('已提交上架，请按 Steam 邮件完成确认');
+        } else {
+          this.showToast('已提交上架，请在交易页完成确认');
+        }
+        await this.refreshSteamFeatureRequests(false);
+      } else {
+        this.showToast('物品已成功上架');
+      }
+      await this.refreshSteamInventory(false);
+    } catch (error) {
+      const failureMessage = this.errorMessage(error);
+      console.error('Failed to sell Steam inventory item ' + item.assetId + ': ' + failureMessage);
+      this.showToast('Steam 物品出售失败：' + failureMessage);
+    } finally {
+      this.steamMarketSaleRequestActive = false;
+      this.steamMarketSelling = false;
+    }
+  }
+
+  private steamMarketTrendSegmentItems(): SegmentButtonV2Items {
+    const weekItem: SegmentButtonV2ItemOptions = { text: this.t('周') };
+    const monthItem: SegmentButtonV2ItemOptions = { text: this.t('月') };
+    const overviewItem: SegmentButtonV2ItemOptions = { text: this.t('总览') };
+    return new SegmentButtonV2Items([weekItem, monthItem, overviewItem]);
+  }
+
+  private steamMarketTrendRangeIndex(): number {
+    if (this.steamMarketTrendRange === SteamMarketTrendRange.Month) {
+      return 1;
+    }
+    return this.steamMarketTrendRange === SteamMarketTrendRange.Overview ? 2 : 0;
+  }
+
+  private steamMarketTrendRangeFromIndex(index: number): SteamMarketTrendRange {
+    if (index === 1) {
+      return SteamMarketTrendRange.Month;
+    }
+    return index === 2 ? SteamMarketTrendRange.Overview : SteamMarketTrendRange.Week;
+  }
+
+  private steamMarketPricePointTimestamp(label: string): number {
+    const sourceParts = label.trim().split(' ');
+    const parts: string[] = [];
+    for (let index = 0; index < sourceParts.length; index++) {
+      if (sourceParts[index].length > 0) {
+        parts.push(sourceParts[index]);
+      }
+    }
+    if (parts.length < 3) {
+      return 0;
+    }
+    const months: string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months.indexOf(parts[0].substring(0, 3));
+    const day = Number(parts[1]);
+    const year = Number(parts[2]);
+    let hour = 0;
+    if (parts.length > 3) {
+      const hourText = parts[3].replace(':', '');
+      hour = Number(hourText);
+    }
+    if (month < 0 || !Number.isInteger(day) || !Number.isInteger(year) || !Number.isInteger(hour)) {
+      return 0;
+    }
+    return Date.UTC(year, month, day, Math.max(0, Math.min(23, hour)));
+  }
+
+  private steamMarketTrendRangePoints(): SteamMarketPricePoint[] {
+    const points = this.steamMarketPriceHistory.points;
+    if (points.length === 0 || this.steamMarketTrendRange === SteamMarketTrendRange.Overview) {
+      return points.slice();
+    }
+    const latestTimestamp = this.steamMarketPricePointTimestamp(points[points.length - 1].label);
+    if (latestTimestamp <= 0) {
+      const fallbackCount = this.steamMarketTrendRange === SteamMarketTrendRange.Week ? 168 : 720;
+      return points.slice(Math.max(0, points.length - fallbackCount));
+    }
+    const rangeMs = this.steamMarketTrendRange === SteamMarketTrendRange.Week ?
+      STEAM_MARKET_WEEK_RANGE_MS : STEAM_MARKET_MONTH_RANGE_MS;
+    const rangeStart = latestTimestamp - rangeMs;
+    const ranged: SteamMarketPricePoint[] = [];
+    for (let index = 0; index < points.length; index++) {
+      const timestamp = this.steamMarketPricePointTimestamp(points[index].label);
+      if (timestamp >= rangeStart && timestamp <= latestTimestamp) {
+        ranged.push(points[index]);
+      }
+    }
+    return ranged.length > 0 ? ranged : points.slice(Math.max(0, points.length - STEAM_MARKET_TREND_POINT_LIMIT));
+  }
+
+  private steamMarketTrendPoints(): SteamMarketPricePoint[] {
+    const points = this.steamMarketTrendRangePoints();
+    if (points.length <= STEAM_MARKET_TREND_POINT_LIMIT) {
+      return points;
+    }
+    const sampled: SteamMarketPricePoint[] = [];
+    let lastIndex = -1;
+    for (let index = 0; index < STEAM_MARKET_TREND_POINT_LIMIT; index++) {
+      const pointIndex = Math.floor(index * (points.length - 1) / (STEAM_MARKET_TREND_POINT_LIMIT - 1));
+      if (pointIndex !== lastIndex) {
+        sampled.push(points[pointIndex]);
+        lastIndex = pointIndex;
+      }
+    }
+    return sampled;
+  }
+
+  private steamMarketTrendPolylinePoints(): number[][] {
+    const points = this.steamMarketTrendPoints();
+    if (points.length === 0) {
+      return [];
+    }
+    let minimum = points[0].price;
+    let maximum = points[0].price;
+    for (let index = 1; index < points.length; index++) {
+      minimum = Math.min(minimum, points[index].price);
+      maximum = Math.max(maximum, points[index].price);
+    }
+    const chartWidth = Math.max(200, this.pageWidth - SHEET_HORIZONTAL_PADDING * 2 - 32);
+    const chartPadding = 4;
+    const usableWidth = chartWidth - chartPadding * 2;
+    const usableHeight = STEAM_MARKET_TREND_HEIGHT - chartPadding * 2;
+    const coordinates: number[][] = [];
+    for (let index = 0; index < points.length; index++) {
+      const x = points.length === 1 ? chartWidth / 2 :
+        chartPadding + usableWidth * index / (points.length - 1);
+      const ratio = maximum <= minimum ? 0.5 : (points[index].price - minimum) / (maximum - minimum);
+      const y = chartPadding + usableHeight * (1 - ratio);
+      coordinates.push([x, y]);
+    }
+    return coordinates;
+  }
+
+  private steamMarketFormatPrice(price: number): string {
+    return this.steamMarketPriceHistory.prefix + price.toFixed(2) + this.steamMarketPriceHistory.suffix;
+  }
+
+  private steamMarketLatestPriceText(): string {
+    const points = this.steamMarketPriceHistory.points;
+    return points.length > 0 ? this.steamMarketFormatPrice(points[points.length - 1].price) : '--';
+  }
+
+  private steamMarketMinimumPriceText(): string {
+    const points = this.steamMarketTrendRangePoints();
+    if (points.length === 0) {
+      return '--';
+    }
+    let minimum = points[0].price;
+    for (let index = 1; index < points.length; index++) {
+      minimum = Math.min(minimum, points[index].price);
+    }
+    return this.steamMarketFormatPrice(minimum);
+  }
+
+  private steamMarketMaximumPriceText(): string {
+    const points = this.steamMarketTrendRangePoints();
+    if (points.length === 0) {
+      return '--';
+    }
+    let maximum = points[0].price;
+    for (let index = 1; index < points.length; index++) {
+      maximum = Math.max(maximum, points[index].price);
+    }
+    return this.steamMarketFormatPrice(maximum);
+  }
+
+  private steamMarketPriceDateText(label: string): string {
+    const trimmed = label.trim();
+    return trimmed.substring(0, Math.min(trimmed.length, 12));
+  }
+
+  private steamMarketFirstDateText(): string {
+    const points = this.steamMarketTrendPoints();
+    return points.length > 0 ? this.steamMarketPriceDateText(points[0].label) : '';
+  }
+
+  private steamMarketLastDateText(): string {
+    const points = this.steamMarketTrendPoints();
+    return points.length > 0 ? this.steamMarketPriceDateText(points[points.length - 1].label) : '';
+  }
+
+  private restoreSteamInventoryCache(tokenId: string): void {
+    const context = this.getAbilityContext();
+    if (context === undefined) {
+      const emptyCache = new SteamInventoryCache();
+      emptyCache.tokenId = tokenId;
+      this.steamInventoryCache = emptyCache;
+      return;
+    }
+    this.steamInventoryCache = SteamInventoryCacheRepository.load(context, tokenId);
+    this.steamInventoryGames = this.steamInventoryCache.games.slice();
+    let gameKey = this.steamInventoryCache.selectedGameKey;
+    const selectedGame = this.steamInventoryGames.find((game: SteamInventoryGame): boolean => {
+      return this.steamInventoryGameKey(game) === gameKey;
+    });
+    if (selectedGame === undefined) {
+      gameKey = this.steamInventoryGames.length > 0 ?
+        this.steamInventoryGameKey(this.steamInventoryGames[0]) : '';
+    }
+    this.selectedSteamInventoryGameKey = gameKey;
+    this.applyCachedSteamInventoryCategory(gameKey);
+  }
+
+  private applyCachedSteamInventoryCategory(gameKey: string): boolean {
+    const category = this.steamInventoryCache.categories.find(
+      (current: SteamInventoryCategoryCache): boolean => current.gameKey === gameKey
+    );
+    if (category === undefined) {
+      this.steamInventoryItems = [];
+      this.steamInventoryLastAssetId = '';
+      this.steamInventoryHasMore = false;
+      this.steamInventoryTotalCount = 0;
+      return false;
+    }
+    this.steamInventoryItems = category.items.slice();
+    this.steamInventoryLastAssetId = category.lastAssetId || '';
+    this.steamInventoryHasMore = category.hasMore || false;
+    this.steamInventoryTotalCount = category.totalCount || category.items.length;
+    return true;
+  }
+
+  private invalidateSteamInventoryCache(tokenId: string): void {
+    const emptyCache = new SteamInventoryCache();
+    emptyCache.tokenId = tokenId;
+    this.steamInventoryCache = emptyCache;
+    this.steamInventoryGames = [];
+    this.steamInventoryItems = [];
+    this.selectedSteamInventoryGameKey = '';
+    this.steamInventoryLastAssetId = '';
+    this.steamInventoryHasMore = false;
+    this.steamInventoryTotalCount = 0;
+    const context = this.getAbilityContext();
+    if (context !== undefined) {
+      SteamInventoryCacheRepository.save(context, emptyCache);
+    }
+  }
+
+  private persistSteamInventoryCache(tokenId: string): void {
+    const context = this.getAbilityContext();
+    if (context === undefined) {
+      return;
+    }
+    if (this.steamInventoryCache.tokenId !== tokenId) {
+      this.steamInventoryCache = new SteamInventoryCache();
+      this.steamInventoryCache.tokenId = tokenId;
+    }
+    this.steamInventoryCache.games = this.steamInventoryGames.slice();
+    this.steamInventoryCache.selectedGameKey = this.selectedSteamInventoryGameKey;
+    this.steamInventoryCache.categories = this.steamInventoryCache.categories.filter(
+      (category: SteamInventoryCategoryCache): boolean => this.steamInventoryGames.some(
+        (game: SteamInventoryGame): boolean => this.steamInventoryGameKey(game) === category.gameKey
+      )
+    );
+    if (this.selectedSteamInventoryGameKey.length > 0) {
+      let category = this.steamInventoryCache.categories.find(
+        (current: SteamInventoryCategoryCache): boolean =>
+          current.gameKey === this.selectedSteamInventoryGameKey
+      );
+      if (category === undefined) {
+        category = new SteamInventoryCategoryCache();
+        category.gameKey = this.selectedSteamInventoryGameKey;
+        this.steamInventoryCache.categories.push(category);
+      }
+      category.items = this.steamInventoryItems.slice();
+      category.lastAssetId = this.steamInventoryLastAssetId;
+      category.hasMore = this.steamInventoryHasMore;
+      category.totalCount = this.steamInventoryTotalCount;
+      category.updatedAt = Date.now();
+    }
+    SteamInventoryCacheRepository.save(context, this.steamInventoryCache);
+  }
+
+  private resumeSteamFeatureAfterAccountChange(previousTokenId: string): void {
+    if (this.selectedSteamTokenId === previousTokenId || !this.showSteamFeaturePage ||
+      this.selectedHomeTab !== HomeTab.Steam) {
+      return;
+    }
+    setTimeout(() => {
+      this.activateSteamFeaturePage();
+    }, 0);
+  }
+
+  private steamInventoryGameKey(game: SteamInventoryGame): string {
+    return game.appId.toString() + ':' + game.contextId;
+  }
+
+  private isSelectedSteamInventoryGame(game: SteamInventoryGame): boolean {
+    return this.steamInventoryGameKey(game) === this.selectedSteamInventoryGameKey;
+  }
+
+  private steamInventoryGameLabel(game: SteamInventoryGame): string {
+    const name = game.name.length > 0 ? game.name : game.contextName;
+    return name + ' ' + game.itemCount.toString();
+  }
+
+  private steamInventoryGameTabWidth(game: SteamInventoryGame): number {
+    const label = this.steamInventoryGameLabel(game);
+    let contentWidth = 0;
+    for (let index = 0; index < label.length; index++) {
+      contentWidth += label.charCodeAt(index) <= 127 ?
+        STEAM_INVENTORY_GAME_TAB_ASCII_WIDTH : STEAM_INVENTORY_GAME_TAB_WIDE_WIDTH;
+    }
+    return Math.max(STEAM_INVENTORY_GAME_TAB_MIN_WIDTH,
+      contentWidth + STEAM_INVENTORY_GAME_TAB_HORIZONTAL_PADDING);
+  }
+
+  private steamConfirmationCategoryTabWidth(label: string, category: SteamConfirmationCategory): number {
+    const value = this.t(label);
+    let contentWidth = 0;
+    for (let index = 0; index < value.length; index++) {
+      contentWidth += value.charCodeAt(index) <= 127 ?
+        STEAM_INVENTORY_GAME_TAB_ASCII_WIDTH : STEAM_INVENTORY_GAME_TAB_WIDE_WIDTH;
+    }
+    const badgeWidth = this.steamConfirmationCategoryBadgeCount(category) > 0 ?
+      this.steamConfirmationCategoryBadgeWidth(category) + 8 : 0;
+    return Math.max(STEAM_CONFIRMATION_CATEGORY_TAB_MIN_WIDTH,
+      contentWidth + STEAM_INVENTORY_GAME_TAB_HORIZONTAL_PADDING + badgeWidth);
+  }
+
+  private steamInventoryColumnsTemplate(): string {
+    if (this.pageWidth >= 900) {
+      return '1fr 1fr 1fr 1fr';
+    }
+    if (this.pageWidth >= 600) {
+      return '1fr 1fr 1fr';
+    }
+    return '1fr 1fr';
+  }
+
+  private steamInventoryMediaBackgroundColor(): string {
+    return this.isDarkTheme() ? '#3A3A3A' : '#D8D8D8';
+  }
+
+  private steamInventoryBadgeBackgroundColor(): string {
+    return this.isDarkTheme() ? '#D9E2E2E2' : '#D9FFFFFF';
+  }
+
+  private steamInventoryBadgeTextColor(): string {
+    return '#1A1A1A';
+  }
+
+  private openSteamInventoryFilterSheet(): void {
+    if (this.steamInventoryItems.length === 0 || this.steamInventorySelectionMode) {
+      return;
+    }
+    this.pendingSteamInventoryFilterTypes = this.steamInventoryFilterTypes.slice();
+    this.pendingSteamInventoryTradeFilters = this.steamInventoryTradeFilters.slice();
+    this.bumpSheetSelectionRevision();
+    this.showSteamInventoryFilterSheet = true;
+  }
+
+  private availableSteamInventoryTypes(): string[] {
+    const types: string[] = [];
+    for (let index = 0; index < this.steamInventoryItems.length; index++) {
+      const type = this.steamInventoryItems[index].type.trim();
+      if (type.length > 0 && !types.includes(type)) {
+        types.push(type);
+      }
+    }
+    types.sort();
+    return types;
+  }
+
+  private togglePendingSteamInventoryType(type: string, selected: boolean): void {
+    if (selected && !this.pendingSteamInventoryFilterTypes.includes(type)) {
+      this.pendingSteamInventoryFilterTypes = this.pendingSteamInventoryFilterTypes.concat([type]);
+    } else if (!selected && this.pendingSteamInventoryFilterTypes.includes(type)) {
+      this.pendingSteamInventoryFilterTypes = this.pendingSteamInventoryFilterTypes.filter(
+        (current: string): boolean => current !== type
+      );
+    }
+  }
+
+  private steamInventoryTradeFilterOptions(): string[] {
+    return [
+      STEAM_INVENTORY_FILTER_TRADABLE,
+      STEAM_INVENTORY_FILTER_MARKETABLE,
+      STEAM_INVENTORY_FILTER_NOT_TRADABLE,
+      STEAM_INVENTORY_FILTER_NOT_MARKETABLE
+    ];
+  }
+
+  private steamInventoryTradeFilterLabel(value: string): string {
+    if (value === STEAM_INVENTORY_FILTER_MARKETABLE) {
+      return this.t('可出售');
+    }
+    if (value === STEAM_INVENTORY_FILTER_TRADABLE) {
+      return this.t('可交易');
+    }
+    if (value === STEAM_INVENTORY_FILTER_NOT_TRADABLE) {
+      return this.t('不可交易');
+    }
+    return this.t('不可出售');
+  }
+
+  private togglePendingSteamInventoryTradeFilter(value: string, selected: boolean): void {
+    if (selected && !this.pendingSteamInventoryTradeFilters.includes(value)) {
+      this.pendingSteamInventoryTradeFilters = this.pendingSteamInventoryTradeFilters.concat([value]);
+    } else if (!selected && this.pendingSteamInventoryTradeFilters.includes(value)) {
+      this.pendingSteamInventoryTradeFilters = this.pendingSteamInventoryTradeFilters.filter(
+        (current: string): boolean => current !== value
+      );
+    }
+  }
+
+  private resetPendingSteamInventoryFilter(): void {
+    this.pendingSteamInventoryFilterTypes = [];
+    this.pendingSteamInventoryTradeFilters = [];
+    this.bumpSheetSelectionRevision();
+  }
+
+  private applySteamInventoryFilter(): void {
+    this.steamInventoryFilterTypes = this.pendingSteamInventoryFilterTypes.slice();
+    this.steamInventoryTradeFilters = this.pendingSteamInventoryTradeFilters.slice();
+    this.showSteamInventoryFilterSheet = false;
+  }
+
+  private clearSteamInventoryFilter(): void {
+    this.steamInventoryFilterTypes = [];
+    this.pendingSteamInventoryFilterTypes = [];
+    this.steamInventoryTradeFilters = [];
+    this.pendingSteamInventoryTradeFilters = [];
+  }
+
+  private hasSteamInventoryFilter(): boolean {
+    return this.steamInventoryFilterTypes.length > 0 ||
+      this.steamInventoryTradeFilters.length > 0;
+  }
+
+  private steamInventoryFilterSelectionCount(): number {
+    return this.steamInventoryFilterTypes.length + this.steamInventoryTradeFilters.length;
+  }
+
+  private steamInventoryFilterBadgeText(): string {
+    const count = this.steamInventoryFilterSelectionCount();
+    return count > 99 ? '99+' : count.toString();
+  }
+
+  private steamInventoryFilterBadgeWidth(): number {
+    const count = this.steamInventoryFilterSelectionCount();
+    return count > 99 ? 30 : count > 9 ? 24 : 18;
+  }
+
+  private steamInventoryItemMatchesTradeFilter(item: SteamInventoryItem): boolean {
+    if (this.steamInventoryTradeFilters.length === 0) {
+      return true;
+    }
+    return (this.steamInventoryTradeFilters.includes(STEAM_INVENTORY_FILTER_TRADABLE) && item.tradable) ||
+      (this.steamInventoryTradeFilters.includes(STEAM_INVENTORY_FILTER_MARKETABLE) && item.marketable) ||
+      (this.steamInventoryTradeFilters.includes(STEAM_INVENTORY_FILTER_NOT_TRADABLE) && !item.tradable) ||
+      (this.steamInventoryTradeFilters.includes(STEAM_INVENTORY_FILTER_NOT_MARKETABLE) && !item.marketable);
+  }
+
+  private filteredSteamInventoryItems(): SteamInventoryItem[] {
+    return this.steamInventoryItems.filter((item: SteamInventoryItem): boolean => {
+      if (this.steamInventorySelectionMode && !item.marketable) {
+        return false;
+      }
+      if (this.steamInventoryFilterTypes.length > 0 &&
+        !this.steamInventoryFilterTypes.includes(item.type.trim())) {
+        return false;
+      }
+      return this.steamInventoryItemMatchesTradeFilter(item);
+    });
+  }
+
+  private steamInventoryItemRenderKey(item: SteamInventoryItem): string {
+    return this.selectedSteamInventoryGameKey + ':' + item.appId.toString() + ':' +
+      item.contextId + ':' + item.assetId;
+  }
+
+  private hasMarketableSteamInventoryItems(): boolean {
+    return this.steamInventoryItems.some((item: SteamInventoryItem): boolean => item.marketable);
+  }
+
+  private reconcileSteamInventorySelection(): void {
+    this.steamSelectedInventoryAssetIds = this.steamSelectedInventoryAssetIds.filter(
+      (assetId: string): boolean => this.steamInventoryItems.some((item: SteamInventoryItem): boolean => {
+        return item.assetId === assetId && item.marketable;
+      })
+    );
+  }
+
+  private updateSteamInventoryItemBounds(assetId: string, area: Area): void {
+    const globalX = area.globalPosition.x;
+    const globalY = area.globalPosition.y;
+    const left = globalX === undefined ? 0 : this.lengthToNumber(globalX, 0);
+    const top = globalY === undefined ? 0 : this.lengthToNumber(globalY, 0);
+    const width = this.lengthToNumber(area.width, 0);
+    const height = this.lengthToNumber(area.height, 0);
+    if (width <= 0 || height <= 0) {
+      this.steamInventoryCardBounds.delete(assetId);
+      return;
+    }
+    this.steamInventoryCardBounds.set(assetId, {
+      assetId: assetId,
+      left: left,
+      top: top,
+      right: left + width,
+      bottom: top + height
+    });
+  }
+
+  private startSteamInventoryDragSelection(item: SteamInventoryItem): void {
+    if (!this.steamInventorySelectionMode || !item.marketable) {
+      return;
+    }
+    this.clearSteamInventoryDragSelection();
+    this.clearSteamInventoryClickSuppression();
+    this.steamInventoryDragSelecting = true;
+    this.steamInventorySuppressNextClick = true;
+    this.steamInventoryDragSelectionValue = !this.isSteamInventoryItemSelected(item.assetId);
+    this.steamInventoryDragVisitedAssetIds = [];
+    this.applySteamInventoryDragSelection(item.assetId);
+  }
+
+  private finishSteamInventoryDragSelection(): void {
+    const wasSelecting = this.steamInventoryDragSelecting;
+    this.clearSteamInventoryDragSelection();
+    if (wasSelecting && this.steamInventorySuppressNextClick) {
+      this.scheduleSteamInventoryClickSuppressionReset();
+    }
+  }
+
+  private applySteamInventoryDragSelectionAt(windowX: number, windowY: number): void {
+    const bounds = Array.from(this.steamInventoryCardBounds.values());
+    for (let index = 0; index < bounds.length; index++) {
+      const current = bounds[index];
+      if (windowX >= current.left && windowX <= current.right &&
+        windowY >= current.top && windowY <= current.bottom) {
+        this.applySteamInventoryDragSelection(current.assetId);
+        return;
+      }
+    }
+  }
+
+  private updateSteamInventoryDragSelection(event: GestureEvent): void {
+    if (!this.steamInventoryDragSelecting || event.fingerList.length === 0) {
+      return;
+    }
+    this.applySteamInventoryDragSelectionAt(event.fingerList[0].globalX, event.fingerList[0].globalY);
+  }
+
+  private applySteamInventoryDragSelection(assetId: string): void {
+    if (this.steamInventoryDragVisitedAssetIds.includes(assetId)) {
+      return;
+    }
+    this.steamInventoryDragVisitedAssetIds.push(assetId);
+    this.setSteamInventoryItemSelected(assetId, this.steamInventoryDragSelectionValue);
+  }
+
+  private clearSteamInventoryDragSelection(): void {
+    this.steamInventoryDragSelecting = false;
+    this.steamInventoryDragVisitedAssetIds = [];
+  }
+
+  private scheduleSteamInventoryClickSuppressionReset(): void {
+    if (this.steamInventorySuppressClickTimer >= 0) {
+      clearTimeout(this.steamInventorySuppressClickTimer);
+    }
+    this.steamInventorySuppressClickTimer = setTimeout(() => {
+      this.steamInventorySuppressNextClick = false;
+      this.steamInventorySuppressClickTimer = -1;
+    }, 300);
+  }
+
+  private clearSteamInventoryClickSuppression(): void {
+    if (this.steamInventorySuppressClickTimer >= 0) {
+      clearTimeout(this.steamInventorySuppressClickTimer);
+      this.steamInventorySuppressClickTimer = -1;
+    }
+    this.steamInventorySuppressNextClick = false;
+  }
+
+  private steamInventoryItemStatus(item: SteamInventoryItem): string {
+    if (item.marketable && item.tradable) {
+      return this.t('可交易 · 可出售');
+    }
+    if (item.marketable) {
+      return this.t('可出售');
+    }
+    if (item.tradable) {
+      return this.t('可交易');
+    }
+    return this.t('不可交易');
+  }
+
+  private steamPendingLoginSummary(pending: SteamPendingLogin): string {
+    const values: string[] = [];
+    if (pending.location.length > 0) {
+      values.push(pending.location);
+    }
+    if (pending.ip.length > 0) {
+      values.push(pending.ip);
+    }
+    return values.length > 0 ? values.join(' · ') : this.t('新的 Steam 登录请求');
+  }
+
+  private steamConfirmationHeadline(confirmation: SteamConfirmation): string {
+    if (confirmation.headline.length > 0) {
+      return confirmation.headline;
+    }
+    return this.steamConfirmationType(confirmation.type);
+  }
+
+  private steamConfirmationSummary(confirmation: SteamConfirmation): string {
+    return confirmation.summary.length > 0 ? confirmation.summary.join(' · ') : this.t('Steam 请求确认此操作');
+  }
+
+  private steamConfirmationIconUrl(confirmation: SteamConfirmation): string {
+    const icon = confirmation.icon || '';
+    return icon.startsWith('https://') || icon.startsWith('http://') ? icon : '';
+  }
+
+  private steamConfirmationImage(confirmation: SteamConfirmation): Resource | string {
+    const icon = this.steamConfirmationIconUrl(confirmation);
+    return icon.length > 0 ? icon : $r('app.media.ic_steam');
+  }
+
+  private steamConfirmationHeadlineColor(confirmation: SteamConfirmation): string {
+    return confirmation.type === 3 ? ERROR_RED : this.accentColor();
+  }
+
+  private steamDateTimeText(timeMs: number): string {
+    if (timeMs <= 0) {
+      return '';
+    }
+    const date = new Date(timeMs);
+    return date.getFullYear().toString() + '-' + this.twoDigit(date.getMonth() + 1) + '-' +
+      this.twoDigit(date.getDate()) + ' ' + this.twoDigit(date.getHours()) + ':' + this.twoDigit(date.getMinutes());
+  }
+
+  private steamAccountBarName(): string {
+    const token = this.selectedSteamToken();
+    if (token === undefined) {
+      return this.t('点击登录');
+    }
+    return this.steamProfile.displayName.length > 0 ? this.steamProfile.displayName : this.tokenDisplayName(token);
+  }
+
+  private selectedSteamCode(): string {
+    const token = this.selectedSteamToken();
+    return token === undefined ? '' : this.tokenCode(token).split(' ').join('');
+  }
+
+  private copySelectedSteamCode(): void {
+    const token = this.selectedSteamToken();
+    if (token !== undefined) {
+      this.copyTokenCode(token);
+    }
+  }
+
+  private scanSelectedSteamAccountQr(): void {
+    const token = this.selectedSteamToken();
+    if (token !== undefined) {
+      this.scanSteamLoginQr(token.id);
+    }
+  }
+
+  private steamContentTopOffset(): number {
+    return this.statusBarHeight + STEAM_TOP_CONTROL_HEIGHT + HOME_LAYOUT_GAP * 3;
+  }
+
+  private steamConfirmationContentTopOffset(): number {
+    return this.steamContentTopOffset() + 44;
+  }
+
+  private steamInventoryContentTopOffset(): number {
+    return this.steamContentTopOffset() + 44;
+  }
+
+  private steamInventoryEmptyContentTopOffset(): number {
+    return this.steamInventoryGames.length > 0 ?
+      this.steamInventoryContentTopOffset() : this.steamContentTopOffset();
+  }
+
+  private steamConfirmationRefreshOverlayTop(): number {
+    return this.steamConfirmationContentTopOffset();
+  }
+
+  private steamInventoryRefreshOverlayTop(): number {
+    return this.steamInventoryEmptyContentTopOffset();
+  }
+
+  private steamContentBottomOffset(): number {
+    if (this.steamSelectionMode || this.steamListingSelectionMode || this.steamInventorySelectionMode) {
+      return this.naviIndicatorHeight + STEAM_BULK_ACTION_HEIGHT + 24;
+    }
+    if (this.steamBottomChromeHidden) {
+      return this.naviIndicatorHeight + PAGE_CARD_GAP;
+    }
+    return this.naviIndicatorHeight + HOME_NAV_HEIGHT + STEAM_ACCOUNT_BAR_HEIGHT +
+      STEAM_ACCOUNT_BAR_GAP * 2 + PAGE_CARD_GAP;
+  }
+
+  private steamEmptyStateHeight(): number {
+    const topOffset = this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations ?
+      this.steamConfirmationContentTopOffset() : this.steamInventoryEmptyContentTopOffset();
+    return Math.max(STEAM_EMPTY_STATE_MIN_HEIGHT,
+      this.pageHeight - topOffset - this.steamContentBottomOffset());
+  }
+
+  private steamAccountBarWidth(): number {
+    return Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2);
+  }
+
+  private steamAccountBarTop(): number {
+    return this.pageHeight - this.naviIndicatorHeight - HOME_NAV_HEIGHT - STEAM_ACCOUNT_BAR_GAP -
+      STEAM_ACCOUNT_BAR_HEIGHT;
+  }
+
+  private checkSteamApiLatencyIfNeeded(): void {
+    if (this.isWatchLayout() || this.pageMode !== PageMode.Home || this.homeDestinationVisible ||
+      !this.showSteamFeaturePage || this.selectedHomeTab !== HomeTab.Steam ||
+      this.selectedSteamToken() === undefined || this.steamApiLatencyChecking) {
+      return;
+    }
+    if (Date.now() - this.lastSteamApiLatencyCheckMs < STEAM_API_LATENCY_CHECK_INTERVAL_MS) {
+      return;
+    }
+    this.refreshSteamApiLatency();
+  }
+
+  private async refreshSteamApiLatency(force: boolean = false): Promise<void> {
+    if (this.steamApiLatencyChecking) {
+      return;
+    }
+    if (!force && Date.now() - this.lastSteamApiLatencyCheckMs < STEAM_API_LATENCY_CHECK_INTERVAL_MS) {
+      return;
+    }
+    const tokenId = this.selectedSteamTokenId;
+    this.steamApiLatencyChecking = true;
+    this.lastSteamApiLatencyCheckMs = Date.now();
+    this.steamApiLatencyMs = 0;
+    this.steamApiReachable = false;
+    try {
+      const latency = await this.steamService().officialApiLatency();
+      if (this.selectedSteamTokenId === tokenId) {
+        this.steamApiLatencyMs = Math.min(STEAM_API_LATENCY_FAILURE_MS, latency);
+        this.steamApiReachable = true;
+      }
+    } catch (error) {
+      if (this.selectedSteamTokenId === tokenId) {
+        this.steamApiLatencyMs = STEAM_API_LATENCY_FAILURE_MS;
+        this.steamApiReachable = false;
+      }
+      console.error('Failed to check Steam API latency: ' + this.errorMessage(error));
+    } finally {
+      this.steamApiLatencyChecking = false;
+    }
+  }
+
+  private steamApiLatencyText(): string {
+    return this.steamApiLatencyMs.toString() + 'ms';
+  }
+
+  private steamApiLatencyStatusText(): string {
+    if (this.steamApiLatencyMs <= 0) {
+      return this.t('尚未检测');
+    }
+    if (!this.steamApiReachable) {
+      return this.t('未连接');
+    }
+    return this.steamApiLatencyText();
+  }
+
+  private steamApiLatencyStatusColor(): string {
+    if (this.steamApiLatencyMs <= 0) {
+      return this.secondaryTextColor();
+    }
+    return this.steamApiLatencyColor();
+  }
+
+  private steamApiLatencyColor(): string {
+    if (!this.steamApiReachable || this.steamApiLatencyMs > STEAM_API_LATENCY_WARNING_MS) {
+      return ERROR_RED;
+    }
+    if (this.steamApiLatencyMs <= STEAM_API_LATENCY_GOOD_MS) {
+      return STEAM_API_LATENCY_GOOD_COLOR;
+    }
+    return STEAM_API_LATENCY_WARNING_COLOR;
+  }
+
   private steamService(): SteamService {
     return new SteamService({
       enhancedAccess: this.steamEnhancedAccess,
@@ -12696,9 +18373,19 @@ struct Index {
     const supportedTokens = this.steamLoginTokens().filter((token: TokenRecord): boolean => {
       return parseSteamGuardData(token.steamData || '').fullyEnrolled;
     });
+    this.steamLoginPickerMode = SteamLoginPickerMode.Scan;
     this.pendingSteamLoginTokenId = supportedTokens.length === 1 ? supportedTokens[0].id : '';
     this.bumpSheetSelectionRevision();
     this.showSteamLoginPicker = true;
+    this.refreshSteamApiLatency(true);
+  }
+
+  private openSteamAccountPicker(): void {
+    this.steamLoginPickerMode = SteamLoginPickerMode.AccountSwitch;
+    this.pendingSteamLoginTokenId = this.selectedSteamTokenId;
+    this.bumpSheetSelectionRevision();
+    this.showSteamLoginPicker = true;
+    this.refreshSteamApiLatency(true);
   }
 
   private selectSteamLoginToken(tokenId: string): void {
@@ -12712,6 +18399,11 @@ struct Index {
       this.resumeSteamEnrollment(token, data);
       return;
     }
+    if (this.steamLoginPickerMode === SteamLoginPickerMode.AccountSwitch) {
+      this.selectSteamFeatureAccount(token.id);
+      this.showSteamLoginPicker = false;
+      return;
+    }
     this.selectSteamLoginToken(token.id);
   }
 
@@ -12720,6 +18412,7 @@ struct Index {
     setTimeout(() => {
       this.resetSteamEnrollment();
       this.showSteamEnrollmentSheet = true;
+      this.refreshSteamApiLatency(true);
     }, 180);
   }
 
@@ -13072,6 +18765,9 @@ struct Index {
     }
     this.steamEnrollmentTokenId = tokenId;
     if (completed) {
+      this.selectedSteamTokenId = tokenId;
+      this.pendingSteamLoginTokenId = tokenId;
+      this.saveSettings();
       this.showToast('Steam 验证器已保存到本机');
     }
   }
@@ -13242,7 +18938,8 @@ struct Index {
   }
 
   private steamConfirmationHomeVisible(): boolean {
-    return !this.isWatchLayout() && this.selectedHomeTab === HomeTab.Token &&
+    const expectedTab = this.showSteamFeaturePage ? HomeTab.Steam : HomeTab.Token;
+    return !this.isWatchLayout() && this.selectedHomeTab === expectedTab &&
       this.pageMode === PageMode.Home && this.homePathStack.size() === 0 &&
       !this.showOnboarding && !(this.appLockEnabled && this.isLocked);
   }
@@ -13250,6 +18947,20 @@ struct Index {
   private async checkSteamConfirmationsIfNeeded(): Promise<void> {
     if (!this.steamConfirmationHomeVisible() || this.steamConfirmationChecking || this.steamLoading ||
       this.steamConfirmationDialogVisible || this.showSteamLoginPicker) {
+      return;
+    }
+    if (this.showSteamFeaturePage) {
+      if (this.selectedSteamFeatureTab !== SteamFeatureTab.Confirmations) {
+        return;
+      }
+      if (this.selectedSteamConfirmationCategory !== SteamConfirmationCategory.AwaitingApproval) {
+        return;
+      }
+      const now = Date.now();
+      if (now - this.lastSteamConfirmationCheckMs < STEAM_CONFIRMATION_POLL_INTERVAL_MS) {
+        return;
+      }
+      await this.refreshSteamFeatureRequests(true);
       return;
     }
     if (this.pendingSteamConfirmations.length > 0) {
@@ -13289,6 +19000,7 @@ struct Index {
     }
     if (discovered.length > 0) {
       this.pendingSteamConfirmations = discovered;
+      this.persistSteamPendingRequestCache();
       this.showNextSteamConfirmationDialog();
     }
   }
@@ -13345,6 +19057,7 @@ struct Index {
       const data = parseSteamGuardData(token.steamData || '');
       await this.steamService().respond(data, [pending.confirmation], allow);
       await this.persistSteamGuardData(token, data);
+      await this.recordSteamConfirmation(pending, data.steamId, allow);
       this.showToast(allow ? '已确认' : '已拒绝');
     } catch (error) {
       this.showToast((allow ? '确认失败：' : '拒绝失败：') + this.errorMessage(error));
@@ -13353,6 +19066,7 @@ struct Index {
       this.pendingSteamConfirmations = this.pendingSteamConfirmations.filter((current: SteamPendingConfirmation) => {
         return current.tokenId !== pending.tokenId || current.confirmation.id !== pending.confirmation.id;
       });
+      this.persistSteamPendingRequestCache();
       setTimeout(() => {
         this.showNextSteamConfirmationDialog();
       }, 180);

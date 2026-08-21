@@ -5,7 +5,7 @@
   <p>
     <img alt="HarmonyOS" src="https://img.shields.io/badge/HarmonyOS-6.1.0(23)-111111">
     <img alt="ArkTS" src="https://img.shields.io/badge/ArkTS-Native-E5BA0B">
-    <img alt="Version" src="https://img.shields.io/badge/Version-1.4.4-72A28B">
+    <img alt="Version" src="https://img.shields.io/badge/Version-1.4.5-72A28B">
     <img alt="Devices" src="https://img.shields.io/badge/Devices-Phone%20%7C%20Watch%20%7C%20Tablet%20%7C%202in1-6F98AE">
     <img alt="License" src="https://img.shields.io/badge/License-MIT-4C8BF5">
   </p>
@@ -19,17 +19,17 @@ OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模�
 
 ## 下载与侧载
 
-- 当前版本：`1.4.4`（`versionCode 1000047`）
+- 当前版本：`1.4.5`（`versionCode 1000048`）
 - 系统要求：HarmonyOS `6.1.0(23)` 或更高版本
 - 支持设备：手机、手表、平板与 2in1
-- 安装包：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取 `OpenAuthenticator-v1.4.4.hap`
+- 安装包：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取 `OpenAuthenticator-v1.4.5.hap`
 - 版本说明：[CHANGELOG.md](CHANGELOG.md)
 
 安装前请在设备上开启开发者模式和 USB 调试，在电脑安装并连接 HDC 后执行：
 
 ```bash
 hdc list targets
-hdc app install -r OpenAuthenticator-v1.4.4.hap
+hdc app install -r OpenAuthenticator-v1.4.5.hap
 ```
 
 看到 `successfully` 后即可从桌面启动“开源验证器”。安装包使用 HarmonyOS release / AppGallery 分发证书签名；系统是否允许直接从文件管理器打开 HAP 安装取决于设备版本和安全策略，遇到限制时请使用 HDC。升级安装会保留应用数据，但仍建议先在应用内导出备份。请只从本仓库的 [Releases](https://gitcode.com/mroble/Authenticator/releases) 页面下载安装包，并核对 SHA-256。
@@ -163,7 +163,7 @@ entry/src/main/ets/
 - HarmonyOS SDK `6.1.0(23)` release API
 - ArkTS Stage 模型
 - Bundle：`com.example.tool_2fa`
-- Version：`1.4.4`（`versionCode 1000047`）
+- Version：`1.4.5`（`versionCode 1000048`）
 - 设备类型：phone、tablet、2in1
 
 DevEco Studio 中可直接构建，也可使用项目约定命令：

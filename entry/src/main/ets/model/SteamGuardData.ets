@@ -53,6 +53,123 @@ export interface SteamConfirmation {
   icon?: string;
 }
 
+export interface SteamPendingLogin {
+  clientId: string;
+  version: number;
+  ip: string;
+  location: string;
+  deviceName: string;
+  creationTime: number;
+}
+
+export interface SteamProfile {
+  displayName: string;
+  avatarUrl: string;
+}
+
+export interface SteamInventoryGame {
+  appId: number;
+  contextId: string;
+  name: string;
+  contextName: string;
+  iconUrl: string;
+  itemCount: number;
+}
+
+export interface SteamInventoryItem {
+  appId: number;
+  contextId: string;
+  assetId: string;
+  classId: string;
+  instanceId: string;
+  amount: number;
+  marketHashName: string;
+  name: string;
+  type: string;
+  iconUrl: string;
+  marketable: boolean;
+  tradable: boolean;
+  marketFee: number;
+}
+
+export interface SteamMarketPricePoint {
+  label: string;
+  price: number;
+  volume: number;
+}
+
+export interface SteamMarketPriceHistory {
+  prefix: string;
+  suffix: string;
+  points: SteamMarketPricePoint[];
+}
+
+export interface SteamMarketSellResult {
+  requiresConfirmation: boolean;
+  mobileConfirmation: boolean;
+  emailConfirmation: boolean;
+}
+
+export interface SteamMarketListing {
+  listingId: string;
+  appId: number;
+  contextId: string;
+  assetId: string;
+  name: string;
+  type: string;
+  iconUrl: string;
+  priceText: string;
+  listedDateText: string;
+}
+
+export interface SteamMarketListingPage {
+  items: SteamMarketListing[];
+  nextStart: number;
+  hasMore: boolean;
+  totalCount: number;
+}
+
+export interface SteamMarketSaleHistoryItem {
+  id: string;
+  name: string;
+  type: string;
+  iconUrl: string;
+  priceText: string;
+  dateText: string;
+}
+
+export interface SteamMarketSaleHistoryPage {
+  items: SteamMarketSaleHistoryItem[];
+  nextStart: number;
+  hasMore: boolean;
+  totalCount: number;
+}
+
+export interface SteamInventoryOverview {
+  games: SteamInventoryGame[];
+}
+
+export interface SteamInventoryPage {
+  items: SteamInventoryItem[];
+  lastAssetId: string;
+  hasMore: boolean;
+  totalCount: number;
+}
+
+export interface SteamConfirmationHistoryRecord {
+  id: string;
+  tokenId: string;
+  steamId: string;
+  requestId: string;
+  requestType: string;
+  headline: string;
+  summary: string;
+  iconUrl: string;
+  creationTime: number;
+  handledTime: number;
+  allowed: boolean;
+}
+
 export function emptySteamGuardData(): SteamGuardData {
   return {
     accountName: '',
