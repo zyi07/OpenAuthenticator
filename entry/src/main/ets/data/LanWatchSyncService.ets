@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
-import { mdns, socket } from '@kit.NetworkKit';
+import { connection, mdns, socket } from '@kit.NetworkKit';
 import { TokenRecord } from '../model/TokenRecord';
 
 const LAN_SYNC_ACTION: string = 'tool2fa.watch.tokens.replace';
@@ -13,6 +13,7 @@ const LAN_SYNC_PAIRING_PREFIX: string = 'openauth-sync://watch?v=1';
 const LAN_SYNC_AAD_PREFIX: string = 'OpenAuthenticator/watch-sync/v1/';
 const LAN_SYNC_SESSION_MS: number = 2 * 60 * 1000;
 const LAN_SYNC_DISCOVERY_TIMEOUT_MS: number = 12 * 1000;
+const LAN_SYNC_DIRECT_CONNECT_TIMEOUT_MS: number = 4 * 1000;
 const LAN_SYNC_RESPONSE_TIMEOUT_MS: number = 10 * 1000;
 const LAN_SYNC_RECEIVE_TIMEOUT_MS: number = 10 * 1000;
 const LAN_SYNC_MAX_MESSAGE_BYTES: number = 1024 * 1024;
@@ -23,6 +24,8 @@ interface LanWatchPairingPayload {
   sessionId: string;
   key: Uint8Array;
   expiresAt: number;
+  host: string;
+  port: number;
 }
 
 interface LanWatchEncryptedEnvelope {
@@ -144,6 +147,8 @@ export class LanWatchReceiver {
       if (!address.port || address.port <= 0) {
         throw new Error('LAN_SYNC_PORT_UNAVAILABLE');
       }
+      const localAddress = await getLocalLanAddress();
+      console.info('LAN watch direct endpoint available: ' + (localAddress.length > 0).toString());
       const requestedService: mdns.LocalServiceInfo = {
         serviceType: LAN_SYNC_SERVICE_TYPE,
         serviceName: LAN_SYNC_SERVICE_PREFIX + this.sessionId,
@@ -158,7 +163,7 @@ export class LanWatchReceiver {
       }, LAN_SYNC_SESSION_MS);
       this.notifyState(LanWatchReceiverState.Waiting);
       return {
-        qrText: pairingText(this.sessionId, this.sessionKey, this.expiresAt),
+        qrText: pairingText(this.sessionId, this.sessionKey, this.expiresAt, localAddress, address.port),
         expiresAt: this.expiresAt
       };
     } catch (error) {
@@ -340,22 +345,50 @@ export class LanWatchSender {
       throw new Error('LAN_SYNC_INVALID_TOKEN_COUNT');
     }
 
+    const directAddress = pairingAddress(pairing);
+    if (directAddress !== undefined) {
+      try {
+        return await LanWatchSender.pushToAddress(
+          directAddress,
+          pairing,
+          records,
+          LAN_SYNC_DIRECT_CONNECT_TIMEOUT_MS
+        );
+      } catch (error) {
+      }
+    }
+
     const service = await discoverService(context, pairing.sessionId);
     if (!service.host || !service.host.address || !service.port) {
       throw new Error('LAN_SYNC_SERVICE_UNAVAILABLE');
     }
+    const discoveredAddress: socket.NetAddress = {
+      address: service.host.address,
+      family: service.host.family,
+      port: service.port
+    };
+    return await LanWatchSender.pushToAddress(
+      discoveredAddress,
+      pairing,
+      records,
+      LAN_SYNC_RESPONSE_TIMEOUT_MS
+    );
+  }
 
+  private static async pushToAddress(
+    targetAddress: socket.NetAddress,
+    pairing: LanWatchPairingPayload,
+    records: TokenRecord[],
+    connectTimeoutMs: number
+  ): Promise<number> {
     const client = socket.constructTCPSocketInstance();
     let responseWaiter: LanWatchLineWaiter | undefined = undefined;
     try {
-      await client.connect({
-        address: {
-          address: service.host.address,
-          family: service.host.family,
-          port: service.port
-        },
-        timeout: LAN_SYNC_RESPONSE_TIMEOUT_MS
-      });
+      const connectOptions: socket.TCPConnectOptions = {
+        address: targetAddress,
+        timeout: connectTimeoutMs
+      };
+      await client.connect(connectOptions);
       responseWaiter = createLineWaiter(client);
       const payload: LanWatchTransferPayload = {
         action: LAN_SYNC_ACTION,
@@ -389,9 +422,13 @@ export class LanWatchSender {
   }
 }
 
-function pairingText(sessionId: string, key: Uint8Array, expiresAt: number): string {
-  return LAN_SYNC_PAIRING_PREFIX + '&s=' + sessionId +
+function pairingText(sessionId: string, key: Uint8Array, expiresAt: number, host: string, port: number): string {
+  let text = LAN_SYNC_PAIRING_PREFIX + '&s=' + sessionId +
     '&k=' + base64UrlEncode(key) + '&e=' + expiresAt.toString();
+  if (isPrivateIpv4(host) && isValidPort(port)) {
+    text += '&h=' + host + '&p=' + port.toString();
+  }
+  return text;
 }
 
 function parsePairingText(scannedText: string): LanWatchPairingPayload {
@@ -403,6 +440,8 @@ function parsePairingText(scannedText: string): LanWatchPairingPayload {
   let sessionId = '';
   let keyText = '';
   let expiresText = '';
+  let host = '';
+  let portText = '';
   for (let index = 0; index < parts.length; index++) {
     const separator = parts[index].indexOf('=');
     if (separator <= 0) {
@@ -416,20 +455,83 @@ function parsePairingText(scannedText: string): LanWatchPairingPayload {
       keyText = value;
     } else if (name === 'e') {
       expiresText = value;
+    } else if (name === 'h') {
+      host = value;
+    } else if (name === 'p') {
+      portText = value;
     }
   }
   const key = base64UrlDecode(keyText);
   const expiresAt = Number(expiresText);
+  const port = Number(portText);
   if (!/^[a-f0-9]{24}$/.test(sessionId) || key.length !== 32 ||
     !Number.isFinite(expiresAt) || expiresAt <= 0) {
+    throw new Error('LAN_SYNC_INVALID_PAIRING_CODE');
+  }
+  if ((host.length > 0 || portText.length > 0) && (!isPrivateIpv4(host) || !isValidPort(port))) {
     throw new Error('LAN_SYNC_INVALID_PAIRING_CODE');
   }
   return {
     version: LAN_SYNC_PROTOCOL_VERSION,
     sessionId: sessionId,
     key: key,
-    expiresAt: expiresAt
+    expiresAt: expiresAt,
+    host: host,
+    port: isValidPort(port) ? port : 0
   };
+}
+
+function pairingAddress(pairing: LanWatchPairingPayload): socket.NetAddress | undefined {
+  if (!isPrivateIpv4(pairing.host) || !isValidPort(pairing.port)) {
+    return undefined;
+  }
+  const address: socket.NetAddress = {
+    address: pairing.host,
+    family: 1,
+    port: pairing.port
+  };
+  return address;
+}
+
+async function getLocalLanAddress(): Promise<string> {
+  try {
+    const netHandle = await connection.getDefaultNet();
+    const properties = await connection.getConnectionProperties(netHandle);
+    for (let index = 0; index < properties.linkAddresses.length; index++) {
+      const candidate = properties.linkAddresses[index].address.address;
+      if (isPrivateIpv4(candidate)) {
+        return candidate;
+      }
+    }
+  } catch (error) {
+  }
+  return '';
+}
+
+function isValidPort(port: number): boolean {
+  return Number.isInteger(port) && port > 0 && port <= 65535;
+}
+
+function isPrivateIpv4(address: string): boolean {
+  const parts = address.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  const octets: number[] = [];
+  for (let index = 0; index < parts.length; index++) {
+    const octet = Number(parts[index]);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) {
+      return false;
+    }
+    octets.push(octet);
+  }
+  if (octets[0] === 10 || (octets[0] === 192 && octets[1] === 168)) {
+    return true;
+  }
+  if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) {
+    return true;
+  }
+  return octets[0] === 169 && octets[1] === 254;
 }
 
 function encryptEnvelope(plaintext: string, sessionId: string, keyData: Uint8Array): string {

@@ -1,18 +1,18 @@
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
-import { updateManager } from '@kit.AppGalleryKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { FormManager } from '../form/FormManager';
+import deviceInfo from '@ohos.deviceInfo';
 
 const DOMAIN = 0x0000;
 const TRANSPARENT_SYSTEM_BAR = '#00000000';
 const STATUS_BAR_HEIGHT_KEY = 'tool2fa_statusBarHeight';
 const NAVI_INDICATOR_HEIGHT_KEY = 'tool2fa_naviIndicatorHeight';
 const FORCE_DARK_SYSTEM_BARS_KEY = 'tool2fa_forceDarkSystemBars';
+const PHONE_PAGE = 'pages/Index';
+const WATCH_PAGE = 'pages/WatchIndex';
 
 export default class EntryAbility extends UIAbility {
   private hasSafeAreaListener: boolean = false;
-  private hasCheckedAppUpdate: boolean = false;
   private mainWindow: window.Window | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -21,7 +21,6 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
-    FormManager.init(this.context);
     this.publishColorMode(this.context.config.colorMode);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
@@ -33,15 +32,24 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
     this.configureWindow(windowStage).finally(() => {
-      windowStage.loadContent('pages/Index', (err) => {
+      const contentPage = this.resolveContentPage();
+      windowStage.loadContent(contentPage, (err) => {
         if (err.code) {
           hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
           return;
         }
         this.configureWindow(windowStage);
-        hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+        hilog.info(DOMAIN, 'testTag', 'Succeeded in loading %{public}s.', contentPage);
       });
     });
+  }
+
+  private resolveContentPage(): string {
+    const currentDeviceType = deviceInfo.deviceType.toLowerCase();
+    if (currentDeviceType.indexOf('wear') >= 0 || currentDeviceType.indexOf('watch') >= 0) {
+      return WATCH_PAGE;
+    }
+    return PHONE_PAGE;
   }
 
   private async configureWindow(windowStage: window.WindowStage): Promise<void> {
@@ -131,29 +139,6 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<boolean>('tool2fa_requireAuth', true);
     AppStorage.setOrCreate<boolean>('tool2fa_isLocked', true);
     hilog.info(DOMAIN, 'testTag', 'Set tool2fa_isLocked=true in onForeground');
-    this.checkForAppUpdate();
-  }
-
-  private checkForAppUpdate(): void {
-    if (this.hasCheckedAppUpdate) {
-      return;
-    }
-    this.hasCheckedAppUpdate = true;
-    this.performAppUpdateCheck();
-  }
-
-  private async performAppUpdateCheck(): Promise<void> {
-    try {
-      const checkResult = await updateManager.checkAppUpdate(this.context);
-      if (checkResult.updateAvailable !== updateManager.UpdateAvailableCode.LATER_VERSION_EXIST) {
-        hilog.info(DOMAIN, 'testTag', 'App is already up to date.');
-        return;
-      }
-      const resultCode = await updateManager.showUpdateDialog(this.context);
-      hilog.info(DOMAIN, 'testTag', 'Show update dialog result: %{public}d', resultCode);
-    } catch (error) {
-      hilog.warn(DOMAIN, 'testTag', 'Failed to check app update. Cause: %{public}s', JSON.stringify(error));
-    }
   }
 
   onBackground(): void {

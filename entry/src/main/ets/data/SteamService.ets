@@ -124,6 +124,12 @@ interface SteamMarketListingsEnvelope {
   message?: string;
 }
 
+interface SteamMarketHistoryParsePage {
+  items: SteamMarketSaleHistoryItem[];
+  scannedRowCount: number;
+  hasUnscannedRows: boolean;
+}
+
 interface SteamMarketRemoveEnvelope {
   success?: boolean | number;
   message?: string;
@@ -519,28 +525,37 @@ export class SteamService {
     let totalCount = nextStart;
     let hasMore = true;
     for (let pageIndex = 0; pageIndex < 20 && items.length < normalizedCount && hasMore; pageIndex++) {
-      const requestCount = 20;
+      const requestStart = nextStart;
+      const requestCount = 100;
       const responseText = await this.request(
-        'https://steamcommunity.com/market/myhistory/render/?query=&start=' + nextStart.toString() +
-          '&count=' + requestCount.toString() + '&l=schinese',
+        'https://steamcommunity.com/market/myhistory/render/?query=&start=' + requestStart.toString() +
+          '&count=' + requestCount.toString() + '&l=schinese&_=' +
+          (Date.now() + pageIndex).toString(),
         http.RequestMethod.GET,
         '',
         cookie,
-        'https://steamcommunity.com/market/'
+        'https://steamcommunity.com/market/',
+        true
       );
       const envelope: SteamMarketListingsEnvelope = JSON.parse(responseText);
       if (envelope.success === false || envelope.success === 0) {
-        throw new Error(envelope.message || 'Steam 市场出售记录获取失败');
+        throw new Error(envelope.message || 'Steam 市场交易记录获取失败');
       }
-      const pageItems = this.parseMarketSaleHistory(envelope.results_html || '', nextStart);
-      for (let itemIndex = 0; itemIndex < pageItems.length && items.length < normalizedCount; itemIndex++) {
-        items.push(pageItems[itemIndex]);
+      const parsedPage = this.parseMarketSaleHistory(
+        envelope.results_html || '', requestStart, normalizedCount - items.length);
+      for (let itemIndex = 0; itemIndex < parsedPage.items.length; itemIndex++) {
+        items.push(parsedPage.items[itemIndex]);
       }
       totalCount = typeof envelope.total_count === 'number' ? Math.max(0, envelope.total_count) :
-        nextStart + requestCount;
+        requestStart + requestCount;
+      if (parsedPage.hasUnscannedRows) {
+        nextStart = requestStart + parsedPage.scannedRowCount;
+        hasMore = nextStart < totalCount;
+        break;
+      }
       const pageSize = typeof envelope.pagesize === 'number' && envelope.pagesize > 0 ?
         envelope.pagesize : requestCount;
-      nextStart += pageSize;
+      nextStart = requestStart + pageSize;
       hasMore = nextStart < totalCount && pageSize > 0;
     }
     return {
@@ -806,7 +821,7 @@ export class SteamService {
     return listings;
   }
 
-  private parseMarketSaleHistory(html: string, pageStart: number): SteamMarketSaleHistoryItem[] {
+  private parseMarketSaleHistory(html: string, pageStart: number, limit: number): SteamMarketHistoryParsePage {
     const items: SteamMarketSaleHistoryItem[] = [];
     const rowMarker = 'market_listing_row market_recent_listing_row';
     let rowStart = html.indexOf(rowMarker);
@@ -815,7 +830,9 @@ export class SteamService {
       const nextRow = html.indexOf(rowMarker, rowStart + rowMarker.length);
       const rowHtml = html.substring(rowStart, nextRow >= 0 ? nextRow : html.length);
       const direction = this.marketListingClassText(rowHtml, 'market_listing_gainorloss');
-      if (direction.indexOf('+') >= 0) {
+      const isPurchase = direction.indexOf('+') >= 0;
+      const isSale = direction.indexOf('-') >= 0;
+      if (isPurchase || isSale) {
         const rowId = this.marketHistoryRowId(rowHtml, pageStart + rowIndex);
         const name = this.marketListingClassText(rowHtml, 'market_listing_item_name');
         items.push({
@@ -824,13 +841,25 @@ export class SteamService {
           type: this.marketListingClassText(rowHtml, 'market_listing_game_name'),
           iconUrl: this.normalizeImageUrl(this.marketListingImageUrl(rowHtml)),
           priceText: this.marketListingPriceText(rowHtml),
-          dateText: this.marketListingClassText(rowHtml, 'market_listing_listed_date')
+          dateText: this.marketListingClassText(rowHtml, 'market_listing_listed_date'),
+          isPurchase: isPurchase
         });
       }
       rowIndex++;
+      if (items.length >= limit) {
+        return {
+          items: items,
+          scannedRowCount: rowIndex,
+          hasUnscannedRows: nextRow >= 0
+        };
+      }
       rowStart = nextRow;
     }
-    return items;
+    return {
+      items: items,
+      scannedRowCount: rowIndex,
+      hasUnscannedRows: false
+    };
   }
 
   private marketHistoryRowId(html: string, fallbackIndex: number): string {
@@ -979,7 +1008,8 @@ export class SteamService {
     method: http.RequestMethod,
     body: string,
     cookie: string,
-    communityReferer: string = ''
+    communityReferer: string = '',
+    noCache: boolean = false
   ): Promise<string> {
     const client = http.createHttp();
     let targetUrl = originalUrl;
@@ -992,6 +1022,10 @@ export class SteamService {
       headers['Origin'] = 'https://steamcommunity.com';
       headers['Referer'] = communityReferer;
       headers['X-Requested-With'] = 'XMLHttpRequest';
+    }
+    if (noCache) {
+      headers['Cache-Control'] = 'no-cache, no-store, max-age=0';
+      headers['Pragma'] = 'no-cache';
     }
     if (this.options.enhancedAccess && this.options.gatewayUrl.trim().length > 0) {
       targetUrl = this.gatewayTarget(originalUrl, this.options.gatewayUrl.trim());

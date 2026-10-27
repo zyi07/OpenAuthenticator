@@ -1,6 +1,6 @@
 import { abilityAccessCtrl, bundleManager, common, ConfigurationConstant, Permissions, Want } from '@kit.AbilityKit';
 import { authentication } from '@kit.AccountKit';
-import { privacyManager } from '@kit.AppGalleryKit';
+import { commentManager, privacyManager, updateManager } from '@kit.AppGalleryKit';
 import { util } from '@kit.ArkTS';
 import {
   ButtonModifier,
@@ -192,8 +192,9 @@ const CARD_PRESS_ANIMATION_DURATION: number = 160;
 const DEFAULT_TOKEN_DIGITS: number = 6;
 const DEFAULT_TOKEN_PERIOD: number = 30;
 const USER_AGREEMENT_EMAIL: string = '1207523787@qq.com';
-const CAMLINK_URL: string =
-  'https://appgallery.huawei.com/link/invite-test-wap?taskId=6bf169d3025820402aaed7f6fb4bc841&invitationCode=9zfV0wKisw1';
+const CAMLINK_URL: string = 'appmarket://details?id=com.cattie.cameraconnect';
+const CAMRAW_URL: string =
+  'https://appgallery.huawei.com/link/invite-test-wap?taskId=0bdbc69733b1ca7872660ae159f066ab&invitationCode=5BcESBJK0af';
 const QQ_GROUP_NUMBER: string = '1061983927';
 const APP_VERSION_FALLBACK: string = 'V1.4.5';
 const APP_VERSION_CODE_FALLBACK: string = '1000048';
@@ -351,6 +352,7 @@ const HOME_NAV_WIDTH_WITHOUT_STEAM: number = 148;
 const HOME_NAV_MINIBAR_GAP: number = 10;
 const HOME_NAV_HEIGHT: number = 52;
 const HOME_NAV_TEXT_SIZE: number = 10;
+const STEAM_BOTTOM_CHROME_MAX_WIDTH: number = 480;
 const HOME_SEARCH_ICON_SIZE: number = 14;
 const HOME_SEARCH_TEXT_SIZE: number = 14;
 const RESPONSIVE_CARD_MIN_WIDTH: number = 320;
@@ -392,6 +394,12 @@ const ME_TEXT_SIZE: number = 18;
 const ME_ACTION_TEXT_SIZE: number = 15;
 const ME_ACTION_ICON_SIZE: number = 20;
 const ME_ACTION_CONTENT_GAP: number = 16;
+const NEW_BADGE_HEIGHT: number = 18;
+const NEW_BADGE_HORIZONTAL_PADDING: number = 6;
+const NEW_BADGE_TEXT_SIZE: number = 10;
+const NEW_BADGE_RADIUS: number = 4;
+const MORE_APPS_BADGE_MARGIN: number = 16;
+const MORE_APPS_DESCRIPTION_HEIGHT: number = 130;
 const ME_LOGOUT_BUTTON_WIDTH: number = 88;
 const ME_LOGOUT_BUTTON_HEIGHT: number = 34;
 const ME_ARROW_WIDTH: number = 8;
@@ -424,11 +432,13 @@ const STEAM_CONFIRMATION_IMAGE_SIZE: number = 60;
 const STEAM_CONFIRMATION_ACTION_SIZE: number = 40;
 const STEAM_CONFIRMATION_SELECTION_SIZE: number = 28;
 const STEAM_CONFIRMATION_SELECTION_ICON_SIZE: number = 14;
-const STEAM_INVENTORY_CARD_HEIGHT: number = 156;
-const STEAM_INVENTORY_MEDIA_HEIGHT: number = 104;
+const STEAM_INVENTORY_IMAGE_HEIGHT: number = 156;
+const STEAM_INVENTORY_CARD_FOOTER_HEIGHT: number = 50;
+const STEAM_INVENTORY_CARD_HEIGHT: number = STEAM_INVENTORY_IMAGE_HEIGHT + STEAM_INVENTORY_CARD_FOOTER_HEIGHT;
+const STEAM_INVENTORY_GRADIENT_HEIGHT: number = 80;
+const STEAM_INVENTORY_TEXT_OVERLAY_HEIGHT: number = 82;
 const STEAM_INVENTORY_CARD_RADIUS: number = 18;
-const STEAM_INVENTORY_CARD_CACHE_COUNT: number = 4;
-const STEAM_INVENTORY_BADGE_HEIGHT: number = 22;
+const STEAM_INVENTORY_CARD_CACHE_COUNT: number = 8;
 const STEAM_INVENTORY_MARKET_COLOR: string = '#FF9F0A';
 const STEAM_INVENTORY_SHEET_IMAGE_HEIGHT: number = 184;
 const STEAM_MARKET_TREND_POINT_LIMIT: number = 24;
@@ -548,8 +558,6 @@ const STEAM_BEIAN_URL: string = 'https://beian.miit.gov.cn/';
 const STEAM_REFERENCE_URL: string = 'https://github.com/kdada/Authenticator';
 const SDA_REFERENCE_URL: string = 'https://github.com/Jessecar96/SteamDesktopAuthenticator';
 const TANGS_COMPONENTS_URL: string = 'https://ohpm.openharmony.cn/#/cn/detail/@tangs%2Fcomponents';
-const APP_BUNDLE_NAME: string = 'com.example.tool_2fa';
-
 class HomeSearchModifier implements AttributeModifier<SearchAttribute> {
   private textColor: ResourceColor;
   private hintColor: ResourceColor;
@@ -807,6 +815,7 @@ struct Index {
   @StorageLink('tool2fa_isLocked') @Watch('onLockStateChanged') private isLocked: boolean = false;
 
   aboutToAppear(): void {
+    this.initializePhoneServices();
     this.refreshSystemLanguage();
     this.refreshResponsiveWaterFlowSections();
     this.initializeAppData();
@@ -884,6 +893,8 @@ struct Index {
   private settingsLoaded: boolean = false;
   private settingsLoadPromise: Promise<void> | undefined = undefined;
   private phoneRootReady: boolean = false;
+  private phoneServicesInitialized: boolean = false;
+  private hasCheckedAppUpdate: boolean = false;
   private isHomeListScrolling: boolean = false;
   private tokenCodeCache: Map<string, string> = new Map<string, string>();
   private tokenCodeCacheVersion: number = -1;
@@ -967,6 +978,8 @@ struct Index {
   @State private steamMarketSaleHistoryNextStart: number = 0;
   @State private steamMarketSaleHistoryHasMore: boolean = false;
   @State private steamMarketSaleHistoryLoading: boolean = false;
+  private steamMarketSaleHistoryRefreshPending: boolean = false;
+  private steamMarketSaleHistoryRefreshToastPending: boolean = false;
   @State private steamAwaitingApprovalVisibleCount: number = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
   @State private steamApprovalHistoryVisibleCount: number = STEAM_CONFIRMATION_CATEGORY_PAGE_SIZE;
   @State private steamRemovingMarketListingId: string = '';
@@ -3661,6 +3674,7 @@ struct Index {
           .syncLoad(false)
           .clip(false)
           .onScrollStart(() => {
+            this.isHomeListScrolling = true;
             this.steamInventoryLoadMoreTriggered = false;
             this.steamInventoryLoadMorePullDistance = 0;
             this.resetSteamBottomChromeScrollDistance();
@@ -3671,6 +3685,8 @@ struct Index {
             return { offsetRemain: offset };
           })
           .onScrollStop(() => {
+            this.isHomeListScrolling = false;
+            this.currentTimeMs = Date.now();
             this.steamInventoryLoadMoreTriggered = false;
             this.steamInventoryLoadMorePullDistance = 0;
             this.resetSteamBottomChromeScrollDistance();
@@ -3771,11 +3787,17 @@ struct Index {
         }, (game: SteamInventoryGame) => this.steamInventoryGameKey(game))
       }
       .height(40)
+      .justifyContent(FlexAlign.Start)
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height(40)
+    .align(Alignment.TopStart)
     .scrollable(ScrollDirection.Horizontal)
+    .nestedScroll({
+      scrollForward: NestedScrollMode.SELF_FIRST,
+      scrollBackward: NestedScrollMode.SELF_FIRST
+    })
     .scrollBar(BarState.Off)
     .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
     .position({ x: 0, y: this.statusBarHeight + HOME_LAYOUT_GAP + STEAM_TOP_CONTROL_HEIGHT + 8 })
@@ -3783,7 +3805,8 @@ struct Index {
     .opacity(this.steamBottomChromeHidden ? 0 : 1)
     .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
     .hitTestBehavior(this.steamBottomChromeHidden ? HitTestMode.None : HitTestMode.Default)
-    .zIndex(31)
+    .enabled(!this.steamBottomChromeHidden)
+    .zIndex(this.steamBottomChromeHidden ? 29 : 31)
   }
 
   @Builder
@@ -3793,14 +3816,20 @@ struct Index {
         this.SteamConfirmationCategoryTab('等待批准', SteamConfirmationCategory.AwaitingApproval)
         this.SteamConfirmationCategoryTab('已上架', SteamConfirmationCategory.Listed)
         this.SteamConfirmationCategoryTab('批准记录', SteamConfirmationCategory.ApprovalHistory)
-        this.SteamConfirmationCategoryTab('出售记录', SteamConfirmationCategory.SaleHistory)
+        this.SteamConfirmationCategoryTab('交易记录', SteamConfirmationCategory.SaleHistory)
       }
       .height(40)
+      .justifyContent(FlexAlign.Start)
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height(40)
+    .align(Alignment.TopStart)
     .scrollable(ScrollDirection.Horizontal)
+    .nestedScroll({
+      scrollForward: NestedScrollMode.SELF_FIRST,
+      scrollBackward: NestedScrollMode.SELF_FIRST
+    })
     .scrollBar(BarState.Off)
     .padding({ left: HOME_HORIZONTAL_PADDING, right: HOME_HORIZONTAL_PADDING })
     .position({ x: 0, y: this.statusBarHeight + HOME_LAYOUT_GAP + STEAM_TOP_CONTROL_HEIGHT + 8 })
@@ -3808,7 +3837,8 @@ struct Index {
     .opacity(this.steamBottomChromeHidden ? 0 : 1)
     .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
     .hitTestBehavior(this.steamBottomChromeHidden ? HitTestMode.None : HitTestMode.Default)
-    .zIndex(31)
+    .enabled(!this.steamBottomChromeHidden)
+    .zIndex(this.steamBottomChromeHidden ? 29 : 31)
   }
 
   @Builder
@@ -4178,7 +4208,9 @@ struct Index {
           .backgroundColor(this.sheetControlBackgroundColor())
 
         Column({ space: 3 }) {
-          Text(record.priceText.length > 0 ? this.t('已出售') + ' ' + record.priceText : this.t('已出售'))
+          Text(record.priceText.length > 0 ?
+            this.t(record.isPurchase ? '已购买' : '已出售') + ' ' + record.priceText :
+            this.t(record.isPurchase ? '已购买' : '已出售'))
             .fontSize(15)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.accentColor())
@@ -4204,6 +4236,7 @@ struct Index {
       .height(STEAM_CONFIRMATION_CARD_HEIGHT)
       .padding({ left: TOKEN_CARD_PADDING, right: TOKEN_COUNTDOWN_EDGE_PADDING })
       .alignItems(VerticalAlign.Center)
+      .zIndex(2)
     }
     .width('100%')
     .height(STEAM_CONFIRMATION_CARD_HEIGHT)
@@ -4366,82 +4399,81 @@ struct Index {
 
   @Builder
   private SteamInventoryItemCardVisual(item: SteamInventoryItem) {
-    Column() {
-      Stack({ alignContent: Alignment.TopStart }) {
-        Image(item.iconUrl.length > 0 ? item.iconUrl : $r('app.media.ic_steam'))
-          .width('100%')
-          .height(STEAM_INVENTORY_MEDIA_HEIGHT)
-          .objectFit(ImageFit.Contain)
-          .draggable(false)
-          .backgroundColor(this.steamInventoryMediaBackgroundColor())
+    Stack({ alignContent: Alignment.TopStart }) {
+      Image(item.iconUrl.length > 0 ? item.iconUrl : $r('app.media.ic_steam'))
+        .width('100%')
+        .height(STEAM_INVENTORY_IMAGE_HEIGHT)
+        .objectFit(ImageFit.Cover)
+        .draggable(false)
+        .backgroundColor(this.steamInventoryMediaBackgroundColor())
 
-        Row({ space: 6 }) {
-          if (item.type.length > 0) {
-            Text(item.type)
-              .height(STEAM_INVENTORY_BADGE_HEIGHT)
-              .constraintSize({ maxWidth: 104 })
-              .padding({ left: 8, right: 8 })
-              .fontSize(10)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.steamInventoryBadgeTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .borderRadius(STEAM_INVENTORY_BADGE_HEIGHT / 2)
-              .backgroundColor(this.steamInventoryBadgeBackgroundColor())
-          }
+      Column()
+        .width('100%')
+        .height(STEAM_INVENTORY_CARD_FOOTER_HEIGHT)
+        .backgroundColor(this.cardBackgroundColor())
+        .position({ x: 0, y: STEAM_INVENTORY_IMAGE_HEIGHT })
 
-          Blank()
+      Column()
+        .width('100%')
+        .height(STEAM_INVENTORY_GRADIENT_HEIGHT)
+        .position({ x: 0, y: STEAM_INVENTORY_IMAGE_HEIGHT - STEAM_INVENTORY_GRADIENT_HEIGHT })
+        .linearGradient({
+          direction: GradientDirection.Bottom,
+          colors: [
+            [this.steamInventoryGradientStartColor(), 0.0],
+            [this.steamInventoryGradientNearTransparentColor(), 0.40],
+            [this.steamInventoryGradientMiddleColor(), 0.72],
+            [this.steamInventoryGradientEndColor(), 1.0]
+          ]
+        })
+
+      Column({ space: 2 }) {
+        Row({ space: 4 }) {
+          Text(item.type.length > 0 ? item.type : this.t('未知类型'))
+            .fontSize(10)
+            .fontWeight(FontWeight.Regular)
+            .fontColor(this.steamInventoryOverlaySecondaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
 
           if (item.amount > 1) {
-            Text('×' + item.amount.toString())
-              .height(STEAM_INVENTORY_BADGE_HEIGHT)
-              .padding({ left: 8, right: 8 })
+            Text('· ×' + item.amount.toString())
               .fontSize(10)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.accentContrastColor())
+              .fontWeight(FontWeight.Regular)
+              .fontColor(this.steamInventoryOverlaySecondaryTextColor())
               .maxLines(1)
-              .borderRadius(STEAM_INVENTORY_BADGE_HEIGHT / 2)
-              .backgroundColor(this.accentColor())
           }
         }
         .width('100%')
-        .height(38)
-        .padding({ left: 8, right: 8, top: 8 })
-        .alignItems(VerticalAlign.Top)
-      }
-      .width('100%')
-      .height(STEAM_INVENTORY_MEDIA_HEIGHT)
-      .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
-      .clip(true)
-      .backgroundColor(this.steamInventoryMediaBackgroundColor())
 
-      Column({ space: 2 }) {
         Text(item.name.length > 0 ? item.name : this.t('未知物品'))
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
-          .fontColor(this.primaryTextColor())
+          .fontColor(this.steamInventoryOverlayPrimaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-          .textAlign(TextAlign.Center)
+          .textAlign(TextAlign.Start)
 
         Text(this.steamInventoryItemStatus(item))
           .fontSize(12)
-          .fontColor(item.marketable || item.tradable ? this.accentColor() : this.secondaryTextColor())
+          .fontColor(item.marketable || item.tradable ? this.accentColor() :
+            this.steamInventoryOverlaySecondaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-          .textAlign(TextAlign.Center)
+          .textAlign(TextAlign.Start)
       }
       .width('100%')
-      .height(STEAM_INVENTORY_CARD_HEIGHT - STEAM_INVENTORY_MEDIA_HEIGHT)
-      .padding({ left: 10, right: 10, top: 7, bottom: 5 })
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
+      .height(STEAM_INVENTORY_TEXT_OVERLAY_HEIGHT)
+      .padding({ left: 12, right: 12, top: 13, bottom: 9 })
+      .justifyContent(FlexAlign.End)
+      .alignItems(HorizontalAlign.Start)
+      .position({ x: 0, y: STEAM_INVENTORY_CARD_HEIGHT - STEAM_INVENTORY_TEXT_OVERLAY_HEIGHT })
     }
     .width('100%')
     .height(STEAM_INVENTORY_CARD_HEIGHT)
-    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.cardBackgroundColor())
   }
 
   @Builder
@@ -4454,7 +4486,6 @@ struct Index {
     .backgroundColor(this.cardBackgroundColor())
     .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
     .clip(true)
-    .border({ width: 0.5, color: this.dividerColor() })
     .onClick(() => {
       this.openSteamInventoryItemSheet(item);
     })
@@ -4485,8 +4516,8 @@ struct Index {
     .borderRadius(STEAM_INVENTORY_CARD_RADIUS)
     .clip(true)
     .border({
-      width: this.isSteamInventoryItemSelected(item.assetId) ? 1 : 0.5,
-      color: this.isSteamInventoryItemSelected(item.assetId) ? this.accentColor() : this.dividerColor()
+      width: this.isSteamInventoryItemSelected(item.assetId) ? 1 : 0,
+      color: this.accentColor()
     })
     .onClick(() => {
       if (this.steamInventorySuppressNextClick) {
@@ -4718,7 +4749,7 @@ struct Index {
     .clip(true)
     .backgroundColor(Color.Transparent)
     .border({ width: 1, color: this.steamChromeBorderColor() })
-    .position({ x: HOME_HORIZONTAL_PADDING, y: this.steamAccountBarTop() })
+    .position({ x: this.steamAccountBarLeft(), y: this.steamAccountBarTop() })
     .translate({ y: this.steamBottomChromeHidden ? STEAM_ACCOUNT_BAR_HEIGHT + STEAM_ACCOUNT_BAR_GAP : 0 })
     .opacity(this.steamBottomChromeHidden ? 0 : 1)
     .animation({ duration: STEAM_BOTTOM_CHROME_ANIMATION_DURATION, curve: Curve.Friction })
@@ -4771,53 +4802,39 @@ struct Index {
 
   @Builder
   private SteamInventoryBulkActionButton(label: string, primary: boolean, enabled: boolean, action: () => void) {
-    Button(label)
-      .height(STEAM_BULK_ACTION_HEIGHT)
-      .fontSize(15)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(primary ? this.accentColor() : this.primaryTextColor())
-      .backgroundColor(primary ? this.accentTintColor() : this.sheetControlBackgroundColor())
-      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
-      .enabled(enabled)
-      .opacity(enabled ? 1 : 0.55)
-      .onClick(action)
-      .layoutWeight(primary ? 1.5 : 1)
-      .border({ width: 1, color: primary ? this.accentColor() : this.dividerColor() })
+    this.SheetActionButton({
+      label: label,
+      isPrimary: primary,
+      isEnabled: enabled,
+      isLoading: false,
+      action: action
+    })
   }
 
   @Builder
   private SteamListingBatchRemoveButton() {
-    Button(this.t('撤下') + '（' + this.steamSelectedMarketListingIds.length.toString() + '）')
-      .height(STEAM_BULK_ACTION_HEIGHT)
-      .fontSize(15)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.secondaryTextColor())
-      .backgroundColor(this.sheetControlBackgroundColor())
-      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
-      .enabled(this.steamSelectedMarketListingIds.length > 0 && !this.steamLoading)
-      .opacity(this.steamSelectedMarketListingIds.length > 0 && !this.steamLoading ? 1 : 0.55)
-      .onClick(() => {
+    this.SheetActionButton({
+      label: this.t('撤下') + '（' + this.steamSelectedMarketListingIds.length.toString() + '）',
+      isPrimary: true,
+      isEnabled: this.steamSelectedMarketListingIds.length > 0 && !this.steamLoading,
+      isLoading: false,
+      action: (): void => {
         this.confirmSelectedSteamMarketListingsRemoval();
-      })
-      .layoutWeight(1.5)
-      .border({ width: 1, color: this.dividerColor() })
+      }
+    })
   }
 
   @Builder
   private SteamInventoryBatchSaleButton() {
-    Button(this.t('出售') + '（' + this.steamSelectedInventoryAssetIds.length.toString() + '）')
-      .height(STEAM_BULK_ACTION_HEIGHT)
-      .fontSize(15)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.accentContrastColor())
-      .backgroundColor(this.accentColor())
-      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
-      .enabled(this.steamSelectedInventoryAssetIds.length > 0 && !this.steamBatchSelling)
-      .opacity(this.steamSelectedInventoryAssetIds.length > 0 && !this.steamBatchSelling ? 1 : 0.55)
-      .onClick(() => {
+    this.SheetActionButton({
+      label: this.t('出售') + '（' + this.steamSelectedInventoryAssetIds.length.toString() + '）',
+      isPrimary: true,
+      isEnabled: this.steamSelectedInventoryAssetIds.length > 0 && !this.steamBatchSelling,
+      isLoading: false,
+      action: (): void => {
         this.openSteamBatchSaleDialog();
-      })
-      .layoutWeight(1.5)
+      }
+    })
   }
 
   @Builder
@@ -4933,36 +4950,28 @@ struct Index {
 
   @Builder
   private SteamBulkRejectButton() {
-    Button(this.t('拒绝') + '（' + this.steamSelectedRequestIds.length.toString() + '）')
-      .height(STEAM_BULK_ACTION_HEIGHT)
-      .fontSize(15)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.primaryTextColor())
-      .backgroundColor(this.sheetControlBackgroundColor())
-      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
-      .enabled(this.steamSelectedRequestIds.length > 0 && !this.steamLoading)
-      .onClick(() => {
+    this.SheetActionButton({
+      label: this.t('拒绝') + '（' + this.steamSelectedRequestIds.length.toString() + '）',
+      isPrimary: false,
+      isEnabled: this.steamSelectedRequestIds.length > 0 && !this.steamLoading,
+      isLoading: false,
+      action: (): void => {
         this.confirmSelectedSteamRequests(false);
-      })
-      .layoutWeight(1)
-      .border({ width: 1, color: this.dividerColor() })
+      }
+    })
   }
 
   @Builder
   private SteamBulkAllowButton() {
-    Button(this.t('同意') + '（' + this.steamSelectedRequestIds.length.toString() + '）')
-      .height(STEAM_BULK_ACTION_HEIGHT)
-      .fontSize(15)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.accentColor())
-      .backgroundColor(this.accentTintColor())
-      .borderRadius(STEAM_BULK_ACTION_HEIGHT / 2)
-      .enabled(this.steamSelectedRequestIds.length > 0 && !this.steamLoading)
-      .onClick(() => {
+    this.SheetActionButton({
+      label: this.t('同意') + '（' + this.steamSelectedRequestIds.length.toString() + '）',
+      isPrimary: true,
+      isEnabled: this.steamSelectedRequestIds.length > 0 && !this.steamLoading,
+      isLoading: false,
+      action: (): void => {
         this.confirmSelectedSteamRequests(true);
-      })
-      .layoutWeight(1.5)
-      .border({ width: 1, color: this.accentColor() })
+      }
+    })
   }
 
   @Builder
@@ -5164,6 +5173,7 @@ struct Index {
 
         FlowItem() {
           this.MeActionCard([
+            ['给一个免费好评', $r('sys.symbol.star')],
             ['打赏一杯咖啡', $r('sys.symbol.heart')],
             ['更多作品', $r('sys.symbol.square_grid_2x2')]
           ], 2)
@@ -5804,26 +5814,11 @@ struct Index {
           .width('100%')
           .height(STEAM_INVENTORY_SHEET_IMAGE_HEIGHT)
           .objectFit(ImageFit.Contain)
-          .backgroundColor(this.steamInventoryMediaBackgroundColor())
 
-        Row() {
-          if (this.selectedSteamInventoryItem.type.length > 0) {
-            Text(this.selectedSteamInventoryItem.type)
-              .height(28)
-              .constraintSize({ maxWidth: 220 })
-              .padding({ left: 10, right: 10 })
-              .fontSize(12)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.steamInventoryBadgeTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .borderRadius(14)
-              .backgroundColor(this.steamInventoryBadgeBackgroundColor())
-          }
+        if (this.selectedSteamInventoryItem.amount > 1) {
+          Row() {
+            Blank()
 
-          Blank()
-
-          if (this.selectedSteamInventoryItem.amount > 1) {
             Text('×' + this.selectedSteamInventoryItem.amount.toString())
               .height(28)
               .padding({ left: 10, right: 10 })
@@ -5833,17 +5828,14 @@ struct Index {
               .borderRadius(14)
               .backgroundColor(this.accentColor())
           }
+          .width('100%')
+          .padding(12)
+          .alignItems(VerticalAlign.Top)
+          .zIndex(2)
         }
-        .width('100%')
-        .padding(12)
-        .alignItems(VerticalAlign.Top)
-        .zIndex(2)
       }
       .width('100%')
       .height(STEAM_INVENTORY_SHEET_IMAGE_HEIGHT)
-      .borderRadius(SHEET_OPTION_CARD_RADIUS)
-      .clip(true)
-      .border({ width: 0.5, color: this.dividerColor() })
 
       Column({ space: 4 }) {
         Text(this.selectedSteamInventoryItem.name.length > 0 ?
@@ -7296,6 +7288,10 @@ struct Index {
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
+      if (label === '更多作品') {
+        this.NewBadge()
+      }
+
       this.TrailingArrowSymbol()
     }
     .width('100%')
@@ -7314,6 +7310,19 @@ struct Index {
   }
 
   @Builder
+  private NewBadge() {
+    Text('NEW')
+      .height(NEW_BADGE_HEIGHT)
+      .padding({ left: NEW_BADGE_HORIZONTAL_PADDING, right: NEW_BADGE_HORIZONTAL_PADDING })
+      .fontSize(NEW_BADGE_TEXT_SIZE)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(Color.White)
+      .textAlign(TextAlign.Center)
+      .borderRadius(NEW_BADGE_RADIUS)
+      .backgroundColor(ERROR_RED)
+  }
+
+  @Builder
   private MeActionCardDivider() {
     Divider()
       .strokeWidth(1)
@@ -7324,6 +7333,10 @@ struct Index {
   @Builder
   private MoreAppsPageContent() {
     WaterFlow({ scroller: this.moreAppsScroller }) {
+      FlowItem() {
+        this.MoreAppsCamRawCard()
+      }
+      .width('100%')
       FlowItem() {
         this.MoreAppsHeroCard()
       }
@@ -7368,6 +7381,7 @@ struct Index {
 
           Text(this.t('Wi-Fi直连单反相机传输照片与视频，适配索尼、尼康、佳能等多种相机。支持扫码连接、相机图片预览、深色模式与防窥保护等功能。'))
             .width('100%')
+            .height(MORE_APPS_DESCRIPTION_HEIGHT)
             .fontSize(16)
             .lineHeight(26)
             .fontColor(this.secondaryTextColor())
@@ -7407,6 +7421,80 @@ struct Index {
     })
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.updateMeasuredCardHeight('more-apps-hero', newValue);
+    })
+  }
+
+  @Builder
+  private MoreAppsCamRawCard() {
+    Stack({ alignContent: Alignment.Center }) {
+      this.MeasuredImmersionCardSurface('more-apps-camraw', ME_CARD_RADIUS)
+      Column({ space: 18 }) {
+        Image($r('app.media.camraw'))
+          .width(92)
+          .height(92)
+          .borderRadius(22)
+          .objectFit(ImageFit.Cover)
+
+        Text('CamRAW')
+          .fontSize(24)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+
+        Text(this.t('专业RAW照片编辑大师'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.accentColor())
+
+        Text(this.t('支持数十种RAW格式编辑，批量LUT及调整照片参数，支持裁剪、调色、曲线、效果、水印等数十种专业参数调整，支持批量导出JPG/PNG/HEIF等照片。'))
+          .width('100%')
+          .height(MORE_APPS_DESCRIPTION_HEIGHT)
+          .fontSize(16)
+          .lineHeight(26)
+          .fontColor(this.secondaryTextColor())
+          .textAlign(TextAlign.Center)
+
+        ImmersionButton({
+          systemMaterialEffect: this.configuredMaterialEffect(),
+          text: this.t('在应用市场查看'),
+          buttonModify: {
+            applyNormalAttribute(instance: ButtonModifier): void {
+              instance.width(220).height(46)
+            }
+          },
+          click: (): void => {
+            this.openExternalUrl(CAMRAW_URL);
+          }
+        })
+          .width(220)
+          .height(46)
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 560 })
+      .padding({ left: 28, right: 28, top: 36, bottom: 36 })
+      .alignItems(HorizontalAlign.Center)
+      .zIndex(2)
+
+      Row() {
+        this.NewBadge()
+      }
+      .align(Alignment.TopEnd)
+      .margin({ top: MORE_APPS_BADGE_MARGIN, right: MORE_APPS_BADGE_MARGIN })
+      .hitTestBehavior(HitTestMode.None)
+      .zIndex(3)
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 560 })
+    .borderRadius(ME_CARD_RADIUS)
+    .clip(true)
+    .backgroundColor(this.cardSurfaceBaseColor(this.cardBackgroundColor()))
+    .border({ width: this.cardSurfaceBorderWidth(), color: this.immersionBorderColor() })
+    .scale({ x: this.appCardScale('more-apps-camraw'), y: this.appCardScale('more-apps-camraw') })
+    .animation({ duration: CARD_PRESS_ANIMATION_DURATION, curve: Curve.Friction })
+    .onTouch((event: TouchEvent) => {
+      this.handleAppCardTouch('more-apps-camraw', event.type);
+    })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.updateMeasuredCardHeight('more-apps-camraw', newValue);
     })
   }
 
@@ -7787,7 +7875,7 @@ struct Index {
         })
         .buildEffect())
       .onClick(() => {
-        this.showAppCommentDialog();
+        this.showAppCommentDialogFromUserAction();
       })
       .zIndex(2)
     }
@@ -10703,6 +10791,9 @@ struct Index {
       lightColor: this.accentColor(),
       systemMaterialEffect: this.configuredMaterialEffect()
     };
+    if (!this.isDarkTheme()) {
+      style.gradientMask = { maskColor: '#00000000' };
+    }
     if (this.shouldShowHomeMiniBar()) {
       style.miniBar = {
         miniBarBuilder: (): void => {
@@ -15327,6 +15418,8 @@ struct Index {
     }
     if (group === 2) {
       if (index === 0) {
+        this.showAppCommentDialogFromUserAction();
+      } else if (index === 1) {
         this.homePathStack.pushPath({ name: 'donation' }, true);
       } else {
         this.homePathStack.pushPath({ name: 'moreApps' }, true);
@@ -15399,26 +15492,89 @@ struct Index {
     });
   }
 
-  private async showAppCommentDialog(): Promise<void> {
+  private async showTokenCreationCommentDialogOnce(): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context || !await SettingsRepository.claimTokenCreationCommentPrompt(context)) {
+      return;
+    }
+    await this.showAppCommentDialog(false);
+  }
+
+  private async showAppCommentDialog(showFailureToast: boolean = true): Promise<void> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      if (showFailureToast) {
+        this.showToast('暂时无法打开应用评论');
+      }
+      return;
+    }
+    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Showing AppGallery comment dialog');
+    try {
+      await commentManager.showCommentDialog(context);
+      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'AppGallery comment dialog shown');
+    } catch (error) {
+      const code = this.getErrorCode(error);
+      if (showFailureToast) {
+        this.showAppCommentError(code);
+      }
+      hilog.error(APPLOCK_DOMAIN, APP_COMMENT_TAG,
+        'Failed to show AppGallery comment dialog, code=%{public}d, error=%{public}s', code,
+        JSON.stringify(error));
+    }
+  }
+
+  private async showAppCommentDialogFromUserAction(): Promise<void> {
     const context = this.getAbilityContext();
     if (!context) {
       this.showToast('暂时无法打开应用评论');
       return;
     }
-    const commentWant: Want = {
-      action: 'ohos.want.action.appdetail',
-      uri: 'store://appgallery.huawei.com/app/detail?id=' + APP_BUNDLE_NAME + '&action=write-review'
-    };
-    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Opening AppGallery write-review page');
+    hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'Showing AppGallery comment dialog from user action');
     try {
-      await context.startAbility(commentWant);
-      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'AppGallery write-review page opened');
+      await commentManager.showCommentDialog(context);
+      hilog.info(APPLOCK_DOMAIN, APP_COMMENT_TAG, 'AppGallery comment dialog shown from user action');
     } catch (error) {
       const code = this.getErrorCode(error);
-      this.showToast(this.tf('暂时无法打开应用评论（错误码：{0}）', [code.toString()]));
       hilog.error(APPLOCK_DOMAIN, APP_COMMENT_TAG,
-        'Failed to open AppGallery write-review page, code=%{public}d, error=%{public}s', code,
+        'Failed to show AppGallery comment dialog from user action, code=%{public}d, error=%{public}s', code,
         JSON.stringify(error));
+      if (!await this.openAppReviewPage('com.example.tool_2fa')) {
+        this.showAppCommentError(code);
+      }
+    }
+  }
+
+  private async openAppReviewPage(bundleName: string): Promise<boolean> {
+    const context = this.getAbilityContext();
+    if (!context) {
+      return false;
+    }
+    try {
+      await context.startAbility({
+        action: 'ohos.want.action.appdetail',
+        uri: 'store://appgallery.huawei.com/app/detail?id=' + bundleName + '&action=write-review'
+      });
+      return true;
+    } catch (error) {
+      hilog.error(APPLOCK_DOMAIN, APP_COMMENT_TAG,
+        'Failed to open AppGallery review page, error=%{public}s', JSON.stringify(error));
+      return false;
+    }
+  }
+
+  private showAppCommentError(code: number): void {
+    if (code === 801) {
+      this.showToast('当前设备不支持应用内评论');
+    } else if (code === 1021500006) {
+      this.showToast('请先在系统设置中登录华为账号');
+    } else if (code === 1021500007) {
+      this.showToast('感谢支持，你已评价过当前版本');
+    } else if (code === 1021500008) {
+      this.showToast('本次评价次数已达上限');
+    } else if (code === 1021500009) {
+      this.showToast('感谢支持，暂时无需重复评价');
+    } else {
+      this.showToast(this.tf('暂时无法打开应用评论（错误码：{0}）', [code.toString()]));
     }
   }
 
@@ -16035,7 +16191,15 @@ struct Index {
 
   private async refreshSteamMarketSaleHistory(reset: boolean, showSuccessToast: boolean = false): Promise<void> {
     const token = this.selectedSteamToken();
-    if (token === undefined || this.steamMarketSaleHistoryLoading) {
+    if (token === undefined) {
+      return;
+    }
+    if (this.steamMarketSaleHistoryLoading) {
+      if (reset) {
+        this.steamMarketSaleHistoryRefreshPending = true;
+        this.steamMarketSaleHistoryRefreshToastPending =
+          this.steamMarketSaleHistoryRefreshToastPending || showSuccessToast;
+      }
       return;
     }
     this.steamMarketSaleHistoryLoading = true;
@@ -16060,9 +16224,15 @@ struct Index {
         this.showToast(this.tf('加载成功{0}条', [page.items.length.toString()]));
       }
     } catch (error) {
-      this.showToast('Steam 出售记录刷新失败：' + this.errorMessage(error));
+      this.showToast('Steam 交易记录刷新失败：' + this.errorMessage(error));
     } finally {
       this.steamMarketSaleHistoryLoading = false;
+      if (this.steamMarketSaleHistoryRefreshPending) {
+        const pendingToast = this.steamMarketSaleHistoryRefreshToastPending;
+        this.steamMarketSaleHistoryRefreshPending = false;
+        this.steamMarketSaleHistoryRefreshToastPending = false;
+        this.refreshSteamMarketSaleHistory(true, pendingToast);
+      }
     }
   }
 
@@ -16270,7 +16440,7 @@ struct Index {
     if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
       return '暂无批准记录';
     }
-    return '暂无出售记录';
+    return '暂无交易记录';
   }
 
   private steamConfirmationCategoryEmptyDescription(): string {
@@ -16283,11 +16453,14 @@ struct Index {
     if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
       return '同意或拒绝请求后将在这里显示';
     }
-    return '完成 Steam 市场出售确认后将在这里显示';
+    return 'Steam 市场的买入与卖出记录将在这里显示';
   }
 
   private selectSteamConfirmationCategory(category: SteamConfirmationCategory): void {
     if (this.selectedSteamConfirmationCategory === category) {
+      if (category === SteamConfirmationCategory.SaleHistory) {
+        this.refreshSteamMarketSaleHistory(true);
+      }
       return;
     }
     this.clearSteamSelection();
@@ -16322,9 +16495,79 @@ struct Index {
     this.steamBottomChromeScrollDistance = 0;
   }
 
+  private steamExpandedBottomChromeOffset(): number {
+    return this.naviIndicatorHeight + HOME_NAV_HEIGHT + STEAM_ACCOUNT_BAR_HEIGHT +
+      STEAM_ACCOUNT_BAR_GAP * 2 + PAGE_CARD_GAP;
+  }
+
+  private steamConfirmationVisibleItemCount(): number {
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval) {
+      return this.visibleSteamPendingLogins().length + this.visibleSteamPendingConfirmations().length;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.Listed) {
+      return this.steamMarketListings.length;
+    }
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.ApprovalHistory) {
+      return this.visibleSteamApprovalHistory().length;
+    }
+    return this.steamMarketSaleHistory.length;
+  }
+
+  private steamConfirmationContentHeight(): number {
+    const itemCount = this.steamConfirmationVisibleItemCount();
+    let contentHeight = itemCount * (STEAM_CONFIRMATION_CARD_HEIGHT + PAGE_CARD_GAP);
+    if (this.selectedSteamConfirmationCategory === SteamConfirmationCategory.AwaitingApproval &&
+      this.visibleSteamPendingLogins().length > 0) {
+      contentHeight += STEAM_SECTION_HEADER_HEIGHT;
+    }
+    if (this.steamConfirmationCategoryHasMore() || this.steamConfirmationCategoryLoading()) {
+      contentHeight += 48;
+    }
+    return contentHeight;
+  }
+
+  private steamInventoryColumnCount(): number {
+    if (this.pageWidth >= 900) {
+      return 4;
+    }
+    if (this.pageWidth >= 600) {
+      return 3;
+    }
+    return 2;
+  }
+
+  private steamInventoryContentHeight(): number {
+    const itemCount = this.filteredSteamInventoryItems().length;
+    if (itemCount === 0) {
+      return 0;
+    }
+    const rowCount = Math.ceil(itemCount / this.steamInventoryColumnCount());
+    return rowCount * STEAM_INVENTORY_CARD_HEIGHT + Math.max(0, rowCount - 1) * PAGE_CARD_GAP;
+  }
+
+  private steamContentExceedsViewport(): boolean {
+    if (this.pageHeight <= 0) {
+      return false;
+    }
+    const topOffset = this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations ?
+      this.steamConfirmationContentTopOffset() : this.steamInventoryContentTopOffset();
+    const viewportHeight = Math.max(0,
+      this.pageHeight - topOffset - this.steamExpandedBottomChromeOffset());
+    const contentHeight = this.selectedSteamFeatureTab === SteamFeatureTab.Confirmations ?
+      this.steamConfirmationContentHeight() : this.steamInventoryContentHeight();
+    return contentHeight > viewportHeight;
+  }
+
   private handleSteamBottomChromeScroll(offset: number): void {
     if (this.selectedHomeTab !== HomeTab.Steam || this.steamSelectionMode || this.steamListingSelectionMode ||
       this.steamInventorySelectionMode || Math.abs(offset) < 0.5) {
+      return;
+    }
+    if (!this.steamContentExceedsViewport()) {
+      this.resetSteamBottomChromeScrollDistance();
+      if (this.steamBottomChromeHidden) {
+        this.showSteamBottomChrome();
+      }
       return;
     }
     if (offset > 0) {
@@ -17893,6 +18136,30 @@ struct Index {
     return this.isDarkTheme() ? '#3A3A3A' : '#D8D8D8';
   }
 
+  private steamInventoryGradientStartColor(): string {
+    return this.isDarkTheme() ? '#00000000' : '#00FFFFFF';
+  }
+
+  private steamInventoryGradientNearTransparentColor(): string {
+    return this.isDarkTheme() ? '#20191919' : '#20FFFFFF';
+  }
+
+  private steamInventoryGradientMiddleColor(): string {
+    return this.isDarkTheme() ? '#B3191919' : '#B3FFFFFF';
+  }
+
+  private steamInventoryGradientEndColor(): string {
+    return this.isDarkTheme() ? '#FF191919' : '#FFFFFFFF';
+  }
+
+  private steamInventoryOverlayPrimaryTextColor(): string {
+    return this.isDarkTheme() ? '#FFFFFFFF' : '#FF000000';
+  }
+
+  private steamInventoryOverlaySecondaryTextColor(): string {
+    return this.isDarkTheme() ? '#CCFFFFFF' : '#CC000000';
+  }
+
   private steamInventoryBadgeBackgroundColor(): string {
     return this.isDarkTheme() ? '#D9E2E2E2' : '#D9FFFFFF';
   }
@@ -18263,7 +18530,12 @@ struct Index {
   }
 
   private steamAccountBarWidth(): number {
-    return Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2);
+    return Math.min(STEAM_BOTTOM_CHROME_MAX_WIDTH,
+      Math.max(1, this.pageWidth - HOME_HORIZONTAL_PADDING * 2));
+  }
+
+  private steamAccountBarLeft(): number {
+    return Math.max(HOME_HORIZONTAL_PADDING, (this.pageWidth - this.steamAccountBarWidth()) / 2);
   }
 
   private steamAccountBarTop(): number {
@@ -20322,6 +20594,7 @@ struct Index {
     }
 
     const editingId = this.editingTokenId;
+    const isCreatingToken = editingId.length === 0;
     const editingToken = editingId.length > 0 ?
       this.tokens.find((token: TokenRecord) => token.id === editingId) : undefined;
     if (editingId.length > 0 && !editingToken) {
@@ -20366,6 +20639,9 @@ struct Index {
         return;
       }
       this.backHome();
+      if (isCreatingToken) {
+        await this.showTokenCreationCommentDialogOnce();
+      }
     } catch (error) {
       this.validationMessage = '保存失败，请重试';
       console.error(`Failed to save token: ${JSON.stringify(error)}`);
@@ -20413,5 +20689,34 @@ struct Index {
       return undefined;
     }
     return hostContext as common.UIAbilityContext;
+  }
+
+  private initializePhoneServices(): void {
+    const context = this.getAbilityContext();
+    if (!context) {
+      return;
+    }
+    if (!this.phoneServicesInitialized) {
+      FormManager.init(context);
+      this.phoneServicesInitialized = true;
+    }
+    if (!this.hasCheckedAppUpdate) {
+      this.hasCheckedAppUpdate = true;
+      this.performAppUpdateCheck(context);
+    }
+  }
+
+  private async performAppUpdateCheck(context: common.UIAbilityContext): Promise<void> {
+    try {
+      const checkResult = await updateManager.checkAppUpdate(context);
+      if (checkResult.updateAvailable !== updateManager.UpdateAvailableCode.LATER_VERSION_EXIST) {
+        hilog.info(0x0000, 'testTag', 'App is already up to date.');
+        return;
+      }
+      const resultCode = await updateManager.showUpdateDialog(context);
+      hilog.info(0x0000, 'testTag', 'Show update dialog result: %{public}d', resultCode);
+    } catch (error) {
+      hilog.warn(0x0000, 'testTag', 'Failed to check app update. Cause: %{public}s', JSON.stringify(error));
+    }
   }
 }

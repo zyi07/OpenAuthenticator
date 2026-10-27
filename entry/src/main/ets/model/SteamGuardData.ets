@@ -136,6 +136,7 @@ export interface SteamMarketSaleHistoryItem {
   iconUrl: string;
   priceText: string;
   dateText: string;
+  isPurchase: boolean;
 }
 
 export interface SteamMarketSaleHistoryPage {
