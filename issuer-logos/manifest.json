@@ -70,6 +70,14 @@
       "light": "logos/nintendo-light.svg",
       "dark": "logos/nintendo-dark.svg",
       "revision": "1"
+    },
+    {
+      "slug": "dnshe",
+      "aliases": ["dnshe", "dnshe.com"],
+      "brand": "logos/dnshe.svg",
+      "light": "logos/dnshe-light.svg",
+      "dark": "logos/dnshe-dark.svg",
+      "revision": "1"
     }
   ]
 }
