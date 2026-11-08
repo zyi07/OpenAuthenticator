@@ -11,6 +11,16 @@
   </p>
 </div>
 
+> **📦 备份仓库说明**
+> 
+> 本仓库是 [Authenticator](https://gitcode.com/mroble/Authenticator) 项目的 GitHub 备份镜像。
+> 
+> - **原项目地址**：https://gitcode.com/mroble/Authenticator
+> - **备份用途**：为原项目提供额外的代码托管和访问渠道
+> - **同步状态**：定期从原仓库同步最新代码
+> - **问题反馈**：建议优先在 [GitCode Issues](https://gitcode.com/mroble/Authenticator/issues) 提交
+> - **下载安装包**：请从 [GitCode Releases](https://gitcode.com/mroble/Authenticator/releases) 获取官方签名的 HAP 安装包
+
 ## 项目简介
 
 OpenAuthenticator（开源验证器）是一款使用 ArkTS、ArkUI、Stage 模型与 HarmonyOS 原生系统能力开发的 2FA 令牌管理应用。应用支持 TOTP、HOTP、完整 Steam Guard、Google Authenticator 迁移二维码，提供本地存储、华为云空间同步、备份导出、服务卡片、多语言、主题背景和多端响应式布局。
